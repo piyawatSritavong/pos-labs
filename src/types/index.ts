@@ -31,7 +31,7 @@ export interface CompletedBill extends ParkedBill {
 }
 
 export interface Discount {
-  type: 'percentage' | 'absolute';
+  type: string;
   value: number;
   amount: number; // calculated discount amount
 }

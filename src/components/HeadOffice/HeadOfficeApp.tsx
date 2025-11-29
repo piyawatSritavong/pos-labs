@@ -6,7 +6,6 @@ import { SalesReports } from './SalesReports';
 import { StockManagement } from './StockManagement';
 import { ShiftManagement } from './ShiftManagement';
 import { BillsArchive } from './BillsArchive';
-import { Analytics } from './Analytics';
 import { UsersRoles } from './UsersRoles';
 import { Settings } from './Settings';
 import { Notifications } from './Notifications';
@@ -28,8 +27,6 @@ export const HeadOfficeApp: React.FC = () => {
         return <ShiftManagement />;
       case 'bills':
         return <BillsArchive />;
-      case 'analytics':
-        return <Analytics />;
       case 'users':
         return <UsersRoles />;
       case 'settings':

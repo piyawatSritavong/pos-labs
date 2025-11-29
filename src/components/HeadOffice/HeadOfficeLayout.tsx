@@ -34,7 +34,6 @@ export const HeadOfficeLayout: React.FC<HeadOfficeLayoutProps> = ({
     { id: 'stock', label: 'Stock Management', icon: Package },
     { id: 'shifts', label: 'Shift Management', icon: Users },
     { id: 'bills', label: 'Bills Archive', icon: FileText },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'users', label: 'Users & Roles', icon: UserCog },
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'notifications', label: 'Notifications', icon: Bell },

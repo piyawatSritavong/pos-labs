@@ -403,28 +403,6 @@ export const Dashboard: React.FC<DashboardProps> = () => {
               ))}
             </div>
           </div>
-
-          {/* Missing Shift Reports */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <div className="flex items-center space-x-2 mb-4">
-              <Clock className="w-5 h-5 text-red-600" />
-              <h3 className="text-lg font-semibold text-gray-900">Missing Shift Reports</h3>
-            </div>
-            <div className="space-y-3">
-              {missingShifts.map((shift, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-gray-900">{shift.branch}</p>
-                    <p className="text-sm text-gray-500">{shift.shift} Shift • {shift.cashier}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-red-600">Overdue</p>
-                    <p className="text-xs text-gray-500">{formatTime(shift.dueTime)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Recent Activity */}

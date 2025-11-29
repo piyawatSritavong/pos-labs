@@ -12,15 +12,10 @@ import { ShiftClosing } from './components/ShiftClosing';
 import { ConfirmationModal } from './components/ConfirmationModal';
 import { products } from './data/products';
 import { stockItems, stockHistory } from './data/stockData';
-import { CartItem, ParkedBill, CompletedBill, Discount, StockItem, StockHistory, ShiftSummary } from './types';
+import { CartItem, ParkedBill, CompletedBill, Discount, StockItem, StockHistory } from './types';
 
-function App() {
-  // Check if we're on the head office path
+function App(): React.ReactNode {
   const isHeadOffice = window.location.pathname === '/headoffice';
-  
-  if (isHeadOffice) {
-    return <HeadOfficeApp />;
-  }
 
   const [currentView, setCurrentView] = useState<'pos' | 'bills' | 'stock'>('pos');
   const [activeCategory, setActiveCategory] = useState('all');
@@ -58,6 +53,10 @@ function App() {
     
     return filtered;
   }, [activeCategory, searchQuery]);
+
+  if (isHeadOffice) {
+    return <HeadOfficeApp />;
+  }
 
   const handleAddToCart = (item: CartItem) => {
     setCartItems(prevItems => {
@@ -241,24 +240,6 @@ function App() {
   };
 
   const handleConfirmCloseShift = () => {
-    // Calculate shift summary
-    const shiftSummary: ShiftSummary = {
-      id: `shift-${Date.now()}`,
-      cashier: 'John Smith',
-      shiftType: 'Morning',
-      startTime: new Date(Date.now() - 8 * 60 * 60 * 1000), // 8 hours ago
-      endTime: new Date(),
-      totalSales: completedBills.reduce((sum, bill) => sum + bill.total, 0),
-      totalDiscounts: completedBills.reduce((sum, bill) => sum + bill.discount.amount, 0),
-      billsProcessed: completedBills.length,
-      paymentBreakdown: {
-        cash: completedBills.filter(b => b.paymentMethod === 'cash').reduce((sum, bill) => sum + bill.total, 0),
-        credit: completedBills.filter(b => b.paymentMethod === 'credit').reduce((sum, bill) => sum + bill.total, 0),
-        bank: completedBills.filter(b => b.paymentMethod === 'bank').reduce((sum, bill) => sum + bill.total, 0),
-      },
-      parkedBillsCount: parkedBills.length,
-    };
-    
     setShowShiftClosing(false);
     alert('Shift closed successfully! Please log out and have the next cashier log in.');
   };
@@ -455,7 +436,6 @@ function App() {
           onParkBill={handleParkBill}
           selectedPaymentMethod={selectedPaymentMethod}
           onPaymentMethodSelect={setSelectedPaymentMethod}
-          onParkBill={handleParkBill}
         />
       </div>
       

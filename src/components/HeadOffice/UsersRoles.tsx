@@ -46,7 +46,7 @@ interface Role {
 }
 
 interface Permission {
-  section: 'sales' | 'stock' | 'shifts' | 'bills' | 'analytics' | 'users' | 'settings';
+  section: 'sales' | 'stock' | 'shifts' | 'bills' | 'users' | 'settings';
   actions: {
     view: boolean;
     edit: boolean;
@@ -171,7 +171,6 @@ export const UsersRoles: React.FC = () => {
         { section: 'stock', actions: { view: true, edit: true, export: true, delete: true } },
         { section: 'shifts', actions: { view: true, edit: true, export: true, delete: true } },
         { section: 'bills', actions: { view: true, edit: true, export: true, delete: true } },
-        { section: 'analytics', actions: { view: true, edit: true, export: true, delete: false } },
         { section: 'users', actions: { view: true, edit: true, export: true, delete: true } },
         { section: 'settings', actions: { view: true, edit: true, export: false, delete: false } },
       ],
@@ -187,7 +186,6 @@ export const UsersRoles: React.FC = () => {
         { section: 'stock', actions: { view: true, edit: true, export: true, delete: false } },
         { section: 'shifts', actions: { view: true, edit: true, export: true, delete: false } },
         { section: 'bills', actions: { view: true, edit: false, export: true, delete: false } },
-        { section: 'analytics', actions: { view: true, edit: false, export: true, delete: false } },
         { section: 'users', actions: { view: false, edit: false, export: false, delete: false } },
         { section: 'settings', actions: { view: true, edit: false, export: false, delete: false } },
       ],
@@ -203,7 +201,6 @@ export const UsersRoles: React.FC = () => {
         { section: 'stock', actions: { view: true, edit: false, export: true, delete: false } },
         { section: 'shifts', actions: { view: true, edit: false, export: true, delete: false } },
         { section: 'bills', actions: { view: true, edit: false, export: true, delete: false } },
-        { section: 'analytics', actions: { view: true, edit: false, export: true, delete: false } },
         { section: 'users', actions: { view: true, edit: false, export: true, delete: false } },
         { section: 'settings', actions: { view: true, edit: false, export: false, delete: false } },
       ],
@@ -952,7 +949,7 @@ export const UsersRoles: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {['sales', 'stock', 'shifts', 'bills', 'analytics', 'users', 'settings'].map((section) => {
+                        {['sales', 'stock', 'shifts', 'bills', 'users', 'settings'].map((section) => {
                           const permission = selectedRole?.permissions.find(p => p.section === section);
                           return (
                             <tr key={section} className="hover:bg-gray-50">

@@ -209,6 +209,23 @@ export const Branches: React.FC = () => {
 
   return (
     <div className="p-6">
+
+      {/* Pro Version Overlay */}
+      <div className='fixed inset-0 bg-black/50 z-20'></div>
+      <div className='absolute inset-0 rounded-lg flex items-center justify-center pointer-events-none z-30'>
+        <div className='bg-white rounded-lg shadow-2xl p-8 max-w-md mx-4 text-center pointer-events-auto'>
+          <h1 className='text-4xl font-bold text-gray-900 mb-4'>Pro Version</h1>
+          <p className='text-lg text-gray-700 mb-2'>คุณสมบัตินี้ยังไม่พร้อมใช้งาน</p>
+          <p className='text-gray-600 mb-6'>กรุณาซื้อแบบ Pro เพื่อเข้าถึงคุณสมบัติทั้งหมด</p>
+          <button
+            onClick={() => alert('ไปสู่หน้าอัปเกรด Pro')}
+            className='px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors'
+          >
+            อัปเกรดไปแบบ Pro
+          </button>
+        </div>
+      </div>
+      
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Branch Management</h1>
