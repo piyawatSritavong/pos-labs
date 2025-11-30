@@ -1,0 +1,32 @@
+# POS Labs Project Configuration
+
+## Project Overview
+This is a Point of Sale (POS) system with:
+- **Frontend**: Flutter (Windows/Linux focus, future iOS/Android support)
+- **Backend**: Go with middleware for request validation
+- **Database**: PostgreSQL
+
+## Ignore Rules
+- Ignore `/web-app-old` folder completely - it's legacy code and not part of active development
+
+## Frontend Guidelines (Flutter)
+- Focus on Windows and Linux desktop platforms
+- Write cross-platform compatible code for future iOS/Android support
+- Use Flutter best practices for desktop applications
+- Consider responsive design for different screen sizes
+
+## Backend Guidelines (Go)
+- Follow Go best practices and idiomatic patterns
+- Structure code for maintainability and scalability
+- Use proper error handling and logging
+
+## Database
+- PostgreSQL is the main database
+- Use proper migrations and schema management
+- Follow database best practices for POS systems
+
+## General
+- Write clean, maintainable, and well-documented code
+- Consider multi-platform compatibility in all implementations
+- Follow security best practices for POS systems
+
