@@ -1,3 +1,18 @@
+# Air configuration for live reloading in development
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./bin/server ./cmd/server"
+  bin = "bin/server"
+  full_bin = "APP_ENV=development ./bin/server"
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "vendor"]
+
+[log]
+  time = true
+
 root = "."
 testdata_dir = "testdata"
 tmp_dir = "tmp"

@@ -1,0 +1,68 @@
+package repository
+
+import (
+	"context"
+	"errors"
+)
+
+type PartDetail struct {
+	Code            string
+	BarCode         string
+	CategoryID      string
+	CategoryLabel   string
+	CategoryLabelTH string
+	UnitID          string
+	UnitLabel       string
+	UnitLabelTH     string
+	Name            string
+	NameTH          string
+	Details         string
+	Cost            float64
+	Price           float64
+	Image           string
+	IsActive        bool
+	TotalStock      int
+}
+
+type PartSummary struct {
+	Code            string
+	BarCode         string
+	CategoryID      string
+	CategoryLabel   string
+	CategoryLabelTH string
+	UnitID          string
+	UnitLabel       string
+	UnitLabelTH     string
+	Name            string
+	NameTH          string
+	Price           float64
+	IsActive        bool
+	TotalStock      int
+}
+type PartAddress struct {
+	Code        string
+	PartCode    string
+	StoreID     string
+	StoreLabel  string
+	StoreLabelTH string
+	Shelf       string
+	Qty         int
+	Min         int
+	Max         int
+	Rop         int
+	Remarks     string
+	IsDefault   bool
+}
+
+type PartRepository interface {
+	GetPartDetail(ctx context.Context, code string) (*PartDetail, []PartAddress, error)
+	ListParts(ctx context.Context, limit, offset int) ([]PartSummary, error)
+}
+
+var ErrNotFound = errors.New("not found")
+
+func IsNotFoundError(err error) bool {
+	return errors.Is(err, ErrNotFound)
+}
+
+
