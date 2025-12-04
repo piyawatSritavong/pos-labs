@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS "user";
 DROP TABLE IF EXISTS "bill_discount_detail";
 DROP TABLE IF EXISTS "bill_details";
 DROP TABLE IF EXISTS "bill_master";
+DROP TABLE IF EXISTS "counter";
+DROP TABLE IF EXISTS "member_master";
 DROP TABLE IF EXISTS "role_permission";
 DROP TABLE IF EXISTS "role";
 DROP TABLE IF EXISTS "permission";

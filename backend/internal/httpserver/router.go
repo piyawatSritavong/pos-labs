@@ -49,11 +49,18 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		parts.GET("/:code", partsHandler.Get)
 	}
 
-	billsHandler := handlers.NewBillsHandler()
+	billRepo := repository.NewBillRepository(db)
+	billsHandler := handlers.NewBillsHandler(billRepo)
 	bills := r.Group("/bills")
 	bills.Use(authMw.RequirePermission("bills", "read"))
 	{
 		bills.GET("", billsHandler.List)
+	}
+	// Create bill requires write permission
+	billsWrite := r.Group("/bills")
+	billsWrite.Use(authMw.RequirePermission("bills", "write"))
+	{
+		billsWrite.POST("", billsHandler.Create)
 	}
 
 	// Fallback 404

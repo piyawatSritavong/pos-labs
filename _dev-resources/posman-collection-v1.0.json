@@ -122,9 +122,21 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/parts",
+              "raw": "{{base_url}}/parts?limit=50&offset=0",
               "host": ["{{base_url}}"],
-              "path": ["parts"]
+              "path": ["parts"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Max items to return (1-500, default: 50)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                }
+              ]
             }
           },
           "response": []
@@ -165,10 +177,42 @@
               }
             ],
             "url": {
+              "raw": "{{base_url}}/bills?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["bills"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Max items to return (1-500, default: 50)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /bills",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
               "raw": "{{base_url}}/bills",
               "host": ["{{base_url}}"],
               "path": ["bills"]
-            }
+            },
+            "description": "Creates a new empty bill. No request body required. Returns the generated bill ID (format: YYYYMMDD + 6-digit counter, e.g., '20251204000001'). Requires 'bills:write' permission."
           },
           "response": []
         }

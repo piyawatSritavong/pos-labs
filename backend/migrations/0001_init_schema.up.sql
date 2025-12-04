@@ -100,19 +100,49 @@ CREATE TABLE "role_permission" (
       REFERENCES "role"("id")
 );
 
-CREATE TABLE "bill_master" (
-  "id" varchar(16),
-  "purchase_amount" decimal(10,2),
-  "total_discount" decimal(10,2),
-  "total_amount" decimal(10,2),
-  "vat_amount" decimal(10,2),
-  "xvat_amount" decimal(10,2),
+CREATE TABLE "member_master" (
+  "id" text,
+  "code" varchar(16), -- 000001, 000002,
+  "name" text,
+  "phone" text UNIQUE NOT NULL,
+  "email" text,
+  "points" integer not null default 0,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY ("id")
+);
+
+CREATE TABLE "counter"(
+ "key" text, --"member" (static), "20251204" (date-based for bills), etc.
+ "value" integer, --1,2,3,4,5, ...
+ PRIMARY KEY ("key")
+);
+
+CREATE TABLE "bill_master" (
+  "id" varchar(16), --20251204000001, 20251204000002, ... generated from bill_counter
+  "status" varchar(16) not null default 'new', --new, hold, completed, cancelled
+  "payment_method" varchar(16), --cash, bank, credit, debit, other
+  "member_id" text,
+  "customer_name" text not null default 'ทั่วไป',
+  "purchase_amount" decimal(10,2) not null default 0,
+  "total_discount" decimal(10,2) not null default 0,
+  "total_amount" decimal(10,2) not null default 0,
+  "vat_amount" decimal(10,2) not null default 0,
+  "xvat_amount" decimal(10,2) not null default 0,
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  "created_by" text,
+  "updated_by" text,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "FK_bill_master_member_id"
+    FOREIGN KEY ("member_id")
+      REFERENCES "member_master"("id")
 );
 
 CREATE TABLE "bill_details" (
   "bill_id" varchar(16),
   "part_code" varchar(16),
+  "address_code" varchar(16),
   "unit_id" varchar(8),
   "uni_label" text,
   "unit_label_th" text,
@@ -120,13 +150,16 @@ CREATE TABLE "bill_details" (
   "cost" decimal(10,2),
   "price" decimal(10,2),
   "qty" integer,
-  PRIMARY KEY ("bill_id", "part_code"),
-  CONSTRAINT "FK_bill_details_part_code"
-    FOREIGN KEY ("part_code")
-      REFERENCES "part_master"("code"),
+  PRIMARY KEY ("bill_id", "part_code", "address_code"),
+  CONSTRAINT "FK_bill_details_address_code"
+    FOREIGN KEY ("address_code")
+      REFERENCES "address_master"("code"),
   CONSTRAINT "FK_bill_details_bill_id"
     FOREIGN KEY ("bill_id")
-      REFERENCES "bill_master"("id")
+      REFERENCES "bill_master"("id"),
+  CONSTRAINT "FK_bill_details_part_code"
+    FOREIGN KEY ("part_code")
+      REFERENCES "part_master"("code")
 );
 
 CREATE TABLE "bill_discount_detail" (
