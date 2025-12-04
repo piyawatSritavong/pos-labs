@@ -83,9 +83,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	// Return only session token and display info; do not expose internal IDs
 	c.JSON(http.StatusOK, gin.H{
-		"token":   sid,
-		"name":    user.Name,
-		"role_id": user.RoleID,
+		"token":  sid,
+		"name":   user.Name,
+		"roleId": user.RoleID,
 		"expires": expires.Format(time.RFC3339),
 	})
 }
@@ -118,9 +118,9 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"name":    user.Name,
-		"role_id": user.RoleID,
-		"active":  user.IsActive,
+		"name":   user.Name,
+		"roleId": user.RoleID,
+		"active": user.IsActive,
 	})
 }
 

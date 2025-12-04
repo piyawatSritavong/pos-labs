@@ -96,18 +96,18 @@ func (h *BillsHandler) List(c *gin.Context) {
 	out := make([]gin.H, 0, len(bills))
 	for _, b := range bills {
 		out = append(out, gin.H{
-			"id":             b.ID,
-			"status":         b.Status,
-			"payment_method": b.PaymentMethod,
-			"purchase_amount": b.PurchaseAmount,
-			"total_discount":  b.TotalDiscount,
-			"total_amount":    b.TotalAmount,
-			"vat_amount":      b.VATAmount,
-			"xvat_amount":     b.XVATAmount,
-			"created_at":      b.CreatedAt.Format(time.RFC3339),
-			"updated_at":      b.UpdatedAt.Format(time.RFC3339),
-			"created_by":      b.CreatedBy,
-			"updated_by":      b.UpdatedBy,
+			"id":            b.ID,
+			"status":        b.Status,
+			"paymentMethod": b.PaymentMethod,
+			"purchaseAmount": b.PurchaseAmount,
+			"totalDiscount":  b.TotalDiscount,
+			"totalAmount":    b.TotalAmount,
+			"vatAmount":      b.VATAmount,
+			"xvatAmount":     b.XVATAmount,
+			"createdAt":      b.CreatedAt.Format(time.RFC3339),
+			"updatedAt":      b.UpdatedAt.Format(time.RFC3339),
+			"createdBy":      b.CreatedBy,
+			"updatedBy":      b.UpdatedBy,
 		})
 	}
 

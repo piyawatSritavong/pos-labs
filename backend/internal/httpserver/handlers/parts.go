@@ -41,21 +41,21 @@ func (h *PartsHandler) List(c *gin.Context) {
 	out := make([]gin.H, 0, len(items))
 	for _, p := range items {
 		out = append(out, gin.H{
-			"code":      p.Code,
-			"bar_code":  p.BarCode,
-			"name":      p.Name,
-			"name_th":   p.NameTH,
-			"price":     p.Price,
-			"is_active": p.IsActive,
+			"code":     p.Code,
+			"barCode":  p.BarCode,
+			"name":     p.Name,
+			"nameTh":   p.NameTH,
+			"price":    p.Price,
+			"isActive": p.IsActive,
 			"category": gin.H{
-				"id":       p.CategoryID,
-				"label":    p.CategoryLabel,
-				"label_th": p.CategoryLabelTH,
+				"id":      p.CategoryID,
+				"label":   p.CategoryLabel,
+				"labelTh": p.CategoryLabelTH,
 			},
 			"unit": gin.H{
-				"id":       p.UnitID,
-				"label":    p.UnitLabel,
-				"label_th": p.UnitLabelTH,
+				"id":      p.UnitID,
+				"label":   p.UnitLabel,
+				"labelTh": p.UnitLabelTH,
 			},
 			"totalStock": p.TotalStock,
 		})
@@ -87,24 +87,24 @@ func (h *PartsHandler) Get(c *gin.Context) {
 
 	// Build response shape as requested
 	resp := gin.H{
-		"code":       part.Code,
-		"bar_code":   part.BarCode,
-		"name":       part.Name,
-		"name_th":    part.NameTH,
-		"details":    part.Details,
-		"cost":       part.Cost,
-		"price":      part.Price,
-		"image":      part.Image,
-		"is_active":  part.IsActive,
+		"code":      part.Code,
+		"barCode":   part.BarCode,
+		"name":      part.Name,
+		"nameTh":    part.NameTH,
+		"details":   part.Details,
+		"cost":      part.Cost,
+		"price":     part.Price,
+		"image":     part.Image,
+		"isActive":  part.IsActive,
 		"category": gin.H{
-			"id":        part.CategoryID,
-			"label":     part.CategoryLabel,
-			"label_th":  part.CategoryLabelTH,
+			"id":      part.CategoryID,
+			"label":   part.CategoryLabel,
+			"labelTh": part.CategoryLabelTH,
 		},
 		"unit": gin.H{
-			"id":        part.UnitID,
-			"label":     part.UnitLabel,
-			"label_th":  part.UnitLabelTH,
+			"id":      part.UnitID,
+			"label":   part.UnitLabel,
+			"labelTh": part.UnitLabelTH,
 		},
 		"totalStock": part.TotalStock,
 	}
@@ -112,19 +112,19 @@ func (h *PartsHandler) Get(c *gin.Context) {
 	addrs := make([]gin.H, 0, len(addresses))
 	for _, a := range addresses {
 		addrs = append(addrs, gin.H{
-			"code":      a.Code,
-			"part_code": a.PartCode,
+			"code":     a.Code,
+			"partCode": a.PartCode,
 			"store": gin.H{
-				"id":       a.StoreID,
-				"label":    a.StoreLabel,
-				"label_th": a.StoreLabelTH,
+				"id":      a.StoreID,
+				"label":   a.StoreLabel,
+				"labelTh": a.StoreLabelTH,
 			},
-			"shelf":      a.Shelf,
-			"qty":        a.Qty,
-			"min":        a.Min,
-			"max":        a.Max,
-			"rop":        a.Rop,
-			"remarks":    a.Remarks,
+			"shelf":   a.Shelf,
+			"qty":     a.Qty,
+			"min":     a.Min,
+			"max":     a.Max,
+			"rop":     a.Rop,
+			"remarks": a.Remarks,
 		})
 	}
 	resp["addresses"] = addrs
