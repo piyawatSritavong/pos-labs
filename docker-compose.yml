@@ -1,55 +1,22 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:17
     container_name: pos-labs-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-posuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pospass}
       POSTGRES_DB: ${POSTGRES_DB:-poslabs}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-posuser}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - pos-labs-network
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: pos-labs-backend
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${POSTGRES_USER:-posuser}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-pospass}
-      DB_NAME: ${POSTGRES_DB:-poslabs}
-      DB_SSLMODE: disable
-      PORT: ${BACKEND_PORT:-8080}
-      ENV: development
-    ports:
-      - "${BACKEND_PORT:-8080}:8080"
-    volumes:
-      - ./backend:/app
-      - /app/vendor
-      - /app/bin
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - pos-labs-network
-    command: air -c .air.toml
 
 volumes:
   postgres_data:
-
-networks:
-  pos-labs-network:
-    driver: bridge
 
