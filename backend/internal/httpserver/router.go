@@ -3,6 +3,7 @@ package httpserver
 import (
 	"database/sql"
 	"net/http"
+	"time"
 
 	"backend/internal/config"
 	"backend/internal/httpserver/handlers"
@@ -10,6 +11,7 @@ import (
 	"backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
+    "github.com/gin-contrib/cors"
 )
 
 func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
@@ -18,6 +20,15 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	}
 
 	r := gin.New()
+	// Add CORS middleware to correctly handle browser preflight OPTIONS requests
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: false,
+		MaxAge: 12 * time.Hour,
+	}))
 	r.Use(gin.Logger(), gin.Recovery())
 
 	userRepo := repository.NewUserRepository(db)
