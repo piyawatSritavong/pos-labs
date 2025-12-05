@@ -116,6 +116,84 @@ func (r *billRepositoryPG) GetByID(ctx context.Context, id string) (*Bill, error
 	return &b, nil
 }
 
+func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, []BillDetail, []BillDiscountDetail, error) {
+	// Get master record first
+	bill, err := r.GetByID(ctx, id)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Load bill details
+	detailRows, err := r.db.QueryContext(ctx, `
+		SELECT
+			"bill_id", "part_code", "address_code",
+			"unit_id", "uni_label", "unit_label_th",
+			"name", "cost", "price", "qty"
+		FROM "bill_details"
+		WHERE "bill_id" = $1
+		ORDER BY "part_code", "address_code"
+	`, id)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer detailRows.Close()
+
+	var details []BillDetail
+	for detailRows.Next() {
+		var d BillDetail
+		if err := detailRows.Scan(
+			&d.BillID,
+			&d.PartCode,
+			&d.AddressCode,
+			&d.UnitID,
+			&d.UnitLabel,
+			&d.UnitLabelTH,
+			&d.Name,
+			&d.Cost,
+			&d.Price,
+			&d.Qty,
+		); err != nil {
+			return nil, nil, nil, err
+		}
+		details = append(details, d)
+	}
+	if err := detailRows.Err(); err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Load bill discount details
+	discountRows, err := r.db.QueryContext(ctx, `
+		SELECT
+			"bill_id", "promotion_code", "unit", "amount"
+		FROM "bill_discount_detail"
+		WHERE "bill_id" = $1
+		ORDER BY "promotion_code"
+	`, id)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer discountRows.Close()
+
+	var discounts []BillDiscountDetail
+	for discountRows.Next() {
+		var d BillDiscountDetail
+		if err := discountRows.Scan(
+			&d.BillID,
+			&d.PromotionCode,
+			&d.Unit,
+			&d.Amount,
+		); err != nil {
+			return nil, nil, nil, err
+		}
+		discounts = append(discounts, d)
+	}
+	if err := discountRows.Err(); err != nil {
+		return nil, nil, nil, err
+	}
+
+	return bill, details, discounts, nil
+}
+
 func (r *billRepositoryPG) List(ctx context.Context, limit, offset int) ([]Bill, error) {
 	if limit <= 0 {
 		limit = 50

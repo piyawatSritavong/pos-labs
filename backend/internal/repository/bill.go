@@ -33,10 +33,18 @@ type BillDetail struct {
 	Qty         int
 }
 
+type BillDiscountDetail struct {
+	BillID        string
+	PromotionCode string
+	Unit          string
+	Amount        float64
+}
+
 type BillRepository interface {
 	GenerateBillID(ctx context.Context) (string, error)
 	Create(ctx context.Context, bill *Bill) error
 	GetByID(ctx context.Context, id string) (*Bill, error)
 	List(ctx context.Context, limit, offset int) ([]Bill, error)
+	GetFullByID(ctx context.Context, id string) (*Bill, []BillDetail, []BillDiscountDetail, error)
 }
 

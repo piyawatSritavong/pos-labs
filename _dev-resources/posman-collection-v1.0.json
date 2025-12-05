@@ -108,6 +108,139 @@
       ]
     },
     {
+      "name": "Users",
+      "item": [
+        {
+          "name": "GET /users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["users"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Max items to return (1-500, default: 50)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                }
+              ]
+            },
+            "description": "List users. Requires 'users:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /users/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/admin",
+              "host": ["{{base_url}}"],
+              "path": ["users", "admin"]
+            },
+            "description": "Get user by ID. Requires 'users:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"user001\",\n  \"username\": \"user001\",\n  \"roleId\": \"role.cashier\",\n  \"name\": \"Test User\",\n  \"password\": \"password123\",\n  \"isActive\": true,\n  \"isSuperuser\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users",
+              "host": ["{{base_url}}"],
+              "path": ["users"]
+            },
+            "description": "Create new user. Password will be hashed automatically. Requires 'users:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /users/:id",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"user001\",\n  \"roleId\": \"role.cashier\",\n  \"name\": \"Updated User Name\",\n  \"password\": \"newpassword123\",\n  \"isActive\": true,\n  \"isSuperuser\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/user001",
+              "host": ["{{base_url}}"],
+              "path": ["users", "user001"]
+            },
+            "description": "Update user. Password is optional - only updates if provided. Requires 'users:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /users/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/user001",
+              "host": ["{{base_url}}"],
+              "path": ["users", "user001"]
+            },
+            "description": "Delete user. Cannot delete superusers. Requires 'users:delete' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Parts",
       "item": [
         {
@@ -213,6 +346,606 @@
               "path": ["bills"]
             },
             "description": "Creates a new empty bill. No request body required. Returns the generated bill ID (format: YYYYMMDD + 6-digit counter, e.g., '20251204000001'). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-item",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/add-item",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "add-item"]
+            },
+            "description": "Add item to bill (mock implementation). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/remove-item",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/remove-item",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "remove-item"]
+            },
+            "description": "Remove item from bill (mock implementation). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-discount",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/add-discount",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "add-discount"]
+            },
+            "description": "Apply discount to bill (mock implementation). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/remove-discount",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/remove-discount",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "remove-discount"]
+            },
+            "description": "Remove discount from bill (mock implementation). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/hold",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/hold",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "hold"]
+            },
+            "description": "Hold bill (mock implementation). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/resume",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/resume",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "resume"]
+            },
+            "description": "Resume held bill (mock implementation). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/checkout",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/checkout",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "checkout"]
+            },
+            "description": "Complete bill (mock implementation). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/payment",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/payment",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "payment"]
+            },
+            "description": "Process payment for bill (mock implementation). Requires 'bills:write' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Company",
+      "item": [
+        {
+          "name": "GET /company",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/company",
+              "host": ["{{base_url}}"],
+              "path": ["company"]
+            },
+            "description": "Get company settings. Requires 'company:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /company",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyName\": \"Updated Company Name\",\n  \"companyNameTh\": \"ชื่อบริษัทที่อัปเดต\",\n  \"companyAddress\": \"123 Updated Street\",\n  \"companyAddressTh\": \"123 ถนนที่อัปเดต\",\n  \"phone\": \"02-123-4567\",\n  \"email\": \"info@example.com\",\n  \"website\": \"https://example.com\",\n  \"logoUrl\": \"\",\n  \"taxRate\": 0.07,\n  \"taxType\": \"xvat\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/company",
+              "host": ["{{base_url}}"],
+              "path": ["company"]
+            },
+            "description": "Update company settings. Requires 'company:write' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Branches",
+      "item": [
+        {
+          "name": "GET /branches",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/branches?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["branches"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "List branches. Requires 'branch:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /branches/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/branches/00000",
+              "host": ["{{base_url}}"],
+              "path": ["branches", "00000"]
+            },
+            "description": "Get branch by ID. Requires 'branch:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /branches",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": \"00001\",\n  \"companyId\": \"0000000000000\",\n  \"branchName\": \"Branch 2\",\n  \"branchNameTh\": \"สาขา 2\",\n  \"branchAddress\": \"456 Branch Street\",\n  \"branchAddressTh\": \"456 ถนนสาขา\",\n  \"phone\": \"02-234-5678\",\n  \"email\": \"branch2@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/branches",
+              "host": ["{{base_url}}"],
+              "path": ["branches"]
+            },
+            "description": "Create new branch. Requires 'branch:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /branches/:id",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyId\": \"0000000000000\",\n  \"branchName\": \"Updated Branch Name\",\n  \"branchNameTh\": \"ชื่อสาขาที่อัปเดต\",\n  \"branchAddress\": \"456 Updated Street\",\n  \"branchAddressTh\": \"456 ถนนที่อัปเดต\",\n  \"phone\": \"02-234-5678\",\n  \"email\": \"updated@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/branches/00000",
+              "host": ["{{base_url}}"],
+              "path": ["branches", "00000"]
+            },
+            "description": "Update branch. Requires 'branch:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /branches/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/branches/00001",
+              "host": ["{{base_url}}"],
+              "path": ["branches", "00001"]
+            },
+            "description": "Delete branch. Cannot delete if only 1 record exists. Requires 'branch:delete' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "POS",
+      "item": [
+        {
+          "name": "GET /pos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["pos"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "List POS. Requires 'pos:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /pos/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos/POS001",
+              "host": ["{{base_url}}"],
+              "path": ["pos", "POS001"]
+            },
+            "description": "Get POS by ID. Requires 'pos:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /pos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"posId\": \"POS002\",\n  \"branchId\": \"00000\",\n  \"posName\": \"POS 2\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/pos",
+              "host": ["{{base_url}}"],
+              "path": ["pos"]
+            },
+            "description": "Create new POS. Requires 'pos:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /pos/:id",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": \"00000\",\n  \"posName\": \"Updated POS Name\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/pos/POS001",
+              "host": ["{{base_url}}"],
+              "path": ["pos", "POS001"]
+            },
+            "description": "Update POS. Requires 'pos:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /pos/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos/POS002",
+              "host": ["{{base_url}}"],
+              "path": ["pos", "POS002"]
+            },
+            "description": "Delete POS. Requires 'pos:delete' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Branches",
+      "item": [
+        {
+          "name": "GET /user-branches/user/:user_id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-branches/user/admin",
+              "host": ["{{base_url}}"],
+              "path": ["user-branches", "user", "admin"]
+            },
+            "description": "List user-branch associations by user ID. Requires 'user_branch:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /user-branches/branch/:branch_id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-branches/branch/00000",
+              "host": ["{{base_url}}"],
+              "path": ["user-branches", "branch", "00000"]
+            },
+            "description": "List user-branch associations by branch ID. Requires 'user_branch:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /user-branches/:user_id/:branch_id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-branches/admin/00000",
+              "host": ["{{base_url}}"],
+              "path": ["user-branches", "admin", "00000"]
+            },
+            "description": "Get specific user-branch association. Requires 'user_branch:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /user-branches",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"admin\",\n  \"branchId\": \"00000\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user-branches",
+              "host": ["{{base_url}}"],
+              "path": ["user-branches"]
+            },
+            "description": "Create user-branch association. Requires 'user_branch:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /user-branches/:user_id/:branch_id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-branches/admin/00000",
+              "host": ["{{base_url}}"],
+              "path": ["user-branches", "admin", "00000"]
+            },
+            "description": "Delete user-branch association. Requires 'user_branch:write' permission."
           },
           "response": []
         }

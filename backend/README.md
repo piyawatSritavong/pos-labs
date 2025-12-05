@@ -32,14 +32,25 @@ On startup (`cmd/server/main.go`):
 1. Connects to PostgreSQL using `internal/db.Connect`.
 2. Runs any pending migrations via `internal/db.RunMigrations`, reading from `file://migrations`.
 3. Seeds core data via `internal/db.SeedCoreData` (idempotent - skips if data exists):
-   - Inserts default `permission` rows (parts, bills, users).
-   - Inserts `role.owner` (all permissions) and `role.cashier` (parts read, bills read/write).
+   - Inserts default `permission` rows for:
+     - Parts: `read`, `write`, `delete`
+     - Bills: `read`, `write`
+     - Users: `read`, `write`, `delete`, `manage`
+     - Roles: `read`, `write`, `delete`
+     - Permissions: `read`, `write`, `delete`
+     - Company: `read`, `write`
+     - Branch: `read`, `write`, `delete`
+     - POS: `read`, `write`, `delete`
+     - User Branches: `read`, `write`
+   - Inserts `role.admin` (all permissions) and `role.cashier` (parts read, bills read/write).
    - Grants permissions via `role_permission`.
-   - Creates default `store_master` and `unit_master` entries.
+   - Creates default company, branch, and POS settings.
+   - Creates default `store_master` (linked to default branch) and `unit_master` entries.
    - Creates an admin user:
      - `id`: `admin`
      - `username`: `admin`
      - `password`: `admin123` (bcrypt-hashed, **change in production**)
+     - `is_superuser`: `true` (cannot be deleted)
 4. In development mode only, seeds mock data via `internal/db.SeedMockData`:
    - Sample categories, parts, and addresses for testing.
 
@@ -77,7 +88,10 @@ On startup (`cmd/server/main.go`):
 - **RBAC enforcement**:
   - Middleware `RequireAuth()` validates the session and loads the user.
   - Middleware `RequirePermission(resource, action)` checks RBAC using `role`, `permission`, `role_permission`.
-  - Example: `parts:read`, `bills:write`, etc.
+  - Resources: `parts`, `bills`, `users`, `roles`, `permissions`, `company`, `branch`, `pos`, `user_branch`
+  - Actions: `read`, `write`, `delete`, `manage` (depending on resource)
+  - Example: `parts:read`, `bills:write`, `branch:delete`, etc.
+  - Superusers (`is_superuser=true`) have access to all branches and cannot be deleted.
 
 ### HTTP API
 
@@ -100,10 +114,57 @@ On startup (`cmd/server/main.go`):
 - `GET /bills?limit=50&offset=0` – List bills with pagination (requires `bills:read`).
   - Query params: `limit` (1-500, default: 50), `offset` (default: 0).
   - Returns array of bills ordered by `created_at DESC`.
+- `GET /bills/:id` – Get bill details with items and discounts (requires `bills:read`).
 - `POST /bills` – Create empty bill (requires `bills:write`).
   - No request body required.
   - Generates systematic bill ID using `counter` table (format: `YYYYMMDD` + 6-digit counter, e.g., `20251204000001`).
   - Returns `{ "id": "20251204000001" }`.
+- `PUT /bills/:id/add-item` – Add item to bill (requires `bills:write`, mock implementation).
+- `PUT /bills/:id/remove-item` – Remove item from bill (requires `bills:write`, mock implementation).
+- `PUT /bills/:id/add-discount` – Apply discount to bill (requires `bills:write`, mock implementation).
+- `PUT /bills/:id/remove-discount` – Remove discount from bill (requires `bills:write`, mock implementation).
+- `PUT /bills/:id/hold` – Hold bill (requires `bills:write`, mock implementation).
+- `PUT /bills/:id/resume` – Resume held bill (requires `bills:write`, mock implementation).
+- `PUT /bills/:id/checkout` – Complete bill (requires `bills:write`, mock implementation).
+- `PUT /bills/:id/payment` – Process payment (requires `bills:write`, mock implementation).
+
+#### Company Settings
+- `GET /company` – Get company settings (requires `company:read`).
+- `PUT /company` – Update company settings (requires `company:write`).
+  - Updates tax information, company name, address, contact details, etc.
+  - Company cannot be created or deleted (single record).
+
+#### Branches
+- `GET /branches?limit=50&offset=0` – List branches (requires `branch:read`).
+- `GET /branches/:id` – Get branch by ID (requires `branch:read`).
+- `POST /branches` – Create new branch (requires `branch:write`).
+- `PUT /branches/:id` – Update branch (requires `branch:write`).
+- `DELETE /branches/:id` – Delete branch (requires `branch:delete`).
+  - Cannot delete if only 1 record exists.
+
+#### POS
+- `GET /pos?limit=50&offset=0` – List POS (requires `pos:read`).
+- `GET /pos/:id` – Get POS by ID (requires `pos:read`).
+- `POST /pos` – Create new POS (requires `pos:write`).
+- `PUT /pos/:id` – Update POS (requires `pos:write`).
+- `DELETE /pos/:id` – Delete POS (requires `pos:delete`).
+
+#### Users
+- `GET /users?limit=50&offset=0` – List users (requires `users:read`).
+- `GET /users/:id` – Get user by ID (requires `users:read`).
+- `POST /users` – Create new user (requires `users:write`).
+  - Password is automatically hashed with bcrypt.
+- `PUT /users/:id` – Update user (requires `users:write`).
+  - Password is optional - only updates if provided.
+- `DELETE /users/:id` – Delete user (requires `users:delete`).
+  - Cannot delete superusers (`is_superuser=true`).
+
+#### User Branches
+- `GET /user-branches/user/:user_id` – List branches for a user (requires `user_branch:read`).
+- `GET /user-branches/branch/:branch_id` – List users for a branch (requires `user_branch:read`).
+- `GET /user-branches/:user_id/:branch_id` – Get specific user-branch association (requires `user_branch:read`).
+- `POST /user-branches` – Create user-branch association (requires `user_branch:write`).
+- `DELETE /user-branches/:user_id/:branch_id` – Delete user-branch association (requires `user_branch:write`).
 
 ### Systematic ID Generation
 
@@ -113,6 +174,26 @@ The backend uses a unified `counter` table for generating systematic IDs:
 - **Members**: Static key `"member"` for sequential member codes (e.g., `"000001"`, `"000002"`).
 
 The counter uses atomic SQL operations (`INSERT ... ON CONFLICT DO UPDATE`) to prevent race conditions and ensure unique IDs.
+
+### Database Schema
+
+Key tables:
+- `company_setting` - Company information and tax settings (single record)
+- `branch_setting` - Branch information (multiple branches per company)
+- `pos_setting` - POS terminals (multiple POS per branch)
+- `user` - User accounts with roles and superuser flag
+- `user_branch` - Many-to-many relationship between users and branches
+- `role` - User roles
+- `permission` - System permissions
+- `role_permission` - Role-permission mappings
+- `part_master` - Product/part master data
+- `store_master` - Warehouse/store locations (linked to branches)
+- `address_master` - Stock locations within stores
+- `bill_master` - Sales transactions
+- `bill_details` - Bill line items
+- `bill_discount_detail` - Applied discounts
+- `member_master` - Customer/member information
+- `session` - Active user sessions
 
 ### Running Locally (Docker)
 
@@ -161,10 +242,26 @@ backend/
 │   ├── config/         # Configuration loading
 │   ├── db/             # Database connection, migrations, seeding
 │   ├── httpserver/     # HTTP server setup
-│   │   ├── handlers/   # Request handlers (auth, parts, bills, health)
+│   │   ├── handlers/   # Request handlers (auth, parts, bills, company, branch, pos, users, user_branch, health)
 │   │   └── middleware/ # Auth and RBAC middleware
 │   └── repository/     # Data access layer (interfaces and PostgreSQL implementations)
 └── migrations/         # SQL migration files (up/down)
 ```
+
+### Permission Structure
+
+Permissions follow the pattern `perm.{resource}.{action}`:
+
+- **Parts**: `perm.parts.read`, `perm.parts.write`, `perm.parts.delete`
+- **Bills**: `perm.bills.read`, `perm.bills.write`
+- **Users**: `perm.users.read`, `perm.users.write`, `perm.users.delete`, `perm.users.mgmt`
+- **Roles**: `perm.roles.read`, `perm.roles.write`, `perm.roles.delete`
+- **Permissions**: `perm.permissions.read`, `perm.permissions.write`, `perm.permissions.delete`
+- **Company**: `perm.company.read`, `perm.company.write`
+- **Branch**: `perm.branch.read`, `perm.branch.write`, `perm.branch.delete`
+- **POS**: `perm.pos.read`, `perm.pos.write`, `perm.pos.delete`
+- **User Branches**: `perm.user_branch.read`, `perm.user_branch.write`
+
+The `role.admin` role automatically receives all permissions. The `role.cashier` role receives limited permissions (parts read, bills read/write).
 
 
