@@ -3,7 +3,9 @@ package db
 import (
 	"database/sql"
 	"log"
+	"strings"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -119,10 +121,13 @@ func SeedCoreData(db *sql.DB) error {
 		return err
 	}
 
+	// Generate UUID without dashes for admin user ID
+	adminID := strings.ReplaceAll(uuid.New().String(), "-", "")
+
 	if _, err := tx.Exec(`
 		INSERT INTO "user"("id", "username", "role_id", "name", "password", "is_active", "is_superuser")
-		VALUES ('admin', 'admin', 'role.admin', 'Administrator', $1, true, true)
-	`, string(adminPasswordHash)); err != nil {
+		VALUES ($1, 'admin', 'role.admin', 'Administrator', $2, true, true)
+	`, adminID, string(adminPasswordHash)); err != nil {
 		return err
 	}
 

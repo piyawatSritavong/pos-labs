@@ -38,7 +38,7 @@ func (h *UserBranchHandler) ListByUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items": out,
+		"userBranches": out,
 	})
 }
 
@@ -64,7 +64,7 @@ func (h *UserBranchHandler) ListByBranch(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items": out,
+		"userBranches": out,
 	})
 }
 

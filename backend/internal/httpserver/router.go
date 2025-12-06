@@ -30,8 +30,13 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	healthHandler := handlers.NewHealthHandler(db)
 	r.GET("/health", healthHandler.Health)
 
+	// Repositories needed for auth handler
+	branchRepo := repository.NewBranchRepository(db)
+	posRepo := repository.NewPOSRepository(db)
+	userBranchRepo := repository.NewUserBranchRepository(db)
+
 	// Auth
-	authHandler := handlers.NewAuthHandler(userRepo, sessionRepo, cfg.SessionDurationParsed())
+	authHandler := handlers.NewAuthHandler(userRepo, sessionRepo, userBranchRepo, branchRepo, posRepo, cfg.SessionDurationParsed())
 	authGroup := r.Group("/auth")
 	{
 		authGroup.POST("/login", authHandler.Login)
@@ -50,7 +55,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	}
 
 	billRepo := repository.NewBillRepository(db)
-	billsHandler := handlers.NewBillsHandler(billRepo)
+	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo)
 	bills := r.Group("/bills")
 	bills.Use(authMw.RequirePermission("bills", "read"))
 	{
@@ -67,7 +72,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		billsWrite.PUT("/:id/add-discount", billsHandler.AddDiscount) // apply discount to bill
 		billsWrite.PUT("/:id/remove-discount", billsHandler.RemoveDiscount) // remove discount from bill
 		billsWrite.PUT("/:id/hold", billsHandler.Hold) // hold bill
-		billsWrite.PUT("/:id/resume", billsHandler.Resume) // resume held bill
+		billsWrite.PUT("/switch", billsHandler.SwitchBill) // switch bills: if currentBillId not provided, create new bill; otherwise hold current and resume target
 		billsWrite.PUT("/:id/checkout", billsHandler.Checkout) // complete bill
 		billsWrite.PUT("/:id/payment", billsHandler.Payment) // process payment
 	}
@@ -87,7 +92,6 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	}
 
 	// Branches (CRUD)
-	branchRepo := repository.NewBranchRepository(db)
 	branchHandler := handlers.NewBranchHandler(branchRepo)
 	branches := r.Group("/branches")
 	branches.Use(authMw.RequirePermission("branch", "read"))
@@ -108,7 +112,6 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	}
 
 	// POS (CRUD)
-	posRepo := repository.NewPOSRepository(db)
 	posHandler := handlers.NewPOSHandler(posRepo)
 	pos := r.Group("/pos")
 	pos.Use(authMw.RequirePermission("pos", "read"))
@@ -149,7 +152,6 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	}
 
 	// User Branches (CRUD)
-	userBranchRepo := repository.NewUserBranchRepository(db)
 	userBranchHandler := handlers.NewUserBranchHandler(userBranchRepo)
 	userBranches := r.Group("/user-branches")
 	userBranches.Use(authMw.RequirePermission("user_branch", "read"))

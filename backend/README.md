@@ -190,7 +190,7 @@ Key tables:
 - `store_master` - Warehouse/store locations (linked to branches)
 - `address_master` - Stock locations within stores
 - `bill_master` - Sales transactions
-- `bill_details` - Bill line items
+- `bill_item_detail` - Bill line items
 - `bill_discount_detail` - Applied discounts
 - `member_master` - Customer/member information
 - `session` - Active user sessions

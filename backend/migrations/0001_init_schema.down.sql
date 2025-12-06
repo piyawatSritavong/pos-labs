@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS "user_branch";
 DROP TABLE IF EXISTS "user";
 DROP TABLE IF EXISTS "session";
 DROP TABLE IF EXISTS "bill_discount_detail";
-DROP TABLE IF EXISTS "bill_details";
+DROP TABLE IF EXISTS "bill_item_detail";
 DROP TABLE IF EXISTS "bill_master";
 DROP TABLE IF EXISTS "pos_setting";
 DROP TABLE IF EXISTS "store_master";

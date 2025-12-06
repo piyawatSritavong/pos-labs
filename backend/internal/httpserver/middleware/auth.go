@@ -108,6 +108,8 @@ func (m *AuthMiddleware) RequirePermission(resource, action string) gin.HandlerF
 			c.Set("user", user)
 		}
 		c.Set("session_id", sess.ID)
+		c.Set("branch_id", sess.BranchID)
+		c.Set("pos_id", sess.POSID)
 
 		c.Next()
 	}

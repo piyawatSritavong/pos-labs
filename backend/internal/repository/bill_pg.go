@@ -43,18 +43,36 @@ func (r *billRepositoryPG) GenerateBillID(ctx context.Context) (string, error) {
 }
 
 func (r *billRepositoryPG) Create(ctx context.Context, bill *Bill) error {
+	// Convert empty strings to NULL for nullable fields
+	var paymentMethod, paymentRef, memberID sql.NullString
+	if bill.PaymentMethod != "" {
+		paymentMethod = sql.NullString{String: bill.PaymentMethod, Valid: true}
+	}
+	if bill.PaymentRef != "" {
+		paymentRef = sql.NullString{String: bill.PaymentRef, Valid: true}
+	}
+	if bill.MemberID != "" {
+		memberID = sql.NullString{String: bill.MemberID, Valid: true}
+	}
+
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO "bill_master"(
-			"id", "status", "payment_method",
+			"id", "branch_id", "pos_id", "status", "payment_method", "payment_ref",
+			"member_id", "customer_name",
 			"purchase_amount", "total_discount", "total_amount",
 			"vat_amount", "xvat_amount",
 			"created_at", "updated_at", "created_by", "updated_by"
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`,
 		bill.ID,
+		bill.BranchID,
+		bill.POSID,
 		bill.Status,
-		bill.PaymentMethod,
+		paymentMethod,
+		paymentRef,
+		memberID,
+		bill.CustomerName,
 		bill.PurchaseAmount,
 		bill.TotalDiscount,
 		bill.TotalAmount,
@@ -71,7 +89,8 @@ func (r *billRepositoryPG) Create(ctx context.Context, bill *Bill) error {
 func (r *billRepositoryPG) GetByID(ctx context.Context, id string) (*Bill, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
-			"id", "status", "payment_method",
+			"id", "branch_id", "pos_id", "status", "payment_method", "payment_ref",
+			"member_id", "customer_name",
 			"purchase_amount", "total_discount", "total_amount",
 			"vat_amount", "xvat_amount",
 			"created_at", "updated_at", "created_by", "updated_by"
@@ -82,11 +101,17 @@ func (r *billRepositoryPG) GetByID(ctx context.Context, id string) (*Bill, error
 	var b Bill
 	var createdAt, updatedAt time.Time
 	var createdBy, updatedBy sql.NullString
+	var paymentMethod, paymentRef, memberID sql.NullString
 
 	err := row.Scan(
 		&b.ID,
+		&b.BranchID,
+		&b.POSID,
 		&b.Status,
-		&b.PaymentMethod,
+		&paymentMethod,
+		&paymentRef,
+		&memberID,
+		&b.CustomerName,
 		&b.PurchaseAmount,
 		&b.TotalDiscount,
 		&b.TotalAmount,
@@ -112,6 +137,15 @@ func (r *billRepositoryPG) GetByID(ctx context.Context, id string) (*Bill, error
 	if updatedBy.Valid {
 		b.UpdatedBy = updatedBy.String
 	}
+	if paymentMethod.Valid {
+		b.PaymentMethod = paymentMethod.String
+	}
+	if paymentRef.Valid {
+		b.PaymentRef = paymentRef.String
+	}
+	if memberID.Valid {
+		b.MemberID = memberID.String
+	}
 
 	return &b, nil
 }
@@ -129,7 +163,7 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 			"bill_id", "part_code", "address_code",
 			"unit_id", "uni_label", "unit_label_th",
 			"name", "cost", "price", "qty"
-		FROM "bill_details"
+		FROM "bill_item_detail"
 		WHERE "bill_id" = $1
 		ORDER BY "part_code", "address_code"
 	`, id)
@@ -204,7 +238,8 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int) ([]Bill,
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
-			"id", "status", "payment_method",
+			"id", "branch_id", "pos_id", "status", "payment_method", "payment_ref",
+			"member_id", "customer_name",
 			"purchase_amount", "total_discount", "total_amount",
 			"vat_amount", "xvat_amount",
 			"created_at", "updated_at", "created_by", "updated_by"
@@ -222,11 +257,17 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int) ([]Bill,
 		var b Bill
 		var createdAt, updatedAt time.Time
 		var createdBy, updatedBy sql.NullString
+		var paymentMethod, paymentRef, memberID sql.NullString
 
 		if err := rows.Scan(
 			&b.ID,
+			&b.BranchID,
+			&b.POSID,
 			&b.Status,
-			&b.PaymentMethod,
+			&paymentMethod,
+			&paymentRef,
+			&memberID,
+			&b.CustomerName,
 			&b.PurchaseAmount,
 			&b.TotalDiscount,
 			&b.TotalAmount,
@@ -248,6 +289,15 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int) ([]Bill,
 		if updatedBy.Valid {
 			b.UpdatedBy = updatedBy.String
 		}
+		if paymentMethod.Valid {
+			b.PaymentMethod = paymentMethod.String
+		}
+		if paymentRef.Valid {
+			b.PaymentRef = paymentRef.String
+		}
+		if memberID.Valid {
+			b.MemberID = memberID.String
+		}
 
 		bills = append(bills, b)
 	}
@@ -256,5 +306,80 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int) ([]Bill,
 	}
 
 	return bills, nil
+}
+
+func (r *billRepositoryPG) GetNewBillByPOS(ctx context.Context, posID string) (*Bill, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT
+			"id", "branch_id", "pos_id", "status", "payment_method", "payment_ref",
+			"member_id", "customer_name",
+			"purchase_amount", "total_discount", "total_amount",
+			"vat_amount", "xvat_amount",
+			"created_at", "updated_at", "created_by", "updated_by"
+		FROM "bill_master"
+		WHERE "pos_id" = $1 AND "status" = 'new'
+		ORDER BY "created_at" DESC
+		LIMIT 1
+	`, posID)
+
+	var b Bill
+	var createdAt, updatedAt time.Time
+	var createdBy, updatedBy sql.NullString
+	var paymentMethod, paymentRef, memberID sql.NullString
+
+	err := row.Scan(
+		&b.ID,
+		&b.BranchID,
+		&b.POSID,
+		&b.Status,
+		&paymentMethod,
+		&paymentRef,
+		&memberID,
+		&b.CustomerName,
+		&b.PurchaseAmount,
+		&b.TotalDiscount,
+		&b.TotalAmount,
+		&b.VATAmount,
+		&b.XVATAmount,
+		&createdAt,
+		&updatedAt,
+		&createdBy,
+		&updatedBy,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	b.CreatedAt = createdAt
+	b.UpdatedAt = updatedAt
+	if createdBy.Valid {
+		b.CreatedBy = createdBy.String
+	}
+	if updatedBy.Valid {
+		b.UpdatedBy = updatedBy.String
+	}
+	if paymentMethod.Valid {
+		b.PaymentMethod = paymentMethod.String
+	}
+	if paymentRef.Valid {
+		b.PaymentRef = paymentRef.String
+	}
+	if memberID.Valid {
+		b.MemberID = memberID.String
+	}
+
+	return &b, nil
+}
+
+func (r *billRepositoryPG) UpdateStatus(ctx context.Context, billID, status, updatedBy string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE "bill_master"
+		SET "status" = $1, "updated_at" = now(), "updated_by" = $2
+		WHERE "id" = $3
+	`, status, updatedBy, billID)
+	return err
 }
 

@@ -48,7 +48,7 @@ func (h *POSHandler) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items": out,
+		"pos": out,
 	})
 }
 

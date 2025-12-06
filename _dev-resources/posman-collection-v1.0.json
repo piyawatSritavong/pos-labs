@@ -39,7 +39,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\",\n  \"branchId\": \"00000\",\n  \"posId\": \"POS001\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/auth/login",
@@ -179,14 +179,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"id\": \"user001\",\n  \"username\": \"user001\",\n  \"roleId\": \"role.cashier\",\n  \"name\": \"Test User\",\n  \"password\": \"password123\",\n  \"isActive\": true,\n  \"isSuperuser\": false\n}"
+              "raw": "{\n  \"username\": \"user001\",\n  \"roleId\": \"role.cashier\",\n  \"name\": \"Test User\",\n  \"password\": \"password123\",\n  \"isActive\": true,\n  \"isSuperuser\": false\n}"
             },
             "url": {
               "raw": "{{base_url}}/users",
               "host": ["{{base_url}}"],
               "path": ["users"]
             },
-            "description": "Create new user. Password will be hashed automatically. Requires 'users:write' permission."
+            "description": "Create new user. User ID will be auto-generated as UUID without dashes. Password will be hashed automatically. Requires 'users:write' permission."
           },
           "response": []
         },
@@ -330,9 +330,9 @@
           "response": []
         },
         {
-          "name": "POST /bills",
+          "name": "GET /bills/:id",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
               {
                 "key": "Authorization",
@@ -341,11 +341,39 @@
               }
             ],
             "url": {
+              "raw": "{{base_url}}/bills/20251204000001",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001"]
+            },
+            "description": "Get bill by ID with full details and discounts. Uses branchId and posId from session (set at login). Returns full bill with item details and discount details. Requires 'bills:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /bills",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
               "raw": "{{base_url}}/bills",
               "host": ["{{base_url}}"],
               "path": ["bills"]
             },
-            "description": "Creates a new empty bill. No request body required. Returns the generated bill ID (format: YYYYMMDD + 6-digit counter, e.g., '20251204000001'). Requires 'bills:write' permission."
+            "description": "Creates a new empty bill. Uses branchId and posId from session (set at login). Returns the generated bill ID (format: YYYYMMDD + 6-digit counter, e.g., '20251204000001'). POS must not have an existing bill with status 'new' - hold that bill first. Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -369,7 +397,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "add-item"]
             },
-            "description": "Add item to bill (mock implementation). Requires 'bills:write' permission."
+            "description": "Add item to bill (mock implementation). Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -389,7 +417,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "remove-item"]
             },
-            "description": "Remove item from bill (mock implementation). Requires 'bills:write' permission."
+            "description": "Remove item from bill (mock implementation). Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -413,7 +441,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "add-discount"]
             },
-            "description": "Apply discount to bill (mock implementation). Requires 'bills:write' permission."
+            "description": "Apply discount to bill (mock implementation). Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -433,7 +461,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "remove-discount"]
             },
-            "description": "Remove discount from bill (mock implementation). Requires 'bills:write' permission."
+            "description": "Remove discount from bill (mock implementation). Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -453,27 +481,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "hold"]
             },
-            "description": "Hold bill (mock implementation). Requires 'bills:write' permission."
-          },
-          "response": []
-        },
-        {
-          "name": "PUT /bills/:id/resume",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{auth_token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/bills/20251204000001/resume",
-              "host": ["{{base_url}}"],
-              "path": ["bills", "20251204000001", "resume"]
-            },
-            "description": "Resume held bill (mock implementation). Requires 'bills:write' permission."
+            "description": "Hold bill. Changes status from 'new' to 'hold'. Only bills with status 'new' can be held. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -493,7 +501,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "checkout"]
             },
-            "description": "Complete bill (mock implementation). Requires 'bills:write' permission."
+            "description": "Complete bill (mock implementation). Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -517,7 +525,35 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "payment"]
             },
-            "description": "Process payment for bill (mock implementation). Requires 'bills:write' permission."
+            "description": "Process payment for bill (mock implementation). Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/switch",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetBillId\": \"20251204000002\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/switch",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "switch"]
+            },
+            "description": "Switch bills or create new bill. Uses branchId and posId from session (set at login). If targetBillId is not provided or empty: creates a new bill. If targetBillId is provided: switches to that bill (holds current 'new' bill, resumes target). Backend automatically finds and holds the current 'new' bill for the same POS. Returns full bill details. Requires 'bills:write' permission."
           },
           "response": []
         }

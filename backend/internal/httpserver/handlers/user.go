@@ -3,10 +3,12 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -52,7 +54,7 @@ func (h *UserHandler) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items": out,
+		"users": out,
 	})
 }
 
@@ -85,7 +87,6 @@ func (h *UserHandler) Get(c *gin.Context) {
 
 func (h *UserHandler) Create(c *gin.Context) {
 	var req struct {
-		ID          string `json:"id" binding:"required"`
 		Username    string `json:"username" binding:"required"`
 		RoleID      string `json:"roleId" binding:"required"`
 		Name        string `json:"name" binding:"required"`
@@ -99,6 +100,9 @@ func (h *UserHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Generate UUID without dashes for user ID
+	userID := strings.ReplaceAll(uuid.New().String(), "-", "")
+
 	// Hash password
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -107,7 +111,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 	}
 
 	user := &repository.User{
-		ID:           req.ID,
+		ID:           userID,
 		Username:     req.Username,
 		RoleID:       req.RoleID,
 		Name:         req.Name,

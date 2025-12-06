@@ -62,7 +62,7 @@ func (h *PartsHandler) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items": out,
+		"parts": out,
 	})
 }
 

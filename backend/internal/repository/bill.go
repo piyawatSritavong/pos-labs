@@ -7,8 +7,13 @@ import (
 
 type Bill struct {
 	ID            string
+	BranchID      string
+	POSID         string
 	Status        string // new, hold, completed, cancelled
 	PaymentMethod string // cash, bank, credit, debit, other
+	PaymentRef    string
+	MemberID      string
+	CustomerName  string
 	PurchaseAmount float64
 	TotalDiscount  float64
 	TotalAmount    float64
@@ -46,5 +51,7 @@ type BillRepository interface {
 	GetByID(ctx context.Context, id string) (*Bill, error)
 	List(ctx context.Context, limit, offset int) ([]Bill, error)
 	GetFullByID(ctx context.Context, id string) (*Bill, []BillDetail, []BillDiscountDetail, error)
+	GetNewBillByPOS(ctx context.Context, posID string) (*Bill, error)
+	UpdateStatus(ctx context.Context, billID, status, updatedBy string) error
 }
 

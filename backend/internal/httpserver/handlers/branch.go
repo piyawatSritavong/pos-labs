@@ -53,7 +53,7 @@ func (h *BranchHandler) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items": out,
+		"branches": out,
 	})
 }
 
