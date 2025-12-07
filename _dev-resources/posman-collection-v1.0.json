@@ -101,7 +101,8 @@
               "raw": "{{base_url}}/auth/me",
               "host": ["{{base_url}}"],
               "path": ["auth", "me"]
-            }
+            },
+            "description": "Get current user info. Returns name, roleId, isActive, and optionally branchId and posId (if set in session at login). Requires authentication."
           },
           "response": []
         }
@@ -122,14 +123,14 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/users?limit=50&offset=0",
+              "raw": "{{base_url}}/users?limit=20&offset=0",
               "host": ["{{base_url}}"],
               "path": ["users"],
               "query": [
                 {
                   "key": "limit",
-                  "value": "50",
-                  "description": "Max items to return (1-500, default: 50)"
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
                 },
                 {
                   "key": "offset",
@@ -255,14 +256,14 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/parts?limit=50&offset=0",
+              "raw": "{{base_url}}/parts?limit=20&offset=0",
               "host": ["{{base_url}}"],
               "path": ["parts"],
               "query": [
                 {
                   "key": "limit",
-                  "value": "50",
-                  "description": "Max items to return (1-500, default: 50)"
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
                 },
                 {
                   "key": "offset",
@@ -271,6 +272,58 @@
                 }
               ]
             }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /parts/search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parts/search?q=Sample&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["parts", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "Sample",
+                  "description": "Universal search query - searches in: part code, barcode, part name, name_th, category name, category name_th, address code, store address shelf, store address remarks, store label, store label_th - optional"
+                },
+                {
+                  "key": "categoryId",
+                  "value": "",
+                  "description": "Filter by category ID - optional"
+                },
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "description": "Filter by active status (true/false) - optional"
+                },
+                {
+                  "key": "crossBranch",
+                  "value": "",
+                  "description": "If true, search across all branches; if false (default), only session branch - optional"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                }
+              ]
+            },
+            "description": "Universal search for parts with filters. Returns list of parts with full details (like GET /parts/:code) including addresses array. If crossBranch is not specified or false, only shows parts from session's branch (via branch_store). If crossBranch is true, shows parts from all branches. Universal search query (q) searches across ALL part-related fields: part code, barcode, part name, name_th, category name, category name_th, address code, store address shelf, store address remarks, store label, and store label_th. Requires 'parts:read' permission."
           },
           "response": []
         },
@@ -310,14 +363,14 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/bills?limit=50&offset=0",
+              "raw": "{{base_url}}/bills?limit=20&offset=0",
               "host": ["{{base_url}}"],
               "path": ["bills"],
               "query": [
                 {
                   "key": "limit",
-                  "value": "50",
-                  "description": "Max items to return (1-500, default: 50)"
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
                 },
                 {
                   "key": "offset",
@@ -345,7 +398,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001"]
             },
-            "description": "Get bill by ID with full details and discounts. Uses branchId and posId from session (set at login). Returns full bill with item details and discount details. Requires 'bills:read' permission."
+            "description": "Get bill by ID with full details and discounts. Uses branchId and posId from session (set at login). Returns full bill with item details, discount details, and calculated amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount). Amounts are automatically calculated based on items, discounts, and company taxType. Requires 'bills:read' permission."
           },
           "response": []
         },
@@ -392,12 +445,128 @@
                 "value": "application/json"
               }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partCode\": \"P0001\",\n  \"addressCode\": \"ADDR0001\",\n  \"qty\": 1\n}"
+            },
             "url": {
               "raw": "{{base_url}}/bills/20251204000001/add-item",
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "add-item"]
             },
-            "description": "Add item to bill (mock implementation). Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+            "description": "Add item to bill by part code. Validates that part exists in the branch (from session). If item already exists in bill, increments quantity. Otherwise, inserts new bill item detail. Request body: { \"partCode\": \"P0001\", \"addressCode\": \"ADDR0001\", \"qty\": 1 }. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after adding item. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-item-by-barcode",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"barcode\": \"8850000001\",\n  \"qty\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251206000001/add-item-by-barcode",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251206000001", "add-item-by-barcode"]
+            },
+            "description": "Add item to bill by barcode. Gets part by barcode, validates it exists in the branch (from session), and uses the default address (is_default=true). If item already exists in bill, increments quantity. Otherwise, inserts new bill item detail. Request body: { \"barcode\": \"1234567890123\", \"qty\": 1 }. Returns error 'no_default_store' if part exists in multiple stores but no default is configured. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after adding item. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-item-by-barcode - Test: Item NOT in branch stores",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"barcode\": \"8850000012\",\n  \"qty\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251206000001/add-item-by-barcode",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251206000001", "add-item-by-barcode"]
+            },
+            "description": "TEST CASE 1: Add item by barcode that exists in database but NOT in current branch's branch_store. Barcode 8850000012 (Part P0012) exists ONLY in store_00001 (branch 00001) and does NOT exist in branch 00000's stores (main/tmp_store/no_default_store). Expected: Should return error 'part_not_found' with message 'Part does not exist in this branch'. Login with branchId: 00000 to test this scenario."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-item-by-barcode - Test: Item in both stores (use default)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"barcode\": \"8850000001\",\n  \"qty\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251206000001/add-item-by-barcode",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251206000001", "add-item-by-barcode"]
+            },
+            "description": "TEST CASE 2: Add item by barcode that exists in BOTH stores of branch 00000 (main and tmp_store). Barcode 8850000001 exists in both stores. Expected: Should use address from 'main' store (is_default=true) instead of tmp_store. Login with branchId: 00000 to test this scenario. Verify the addressCode in response is from 'main' store (ADDR0001)."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-item-by-barcode - Test: No default store error",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"barcode\": \"8850000011\",\n  \"qty\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251206000001/add-item-by-barcode",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251206000001", "add-item-by-barcode"]
+            },
+            "description": "TEST CASE 3: Test error handling when no default store exists. Barcode 8850000011 (Part P0011) exists in both tmp_store and no_default_store, but NEITHER store is marked as default (is_default=false) for branch 00000. Expected: Backend should return error 'no_default_store' with message indicating that frontend should use add-item endpoint to select a specific store address. Login with branchId: 00000 to test this scenario."
           },
           "response": []
         },
@@ -410,14 +579,22 @@
                 "key": "Authorization",
                 "value": "Bearer {{auth_token}}",
                 "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
               }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partCode\": \"P0001\",\n  \"addressCode\": \"ADDR0001\",\n  \"qty\": 1,\n  \"isRemoveAll\": false\n}"
+            },
             "url": {
               "raw": "{{base_url}}/bills/20251204000001/remove-item",
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "remove-item"]
             },
-            "description": "Remove item from bill (mock implementation). Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+            "description": "Remove item from bill by part code. Request body: { \"partCode\": \"P0001\", \"addressCode\": \"ADDR0001\", \"qty\": 1 (optional, default: 1), \"isRemoveAll\": false (optional) }. If isRemoveAll is true, deletes the item completely regardless of qty. If false: removes the specified qty (default 1). If qty to remove >= existing qty, deletes the item. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after removal. Returns 400 if item not found. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -436,12 +613,16 @@
                 "value": "application/json"
               }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"promotionCode\": \"PROMO001\"\n}"
+            },
             "url": {
               "raw": "{{base_url}}/bills/20251204000001/add-discount",
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "add-discount"]
             },
-            "description": "Apply discount to bill (mock implementation). Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+            "description": "Apply discount to bill using promotion code from promotion_master. Request body: { \"promotionCode\": \"PROMO001\" }. Validates promotion exists in promotion_master. Supports THB (fixed amount) and percentage discounts. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) based on company taxType. If promotion already exists in bill, updates it. Returns 404 if promotion not found. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -454,14 +635,22 @@
                 "key": "Authorization",
                 "value": "Bearer {{auth_token}}",
                 "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
               }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"promotionCode\": \"PROMO001\"\n}"
+            },
             "url": {
               "raw": "{{base_url}}/bills/20251204000001/remove-discount",
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "remove-discount"]
             },
-            "description": "Remove discount from bill (mock implementation). Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+            "description": "Remove discount from bill by promotion code. Request body: { \"promotionCode\": \"PROMO001\" }. Validates discount exists in bill. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after removal. Returns 400 if discount not found in bill. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -627,13 +816,13 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/branches?limit=50&offset=0",
+              "raw": "{{base_url}}/branches?limit=20&offset=0",
               "host": ["{{base_url}}"],
               "path": ["branches"],
               "query": [
                 {
                   "key": "limit",
-                  "value": "50"
+                  "value": "20"
                 },
                 {
                   "key": "offset",
@@ -661,7 +850,7 @@
               "host": ["{{base_url}}"],
               "path": ["branches", "00000"]
             },
-            "description": "Get branch by ID. Requires 'branch:read' permission."
+            "description": "Get branch by ID with stores array. Returns branch details including all stores linked to the branch via branch_store table. Stores are ordered by is_default DESC (default stores first). Requires 'branch:read' permission."
           },
           "response": []
         },
@@ -758,13 +947,13 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/pos?limit=50&offset=0",
+              "raw": "{{base_url}}/pos?limit=20&offset=0",
               "host": ["{{base_url}}"],
               "path": ["pos"],
               "query": [
                 {
                   "key": "limit",
-                  "value": "50"
+                  "value": "20"
                 },
                 {
                   "key": "offset",

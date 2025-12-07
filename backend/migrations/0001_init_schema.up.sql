@@ -25,6 +25,33 @@ create table "branch_setting"(
   PRIMARY KEY ("branch_id")
 );
 
+CREATE TABLE "store_master" (
+  "id" text,
+  "branch_id" text not null,
+  "label" text,
+  "label_th" text,
+  "is_default" boolean,
+  PRIMARY KEY ("id"),
+  CONSTRAINT "FK_store_master_branch_id"
+    FOREIGN KEY ("branch_id")
+      REFERENCES "branch_setting"("branch_id")
+);
+
+create table "branch_store"(
+  "branch_id" text not null,
+  "store_id" text not null,
+  "is_default" boolean,
+  PRIMARY KEY ("branch_id", "store_id"),
+  CONSTRAINT "FK_branch_store_branch_id"
+    FOREIGN KEY ("branch_id")
+      REFERENCES "branch_setting"("branch_id")
+      ON DELETE CASCADE,
+  CONSTRAINT "FK_branch_store_store_id"
+    FOREIGN KEY ("store_id")
+      REFERENCES "store_master"("id")
+      ON DELETE CASCADE
+);
+
 create table "pos_setting"(
   pos_id text,
   branch_id text not null,
@@ -38,7 +65,7 @@ create table "pos_setting"(
 CREATE TABLE "promotion_master" (
   "code" text,
   "details" text,
-  "unit" text,
+  "unit" text, -- THB or percentage
   "amount" decimal(10,2),
   PRIMARY KEY ("code")
 );
@@ -79,18 +106,6 @@ CREATE TABLE "part_master" (
 );
 
 CREATE INDEX "unique" ON "part_master" ("bar_code");
-
-CREATE TABLE "store_master" (
-  "id" text,
-  "branch_id" text not null,
-  "label" text,
-  "label_th" text,
-  "is_default" boolean,
-  PRIMARY KEY ("id"),
-  CONSTRAINT "FK_store_master_branch_id"
-    FOREIGN KEY ("branch_id")
-      REFERENCES "branch_setting"("branch_id")
-);
 
 CREATE TABLE "address_master" (
   "code" text,

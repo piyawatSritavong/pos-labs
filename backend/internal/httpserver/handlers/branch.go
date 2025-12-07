@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"backend/internal/config"
 	"backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -18,11 +19,11 @@ func NewBranchHandler(branch repository.BranchRepository) *BranchHandler {
 }
 
 func (h *BranchHandler) List(c *gin.Context) {
-	limit := 50
-	offset := 0
+	limit := config.DefaultLimit
+	offset := config.DefaultOffset
 
 	if v := c.Query("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= config.MaxLimit {
 			limit = n
 		}
 	}
@@ -74,6 +75,25 @@ func (h *BranchHandler) Get(c *gin.Context) {
 		return
 	}
 
+	// Get stores for this branch
+	stores, err := h.branch.GetStoresByBranchID(c.Request.Context(), id)
+	if err != nil {
+		// Log error but continue with empty stores array
+		stores = []repository.Store{}
+	}
+
+	// Build stores array
+	storesOut := make([]gin.H, 0, len(stores))
+	for _, s := range stores {
+		storesOut = append(storesOut, gin.H{
+			"id":        s.ID,
+			"branchId":  s.BranchID,
+			"label":     s.Label,
+			"labelTh":   s.LabelTH,
+			"isDefault": s.IsDefault,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"branchId":       branch.BranchID,
 		"companyId":      branch.CompanyID,
@@ -83,6 +103,7 @@ func (h *BranchHandler) Get(c *gin.Context) {
 		"branchAddressTh": branch.BranchAddressTH,
 		"phone":          branch.Phone,
 		"email":          branch.Email,
+		"stores":         storesOut,
 	})
 }
 

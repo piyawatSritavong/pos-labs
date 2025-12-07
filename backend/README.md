@@ -59,11 +59,17 @@ On startup (`cmd/server/main.go`):
 ### Authentication, Sessions, and RBAC
 
 - **Login flow**:
-  - `POST /auth/login` with JSON `{ "username": "admin", "password": "admin123" }`.
+  - `POST /auth/login` with JSON `{ "username": "admin", "password": "admin123", "branchId": "00000", "posId": "POS001" }`.
+  - `branchId` and `posId` are optional (required for cashier users, optional for superusers/admin).
   - Verifies credentials against the `user` table (password stored as bcrypt hash).
-  - On success, creates a row in the `session` table with:
+  - If `branchId` and `posId` are provided:
+    - Validates branch and POS exist.
+    - Validates user has access to branch (unless superuser).
+  - On success, deletes any existing session for the user (only 1 session per user), then creates a new row in the `session` table with:
     - `id` – opaque random token (64-char hex, not the user ID)
-    - `user_id` – internal user primary key
+    - `user_id` – internal user primary key (UNIQUE constraint - only 1 session per user)
+    - `branch_id` – branch the user is working at (nullable)
+    - `pos_id` – POS the user is working at (nullable)
     - `ip` – client IP address (for security)
     - `user_agent` – client user agent
     - `created_at`, `expires_at`, `last_seen_at` (all in UTC)
@@ -79,12 +85,17 @@ On startup (`cmd/server/main.go`):
 - **Using the token**:
   - Clients send `Authorization: Bearer <token>` on all protected requests.
   - The middleware validates the token, checks expiration, and optionally matches IP.
+  - The middleware extracts `branchId` and `posId` from the session and sets them in the request context.
+  - All bill-related endpoints automatically use `branchId` and `posId` from the session (no need to pass them in requests).
 - **Logout**:
   - `POST /auth/logout` with `Authorization: Bearer <token>` deletes the session row.
 - **Session management**:
   - Sessions are stored in the database (`session` table) for better control.
+  - Only 1 active session per user (enforced by UNIQUE constraint on `user_id`).
+  - When a user logs in, any existing session for that user is automatically deleted.
   - Background goroutine runs every 5 minutes to delete expired sessions.
   - Session duration is configurable via `SESSION_DURATION` environment variable.
+  - Sessions store `branch_id` and `pos_id` for cashier users, allowing bill operations to automatically use the correct branch and POS.
 - **RBAC enforcement**:
   - Middleware `RequireAuth()` validates the session and loads the user.
   - Middleware `RequirePermission(resource, action)` checks RBAC using `role`, `permission`, `role_permission`.
@@ -101,32 +112,91 @@ On startup (`cmd/server/main.go`):
 #### Authentication
 - `POST /auth/login` – Login with `{ "username": "...", "password": "..." }`. Returns `token`, `name`, `role_id`, `expires`.
 - `POST /auth/logout` – Logout (requires `Authorization: Bearer <token>`).
-- `GET /auth/me` – Get current user info (requires auth). Returns `name`, `role_id`, `is_active`.
+- `GET /auth/me` – Get current user info (requires auth). Returns `name`, `role_id`, `is_active`, `branchId`, `posId` (if set in session).
 
 #### Parts (requires `parts:read` permission)
-- `GET /parts?limit=50&offset=0` – List parts with pagination.
-  - Query params: `limit` (1-500, default: 50), `offset` (default: 0).
+- `GET /parts?limit=20&offset=0` – List parts with pagination.
+  - Query params: `limit` (1-500, default: 20), `offset` (default: 0).
   - Returns array of parts with category, unit, and total stock.
+- `GET /parts/search?q=...` – Universal search for parts.
+  - Query params: `q` (search query), `categoryId`, `isActive`, `crossBranch`, `limit` (default: 20), `offset` (default: 0).
+  - Searches across: part code, barcode, part name, name_th, category name, category name_th, address code, store address shelf, store address remarks, store label, store label_th.
+  - If `crossBranch` is false (default), only shows parts from session's branch.
+  - Returns full part details with addresses array.
 - `GET /parts/:code` – Get part details by code.
   - Returns full part info with nested category, unit, total stock, and addresses (with store info).
 
 #### Bills
-- `GET /bills?limit=50&offset=0` – List bills with pagination (requires `bills:read`).
-  - Query params: `limit` (1-500, default: 50), `offset` (default: 0).
+- `GET /bills?limit=20&offset=0` – List bills with pagination (requires `bills:read`).
+  - Query params: `limit` (1-500, default: 20), `offset` (default: 0).
   - Returns array of bills ordered by `created_at DESC`.
+  - Uses `branchId` and `posId` from session (set at login).
 - `GET /bills/:id` – Get bill details with items and discounts (requires `bills:read`).
+  - Uses `branchId` and `posId` from session (set at login).
+  - Returns full bill with `details` (items) and `discounts` arrays.
 - `POST /bills` – Create empty bill (requires `bills:write`).
   - No request body required.
+  - Uses `branchId` and `posId` from session (set at login).
   - Generates systematic bill ID using `counter` table (format: `YYYYMMDD` + 6-digit counter, e.g., `20251204000001`).
   - Returns `{ "id": "20251204000001" }`.
-- `PUT /bills/:id/add-item` – Add item to bill (requires `bills:write`, mock implementation).
-- `PUT /bills/:id/remove-item` – Remove item from bill (requires `bills:write`, mock implementation).
-- `PUT /bills/:id/add-discount` – Apply discount to bill (requires `bills:write`, mock implementation).
-- `PUT /bills/:id/remove-discount` – Remove discount from bill (requires `bills:write`, mock implementation).
-- `PUT /bills/:id/hold` – Hold bill (requires `bills:write`, mock implementation).
-- `PUT /bills/:id/resume` – Resume held bill (requires `bills:write`, mock implementation).
+  - If POS already has a bill with status "new", returns 409 conflict error.
+- `PUT /bills/:id/add-item` – Add item to bill by part code (requires `bills:write`).
+  - Request body: `{ "partCode": "P0001", "addressCode": "A001", "qty": 1 }`.
+  - Validates that part exists in the branch (from session).
+  - If item already exists in bill, increments quantity; otherwise inserts new bill item detail.
+  - Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount).
+  - Uses `branchId` and `posId` from session (set at login).
+- `PUT /bills/:id/add-item-by-barcode` – Add item to bill by barcode (requires `bills:write`).
+  - Request body: `{ "barcode": "1234567890123", "qty": 1 }`.
+  - Gets part by barcode, validates it exists in the branch (from session).
+  - Uses the default address (is_default=true) for the part. Returns error "no_default_store" if no default is configured.
+  - If item already exists in bill, increments quantity; otherwise inserts new bill item detail.
+  - Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount).
+  - Uses `branchId` and `posId` from session (set at login).
+- `PUT /bills/:id/remove-item` – Remove item from bill by part code (requires `bills:write`).
+  - Request body: `{ "partCode": "P0001", "addressCode": "A001", "qty": 1 (optional, default: 1), "isRemoveAll": false (optional) }`.
+  - If `isRemoveAll` is `true`: deletes the item completely (regardless of qty).
+  - If `isRemoveAll` is `false` or not provided: removes specified `qty` (default: 1). If qty to remove >= existing qty, deletes the item.
+  - Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount).
+  - Returns 400 if item not found in bill.
+  - Uses `branchId` and `posId` from session (set at login).
+- `PUT /bills/:id/add-discount` – Apply discount to bill (requires `bills:write`).
+  - Request body: `{ "promotionCode": "PROMO001" }`.
+  - Validates promotion exists in `promotion_master` table.
+  - Supports THB (fixed amount) and percentage discounts.
+  - If promotion already exists in bill, updates it; otherwise inserts new discount.
+  - Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount).
+  - Returns 404 if promotion not found.
+  - Uses `branchId` and `posId` from session (set at login).
+- `PUT /bills/:id/remove-discount` – Remove discount from bill (requires `bills:write`).
+  - Request body: `{ "promotionCode": "PROMO001" }`.
+  - Validates discount exists in bill.
+  - Removes discount from `bill_discount_detail` table.
+  - Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount).
+  - Returns 400 if discount not found in bill.
+  - Uses `branchId` and `posId` from session (set at login).
+- `PUT /bills/:id/hold` – Hold bill (requires `bills:write`).
+  - Changes status from "new" to "hold". Only bills with status "new" can be held.
+  - Uses `branchId` and `posId` from session (set at login).
+- `PUT /bills/switch` – Switch bills or create new bill (requires `bills:write`).
+  - Request body: `{ "targetBillId": "20251204000002" }` (optional).
+  - If `targetBillId` is not provided or empty: creates a new bill.
+  - If `targetBillId` is provided: switches to that bill (holds current "new" bill, resumes target).
+  - Backend automatically finds and holds the current "new" bill for the same POS.
+  - Returns full bill details with items and discounts.
+  - Uses `branchId` and `posId` from session (set at login).
 - `PUT /bills/:id/checkout` – Complete bill (requires `bills:write`, mock implementation).
 - `PUT /bills/:id/payment` – Process payment (requires `bills:write`, mock implementation).
+
+**Bill Amount Calculation:**
+All bill amounts are automatically recalculated after any item or discount operation:
+- **purchaseAmount**: Sum of (item.price × item.qty) for all items
+- **totalDiscount**: Sum of discounts (THB fixed amount or percentage of purchaseAmount)
+- **amountAfterDiscount**: purchaseAmount - totalDiscount
+- **Tax Calculation** (based on company `taxType`):
+  - **xvat** (exclude VAT): `vatAmount = 0`, `totalAmount = amountAfterDiscount`, `xvatAmount = totalAmount`
+  - **vat** (price includes VAT): `totalAmount = amountAfterDiscount`, `vatAmount = amountAfterDiscount × (taxRate / (1 + taxRate))`, `xvatAmount = totalAmount - vatAmount`
+- When `taxType = "vat"`, part prices already include VAT, so VAT is extracted from the price rather than added
 
 #### Company Settings
 - `GET /company` – Get company settings (requires `company:read`).
@@ -135,22 +205,23 @@ On startup (`cmd/server/main.go`):
   - Company cannot be created or deleted (single record).
 
 #### Branches
-- `GET /branches?limit=50&offset=0` – List branches (requires `branch:read`).
+- `GET /branches?limit=20&offset=0` – List branches (requires `branch:read`).
 - `GET /branches/:id` – Get branch by ID (requires `branch:read`).
+  - Returns branch details with `stores` array (all stores linked to the branch via `branch_store`).
 - `POST /branches` – Create new branch (requires `branch:write`).
 - `PUT /branches/:id` – Update branch (requires `branch:write`).
 - `DELETE /branches/:id` – Delete branch (requires `branch:delete`).
   - Cannot delete if only 1 record exists.
 
 #### POS
-- `GET /pos?limit=50&offset=0` – List POS (requires `pos:read`).
+- `GET /pos?limit=20&offset=0` – List POS (requires `pos:read`).
 - `GET /pos/:id` – Get POS by ID (requires `pos:read`).
 - `POST /pos` – Create new POS (requires `pos:write`).
 - `PUT /pos/:id` – Update POS (requires `pos:write`).
 - `DELETE /pos/:id` – Delete POS (requires `pos:delete`).
 
 #### Users
-- `GET /users?limit=50&offset=0` – List users (requires `users:read`).
+- `GET /users?limit=20&offset=0` – List users (requires `users:read`).
 - `GET /users/:id` – Get user by ID (requires `users:read`).
 - `POST /users` – Create new user (requires `users:write`).
   - Password is automatically hashed with bcrypt.
@@ -188,10 +259,12 @@ Key tables:
 - `role_permission` - Role-permission mappings
 - `part_master` - Product/part master data
 - `store_master` - Warehouse/store locations (linked to branches)
+- `branch_store` - Links branches to stores (many-to-many with is_default flag)
 - `address_master` - Stock locations within stores
-- `bill_master` - Sales transactions
+- `promotion_master` - Discount/promotion definitions (code, details, unit: THB/percentage, amount)
+- `bill_master` - Sales transactions (includes purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount)
 - `bill_item_detail` - Bill line items
-- `bill_discount_detail` - Applied discounts
+- `bill_discount_detail` - Applied discounts (links bills to promotions)
 - `member_master` - Customer/member information
 - `session` - Active user sessions
 

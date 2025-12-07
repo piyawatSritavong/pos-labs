@@ -51,11 +51,14 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	parts.Use(authMw.RequirePermission("parts", "read"))
 	{
 		parts.GET("", partsHandler.List)
+		parts.GET("/search", partsHandler.Search)
 		parts.GET("/:code", partsHandler.Get)
 	}
 
 	billRepo := repository.NewBillRepository(db)
-	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo)
+	companyRepo := repository.NewCompanyRepository(db)
+	promotionRepo := repository.NewPromotionRepository(db)
+	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo, partRepo, companyRepo, promotionRepo)
 	bills := r.Group("/bills")
 	bills.Use(authMw.RequirePermission("bills", "read"))
 	{
@@ -67,7 +70,8 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	billsWrite.Use(authMw.RequirePermission("bills", "write"))
 	{
 		billsWrite.POST("", billsHandler.Create)
-		billsWrite.PUT("/:id/add-item", billsHandler.AddItem) // add item to bill
+		billsWrite.PUT("/:id/add-item", billsHandler.AddItem) // add item to bill by part code
+		billsWrite.PUT("/:id/add-item-by-barcode", billsHandler.AddItemByBarcode) // add item to bill by barcode
 		billsWrite.PUT("/:id/remove-item", billsHandler.RemoveItem) // remove item from bill
 		billsWrite.PUT("/:id/add-discount", billsHandler.AddDiscount) // apply discount to bill
 		billsWrite.PUT("/:id/remove-discount", billsHandler.RemoveDiscount) // remove discount from bill
@@ -78,7 +82,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	}
 
 	// Company (read and update only)
-	companyRepo := repository.NewCompanyRepository(db)
+	// companyRepo already created above for BillsHandler
 	companyHandler := handlers.NewCompanyHandler(companyRepo)
 	company := r.Group("/company")
 	company.Use(authMw.RequirePermission("company", "read"))

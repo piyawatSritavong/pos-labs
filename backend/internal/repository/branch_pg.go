@@ -117,3 +117,38 @@ func (r *branchRepositoryPG) Count(ctx context.Context) (int, error) {
 	return count, err
 }
 
+func (r *branchRepositoryPG) GetStoresByBranchID(ctx context.Context, branchID string) ([]Store, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT s.id, s.branch_id, s.label, s.label_th, COALESCE(bs.is_default, false) as is_default
+		FROM "store_master" s
+		JOIN "branch_store" bs ON bs.store_id = s.id
+		WHERE bs.branch_id = $1
+		ORDER BY bs.is_default DESC, s.id
+	`, branchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stores []Store
+	for rows.Next() {
+		var s Store
+		if err := rows.Scan(
+			&s.ID,
+			&s.BranchID,
+			&s.Label,
+			&s.LabelTH,
+			&s.IsDefault,
+		); err != nil {
+			return nil, err
+		}
+		stores = append(stores, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return stores, nil
+}
+

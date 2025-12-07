@@ -53,5 +53,16 @@ type BillRepository interface {
 	GetFullByID(ctx context.Context, id string) (*Bill, []BillDetail, []BillDiscountDetail, error)
 	GetNewBillByPOS(ctx context.Context, posID string) (*Bill, error)
 	UpdateStatus(ctx context.Context, billID, status, updatedBy string) error
+	UpdateTimestamp(ctx context.Context, billID, updatedBy string) error
+	GetItemByPartCode(ctx context.Context, billID, partCode, addressCode string) (*BillDetail, error)
+	AddItem(ctx context.Context, detail *BillDetail) error
+	UpdateItemQty(ctx context.Context, billID, partCode, addressCode string, qty int) error
+	RemoveItem(ctx context.Context, billID, partCode, addressCode string) error
+	AddDiscount(ctx context.Context, discount *BillDiscountDetail) error
+	RemoveDiscount(ctx context.Context, billID, promotionCode string) error
+	GetDiscountByCode(ctx context.Context, billID, promotionCode string) (*BillDiscountDetail, error)
+	GetAllItems(ctx context.Context, billID string) ([]BillDetail, error)
+	GetAllDiscounts(ctx context.Context, billID string) ([]BillDiscountDetail, error)
+	UpdateAmounts(ctx context.Context, billID string, purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount float64) error
 }
 

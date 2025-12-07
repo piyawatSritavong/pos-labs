@@ -177,6 +177,14 @@ func SeedCoreData(db *sql.DB) error {
 		return err
 	}
 
+	// branch_store (link branch to store)
+	if _, err := tx.Exec(`
+		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
+		VALUES ('00000', 'main', true)
+	`); err != nil {
+		return err
+	}
+
 	// unit_master
 	if _, err := tx.Exec(`
 		INSERT INTO "unit_master"("id", "label", "label_th")

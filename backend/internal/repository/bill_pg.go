@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"backend/internal/config"
 )
 
 type billRepositoryPG struct {
@@ -230,7 +232,7 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 
 func (r *billRepositoryPG) List(ctx context.Context, limit, offset int) ([]Bill, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = config.DefaultLimit
 	}
 	if offset < 0 {
 		offset = 0
@@ -380,6 +382,191 @@ func (r *billRepositoryPG) UpdateStatus(ctx context.Context, billID, status, upd
 		SET "status" = $1, "updated_at" = now(), "updated_by" = $2
 		WHERE "id" = $3
 	`, status, updatedBy, billID)
+	return err
+}
+
+func (r *billRepositoryPG) UpdateTimestamp(ctx context.Context, billID, updatedBy string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE "bill_master"
+		SET "updated_at" = now(), "updated_by" = $1
+		WHERE "id" = $2
+	`, updatedBy, billID)
+	return err
+}
+
+func (r *billRepositoryPG) GetItemByPartCode(ctx context.Context, billID, partCode, addressCode string) (*BillDetail, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT
+			"bill_id", "part_code", "address_code",
+			"unit_id", "uni_label", "unit_label_th",
+			"name", "cost", "price", "qty"
+		FROM "bill_item_detail"
+		WHERE "bill_id" = $1 AND "part_code" = $2 AND "address_code" = $3
+	`, billID, partCode, addressCode)
+
+	var d BillDetail
+	err := row.Scan(
+		&d.BillID,
+		&d.PartCode,
+		&d.AddressCode,
+		&d.UnitID,
+		&d.UnitLabel,
+		&d.UnitLabelTH,
+		&d.Name,
+		&d.Cost,
+		&d.Price,
+		&d.Qty,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (r *billRepositoryPG) AddItem(ctx context.Context, detail *BillDetail) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO "bill_item_detail"(
+			"bill_id", "part_code", "address_code",
+			"unit_id", "uni_label", "unit_label_th",
+			"name", "cost", "price", "qty"
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT ("bill_id", "part_code", "address_code")
+		DO UPDATE SET "qty" = "bill_item_detail"."qty" + EXCLUDED."qty"
+	`, detail.BillID, detail.PartCode, detail.AddressCode,
+		detail.UnitID, detail.UnitLabel, detail.UnitLabelTH,
+		detail.Name, detail.Cost, detail.Price, detail.Qty)
+	return err
+}
+
+func (r *billRepositoryPG) UpdateItemQty(ctx context.Context, billID, partCode, addressCode string, qty int) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE "bill_item_detail"
+		SET "qty" = $1
+		WHERE "bill_id" = $2 AND "part_code" = $3 AND "address_code" = $4
+	`, qty, billID, partCode, addressCode)
+	return err
+}
+
+func (r *billRepositoryPG) RemoveItem(ctx context.Context, billID, partCode, addressCode string) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM "bill_item_detail"
+		WHERE "bill_id" = $1 AND "part_code" = $2 AND "address_code" = $3
+	`, billID, partCode, addressCode)
+	return err
+}
+
+func (r *billRepositoryPG) AddDiscount(ctx context.Context, discount *BillDiscountDetail) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO "bill_discount_detail"("bill_id", "promotion_code", "unit", "amount")
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT ("bill_id", "promotion_code")
+		DO UPDATE SET "unit" = EXCLUDED."unit", "amount" = EXCLUDED."amount"
+	`, discount.BillID, discount.PromotionCode, discount.Unit, discount.Amount)
+	return err
+}
+
+func (r *billRepositoryPG) RemoveDiscount(ctx context.Context, billID, promotionCode string) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM "bill_discount_detail"
+		WHERE "bill_id" = $1 AND "promotion_code" = $2
+	`, billID, promotionCode)
+	return err
+}
+
+func (r *billRepositoryPG) GetDiscountByCode(ctx context.Context, billID, promotionCode string) (*BillDiscountDetail, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT "bill_id", "promotion_code", "unit", "amount"
+		FROM "bill_discount_detail"
+		WHERE "bill_id" = $1 AND "promotion_code" = $2
+	`, billID, promotionCode)
+
+	var d BillDiscountDetail
+	err := row.Scan(&d.BillID, &d.PromotionCode, &d.Unit, &d.Amount)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (r *billRepositoryPG) GetAllItems(ctx context.Context, billID string) ([]BillDetail, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT "bill_id", "part_code", "address_code",
+		       "unit_id", "uni_label", "unit_label_th",
+		       "name", "cost", "price", "qty"
+		FROM "bill_item_detail"
+		WHERE "bill_id" = $1
+		ORDER BY "part_code", "address_code"
+	`, billID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []BillDetail
+	for rows.Next() {
+		var d BillDetail
+		if err := rows.Scan(
+			&d.BillID, &d.PartCode, &d.AddressCode,
+			&d.UnitID, &d.UnitLabel, &d.UnitLabelTH,
+			&d.Name, &d.Cost, &d.Price, &d.Qty,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, d)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func (r *billRepositoryPG) GetAllDiscounts(ctx context.Context, billID string) ([]BillDiscountDetail, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT "bill_id", "promotion_code", "unit", "amount"
+		FROM "bill_discount_detail"
+		WHERE "bill_id" = $1
+		ORDER BY "promotion_code"
+	`, billID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var discounts []BillDiscountDetail
+	for rows.Next() {
+		var d BillDiscountDetail
+		if err := rows.Scan(&d.BillID, &d.PromotionCode, &d.Unit, &d.Amount); err != nil {
+			return nil, err
+		}
+		discounts = append(discounts, d)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return discounts, nil
+}
+
+func (r *billRepositoryPG) UpdateAmounts(ctx context.Context, billID string, purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount float64) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE "bill_master"
+		SET "purchase_amount" = $1,
+		    "total_discount" = $2,
+		    "total_amount" = $3,
+		    "vat_amount" = $4,
+		    "xvat_amount" = $5
+		WHERE "id" = $6
+	`, purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount, billID)
 	return err
 }
 

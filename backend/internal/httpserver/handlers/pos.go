@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"backend/internal/config"
 	"backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -18,11 +19,11 @@ func NewPOSHandler(pos repository.POSRepository) *POSHandler {
 }
 
 func (h *POSHandler) List(c *gin.Context) {
-	limit := 50
-	offset := 0
+	limit := config.DefaultLimit
+	offset := config.DefaultOffset
 
 	if v := c.Query("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= config.MaxLimit {
 			limit = n
 		}
 	}

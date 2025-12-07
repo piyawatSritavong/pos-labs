@@ -198,11 +198,38 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "user_cast_error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+
+	// Get branchId and posId from session context (set by RequireAuth middleware)
+	branchIDVal, _ := c.Get("branch_id")
+	posIDVal, _ := c.Get("pos_id")
+
+	var branchID, posID string
+	if branchIDVal != nil {
+		if b, ok := branchIDVal.(string); ok {
+			branchID = b
+		}
+	}
+	if posIDVal != nil {
+		if p, ok := posIDVal.(string); ok {
+			posID = p
+		}
+	}
+
+	response := gin.H{
 		"name":   user.Name,
 		"roleId": user.RoleID,
 		"active": user.IsActive,
-	})
+	}
+
+	// Include branchId and posId if they exist in session
+	if branchID != "" {
+		response["branchId"] = branchID
+	}
+	if posID != "" {
+		response["posId"] = posID
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 
