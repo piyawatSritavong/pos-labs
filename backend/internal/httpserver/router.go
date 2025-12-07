@@ -19,6 +19,9 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
+	
+	// CORS middleware (environment-aware)
+	r.Use(middleware.CORS(cfg))
 
 	userRepo := repository.NewUserRepository(db)
 	rbacRepo := repository.NewRBACRepository(db)
