@@ -18,12 +18,36 @@ Environment variables (see `docker-compose.yml` for defaults):
 - `ENV` – `development` or `production`
 - `SESSION_SECRET` – Secret for session token generation (not used with DB sessions, but kept for compatibility)
 - `SESSION_DURATION` – Session expiration duration (e.g., `4h`, `24h`, default: `4h`)
+- `CORS_ALLOWED_ORIGINS` – Comma-separated list of allowed origins for CORS (production only, e.g., `https://app.example.com,https://www.example.com`)
 
 All database connections are configured to use **UTF-8** encoding and **UTC** timezone:
 
 - Docker Postgres is initialized with `--encoding=UTF8 --locale=C.UTF-8`.
 - The Go connection string adds `timezone=UTC`, and each connection runs `SET TIME ZONE 'UTC'`.
 - All timestamps returned by the API are in **UTC** (RFC3339), and all text fields support Thai and other Unicode characters.
+
+### CORS Configuration
+
+CORS (Cross-Origin Resource Sharing) is configured with environment-aware behavior:
+
+**Development Mode (`ENV=development`):**
+- Allows common localhost origins (ports 3000, 3001, 5173, 8080, 8081)
+- Also allows any `localhost` or `127.0.0.1` origin for flexibility
+- Credentials are allowed (for session cookies/auth tokens)
+
+**Production Mode (`ENV=production`):**
+- Only allows origins specified in `CORS_ALLOWED_ORIGINS` environment variable
+- Format: comma-separated list (e.g., `https://app.example.com,https://www.example.com`)
+- If `CORS_ALLOWED_ORIGINS` is not set, no origins are allowed (strict security)
+
+**Allowed Methods:** `GET, POST, PUT, DELETE, PATCH, OPTIONS`
+
+**Allowed Headers:** `Content-Type, Authorization, X-Requested-With`
+
+This configuration ensures:
+- Frontend developers work with CORS from the start (good practice)
+- Development is easy (allows localhost)
+- Production is secure (specific origins only)
 
 ### Migrations and Seeding
 

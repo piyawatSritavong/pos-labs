@@ -35,7 +35,7 @@
 - [x] Logging setup (Gin logger)
 - [x] Error handling middleware (Gin recovery)
 - [x] Request validation middleware (Gin binding)
-- [ ] CORS configuration (if needed)
+- [x] CORS configuration (environment-aware: permissive in dev, strict in production)
 - [x] API routing setup
 
 ## Database Migrations
