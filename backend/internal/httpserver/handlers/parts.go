@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"backend/internal/config"
 	"backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -18,11 +19,11 @@ func NewPartsHandler(parts repository.PartRepository) *PartsHandler {
 }
 
 func (h *PartsHandler) List(c *gin.Context) {
-	limit := 50
-	offset := 0
+	limit := config.DefaultLimit
+	offset := config.DefaultOffset
 
 	if v := c.Query("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= config.MaxLimit {
 			limit = n
 		}
 	}
@@ -62,7 +63,7 @@ func (h *PartsHandler) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items": out,
+		"parts": out,
 	})
 }
 
@@ -75,7 +76,8 @@ func (h *PartsHandler) Get(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	part, addresses, err := h.parts.GetPartDetail(ctx, code)
+	// Get part detail without branch filtering (general endpoint)
+	part, addresses, err := h.parts.GetPartDetail(ctx, code, nil)
 	if err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})
@@ -130,5 +132,149 @@ func (h *PartsHandler) Get(c *gin.Context) {
 	resp["addresses"] = addrs
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// Search searches for parts with filters and returns detailed results
+// Query parameters:
+//   - q: universal search query (searches in: part code, barcode, part name, name_th, 
+//       category name, category name_th, address code, store address shelf, 
+//       store address remarks, store label, store label_th)
+//   - categoryId: filter by category ID (optional)
+//   - isActive: filter by active status (true/false) (optional)
+//   - crossBranch: if true, search across all branches; if false, only session branch (default: false)
+//   - limit: pagination limit (default: 20, max: 500)
+//   - offset: pagination offset (default: 0)
+func (h *PartsHandler) Search(c *gin.Context) {
+	// Parse query parameters
+	query := c.Query("q")
+	categoryID := c.Query("categoryId") 
+	isActiveStr := c.Query("isActive")
+	crossBranchStr := c.Query("crossBranch")
+
+	limit := config.DefaultLimit
+	offset := config.DefaultOffset
+
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= config.MaxLimit {
+			limit = n
+		}
+	}
+	if v := c.Query("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	// Parse isActive filter
+	var isActive *bool
+	if isActiveStr != "" {
+		if val, err := strconv.ParseBool(isActiveStr); err == nil {
+			isActive = &val
+		}
+	}
+
+	// Parse categoryId filter
+	var categoryIDPtr *string
+	if categoryID != "" {
+		categoryIDPtr = &categoryID
+	}
+
+	// Determine branch filtering
+	var branchID *string
+	crossBranch := false
+	if crossBranchStr != "" {
+		if val, err := strconv.ParseBool(crossBranchStr); err == nil {
+			crossBranch = val
+		}
+	}
+
+	// If not cross-branch, get branchId from session
+	if !crossBranch {
+		branchIDVal, exists := c.Get("branch_id")
+		if exists {
+			if b, ok := branchIDVal.(string); ok && b != "" {
+				branchID = &b
+			}
+		}
+	}
+
+	ctx := c.Request.Context()
+
+	// Search parts
+	parts, err := h.parts.SearchParts(ctx, query, categoryIDPtr, isActive, branchID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_search_parts"})
+		return
+	}
+
+	// Build response with addresses for each part
+	out := make([]gin.H, 0, len(parts))
+	for _, part := range parts {
+		// Get addresses for this part (filtered by branch if not crossBranch)
+		var addresses []repository.PartAddress
+		if crossBranch {
+			// Get all addresses
+			_, addresses, err = h.parts.GetPartDetail(ctx, part.Code, nil)
+		} else {
+			// Get addresses filtered by branch
+			if branchID != nil {
+				_, addresses, err = h.parts.GetPartDetail(ctx, part.Code, branchID)
+			} else {
+				_, addresses, err = h.parts.GetPartDetail(ctx, part.Code, nil)
+			}
+		}
+		if err != nil {
+			// Log error but continue with empty addresses
+			addresses = []repository.PartAddress{}
+		}
+
+		// Build addresses array
+		addrs := make([]gin.H, 0, len(addresses))
+		for _, a := range addresses {
+			addrs = append(addrs, gin.H{
+				"code":     a.Code,
+				"partCode": a.PartCode,
+				"store": gin.H{
+					"id":      a.StoreID,
+					"label":   a.StoreLabel,
+					"labelTh": a.StoreLabelTH,
+				},
+				"shelf":   a.Shelf,
+				"qty":     a.Qty,
+				"min":     a.Min,
+				"max":     a.Max,
+				"rop":     a.Rop,
+				"remarks": a.Remarks,
+			})
+		}
+
+		out = append(out, gin.H{
+			"code":      part.Code,
+			"barCode":   part.BarCode,
+			"name":      part.Name,
+			"nameTh":    part.NameTH,
+			"details":   part.Details,
+			"cost":      part.Cost,
+			"price":     part.Price,
+			"image":     part.Image,
+			"isActive":  part.IsActive,
+			"category": gin.H{
+				"id":      part.CategoryID,
+				"label":   part.CategoryLabel,
+				"labelTh": part.CategoryLabelTH,
+			},
+			"unit": gin.H{
+				"id":      part.UnitID,
+				"label":   part.UnitLabel,
+				"labelTh": part.UnitLabelTH,
+			},
+			"totalStock": part.TotalStock,
+			"addresses":  addrs,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"parts": out,
+	})
 }
 

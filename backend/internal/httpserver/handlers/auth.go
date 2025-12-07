@@ -15,20 +15,38 @@ import (
 type AuthHandler struct {
 	users            repository.UserRepository
 	sessions         repository.SessionRepository
+	userBranches     repository.UserBranchRepository
+	branches         repository.BranchRepository
+	pos              repository.POSRepository
 	sessionDuration  time.Duration
 }
 
-func NewAuthHandler(users repository.UserRepository, sessions repository.SessionRepository, sessionDuration time.Duration) *AuthHandler {
+func NewAuthHandler(
+	users repository.UserRepository,
+	sessions repository.SessionRepository,
+	userBranches repository.UserBranchRepository,
+	branches repository.BranchRepository,
+	pos repository.POSRepository,
+	sessionDuration time.Duration,
+) *AuthHandler {
 	return &AuthHandler{
 		users:           users,
 		sessions:        sessions,
+		userBranches:    userBranches,
+		branches:        branches,
+		pos:             pos,
 		sessionDuration: sessionDuration,
 	}
 }
 
+// if super user or admin or non cachier user
+// They no need to provide branchId and posId
+// In this case, they will only be able to work with endpoints that don't need them.
 type loginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
+	BranchID string `json:"branchId" binding:"omitempty"`
+	POSID    string `json:"posId" binding:"omitempty"`
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -53,6 +71,67 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
+	// Delete any existing session for this user (only 1 session per user)
+	existingSessions, _ := h.sessions.GetByUserID(ctx, user.ID)
+	for _, sess := range existingSessions {
+		_ = h.sessions.DeleteByID(ctx, sess.ID)
+	}
+
+	var branchID, posID string
+
+	// If branchId and posId are provided, validate them
+	if req.BranchID != "" && req.POSID != "" {
+		// Validate branchId exists
+		_, err = h.branches.GetByID(ctx, req.BranchID)
+		if err != nil {
+			if repository.IsNotFoundError(err) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "incorrect_branch_id",
+					"message": "Branch ID does not exist",
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_validate_branch"})
+			return
+		}
+
+		// Validate posId exists
+		_, err = h.pos.GetByID(ctx, req.POSID)
+		if err != nil {
+			if repository.IsNotFoundError(err) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "incorrect_pos_id",
+					"message": "POS ID does not exist",
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_validate_pos"})
+			return
+		}
+
+		// Validate user has access to this branch (unless superuser)
+		if !user.IsSuperuser {
+			_, err = h.userBranches.GetByUserAndBranch(ctx, user.ID, req.BranchID)
+			if err != nil {
+				if repository.IsNotFoundError(err) {
+					c.JSON(http.StatusForbidden, gin.H{
+						"error": "access_denied",
+						"message": "User does not have access to this branch",
+					})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_check_user_branch"})
+				return
+			}
+		}
+
+		branchID = req.BranchID
+		posID = req.POSID
+	}
+	// If branchId/posId are not provided, they remain empty (for non-cashier users)
+
 	// Generate opaque session ID
 	sidBytes := make([]byte, 32)
 	if _, err := rand.Read(sidBytes); err != nil {
@@ -69,6 +148,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	session := &repository.Session{
 		ID:        sid,
 		UserID:    user.ID,
+		BranchID:  branchID,
+		POSID:     posID,
 		IP:        ip,
 		UserAgent: ua,
 		CreatedAt: now,
@@ -117,11 +198,38 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "user_cast_error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+
+	// Get branchId and posId from session context (set by RequireAuth middleware)
+	branchIDVal, _ := c.Get("branch_id")
+	posIDVal, _ := c.Get("pos_id")
+
+	var branchID, posID string
+	if branchIDVal != nil {
+		if b, ok := branchIDVal.(string); ok {
+			branchID = b
+		}
+	}
+	if posIDVal != nil {
+		if p, ok := posIDVal.(string); ok {
+			posID = p
+		}
+	}
+
+	response := gin.H{
 		"name":   user.Name,
 		"roleId": user.RoleID,
 		"active": user.IsActive,
-	})
+	}
+
+	// Include branchId and posId if they exist in session
+	if branchID != "" {
+		response["branchId"] = branchID
+	}
+	if posID != "" {
+		response["posId"] = posID
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 

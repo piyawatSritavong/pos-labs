@@ -1,57 +1,85 @@
 # Backend TODO Checklist
 
+## Current Status Summary
+
+### ✅ Completed
+- **Authentication**: Login, logout, session management, RBAC
+- **Company**: CRUD (Get, Update)
+- **Branch**: CRUD (List, Get, Create, Update, Delete) + stores array in Get
+- **POS**: CRUD (List, Get, Create, Update, Delete)
+- **Users**: CRUD (List, Get, Create, Update, Delete)
+- **User Branches**: CRUD (ListByUser, ListByBranch, Get, Create, Delete)
+- **Parts**: List, Get, Universal Search
+- **Bills**: Create, Get, List, Add/Remove items (with qty), Add/Remove discounts, Hold, Switch
+- **Bill Amount Calculation**: Automatic recalculation with VAT logic (xvat and vat modes)
+
+### 🚧 In Progress / Partial
+- **Parts**: Update and Delete endpoints missing
+- **Bills**: Checkout and Payment are mock implementations, Cancel operation missing
+- **User/User Branch**: Still in development (may need refinement)
+
+### ❌ Not Started
+- **Promotion Master**: CRUD endpoints (only GetByCode exists in repository)
+- **Members**: All endpoints
+- **Categories**: CRUD endpoints
+- **Addresses**: CRUD endpoints
+
+---
+
 ## Project Setup & Structure
 
-- [ ] Initialize Go module
-- [ ] Project structure setup (cmd/, internal/, pkg/, migrations/)
-- [ ] Configuration management (environment variables)
-- [ ] Database connection setup (PostgreSQL)
-- [ ] Logging setup
-- [ ] Error handling middleware
-- [ ] Request validation middleware
-- [ ] CORS configuration
-- [ ] API routing setup
+- [x] Initialize Go module
+- [x] Project structure setup (cmd/, internal/, pkg/, migrations/)
+- [x] Configuration management (environment variables)
+- [x] Database connection setup (PostgreSQL)
+- [x] Logging setup (Gin logger)
+- [x] Error handling middleware (Gin recovery)
+- [x] Request validation middleware (Gin binding)
+- [ ] CORS configuration (if needed)
+- [x] API routing setup
 
 ## Database Migrations
 
-- [ ] Migration system setup
-- [ ] Users table migration
-- [ ] Products/PartMaster table migration
-- [ ] Categories/CategoryMaster table migration
-- [ ] Addresses/AddressMaster table migration
-- [ ] Billing/Bills table migration
-- [ ] BillItems table migration
-- [ ] Members table migration
-- [ ] PaymentMethods table migration
-- [ ] Discounts table migration
-- [ ] HeldBills table migration
-- [ ] Transactions table migration
-- [ ] Inventory/Stock table migration
-- [ ] Settings table migration
+- [x] Migration system setup (golang-migrate)
+- [x] Users table migration
+- [x] Products/PartMaster table migration
+- [x] Categories/CategoryMaster table migration
+- [x] Addresses/AddressMaster table migration
+- [x] Billing/Bills table migration (with amount fields: purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount)
+- [x] BillItems table migration (bill_item_detail)
+- [x] BillDiscountDetail table migration
+- [x] Members table migration
+- [x] PromotionMaster table migration
+- [x] Company/Branch/POS settings tables migration
+- [x] StoreMaster and BranchStore tables migration
+- [x] Session table migration
+- [x] Role/Permission tables migration
+- [ ] PaymentMethods table migration (if needed)
+- [ ] Transactions table migration (if needed)
+- [ ] Inventory/Stock table migration (if needed)
 
 ## Authentication & Authorization
 
-- [ ] User registration endpoint
-- [ ] User login endpoint
-- [ ] JWT token generation
-- [ ] Token validation middleware
-- [ ] Password hashing (bcrypt)
-- [ ] Refresh token mechanism
-- [ ] Logout functionality
-- [ ] Role-based access control (RBAC)
-- [ ] Permission management
-- [ ] Session management
+- [x] User login endpoint (`POST /auth/login`)
+- [x] Token validation middleware (session-based)
+- [x] Password hashing (bcrypt)
+- [x] Logout functionality (`POST /auth/logout`)
+- [x] Role-based access control (RBAC)
+- [x] Permission management
+- [x] Session management (database-backed sessions)
+- [x] Get current user info (`GET /auth/me`)
+- [ ] User registration endpoint (if needed)
 
 ## Master Data Management
 
 ### PartMaster (Product Management)
-- [ ] Create product endpoint
-- [ ] Get product by ID endpoint
-- [ ] List products endpoint (with pagination)
-- [ ] Search products endpoint (universal search)
-- [ ] Filter products endpoint
-- [ ] Update product endpoint
-- [ ] Delete product endpoint
+- [x] Get product by code endpoint (`GET /parts/:code`)
+- [x] List products endpoint (with pagination, `GET /parts`)
+- [x] Search products endpoint (universal search, `GET /parts/search`)
+  - Searches across: code, barcode, name, name_th, category, store address, etc.
+- [ ] Create product endpoint (`POST /parts`)
+- [ ] Update product endpoint (`PUT /parts/:code`)
+- [ ] Delete product endpoint (`DELETE /parts/:code`)
 - [ ] Bulk product operations
 - [ ] Product validation
 
@@ -86,34 +114,42 @@
 ## Billing Operations
 
 ### Bill Management
-- [ ] Create new empty bill endpoint
-- [ ] Get bill by ID endpoint
-- [ ] List bills endpoint
-- [ ] Update bill endpoint
-- [ ] Delete bill endpoint
+- [x] Create new empty bill endpoint (`POST /bills`)
+- [x] Get bill by ID endpoint (`GET /bills/:id`)
+- [x] List bills endpoint (`GET /bills`)
+- [x] Automatic bill amount calculation (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount)
+- [ ] Update bill endpoint (if needed for member assignment, etc.)
+- [ ] Add / Remove member to bill
+- [ ] Cancel bill endpoint (`PUT /bills/:id/cancel`)
 
 ### Bill Items Management
-- [ ] Add item to bill endpoint
-- [ ] Remove item from bill endpoint
-- [ ] Update item quantity endpoint
-- [ ] Reduce item quantity endpoint
-- [ ] Increase item quantity endpoint
-- [ ] Get bill items endpoint
-- [ ] Item validation (stock check, price validation)
+- [x] Add item to bill endpoint (`PUT /bills/:id/add-item`)
+- [x] Add item by barcode endpoint (`PUT /bills/:id/add-item-by-barcode`)
+- [x] Remove item from bill endpoint (`PUT /bills/:id/remove-item`)
+  - Supports optional `qty` parameter (default: 1)
+  - Supports `isRemoveAll` flag
+- [x] Update item quantity endpoint (via add-item increments, remove-item decrements)
+- [x] Get bill items endpoint (included in `GET /bills/:id`)
+- [x] Item validation (branch/store validation, default store check)
+- [x] Automatic amount recalculation after item changes
 
 ### Bill Actions
-- [ ] Apply discount to bill endpoint
-- [ ] Remove discount from bill endpoint
-- [ ] Calculate bill totals (subtotal, tax, discount, total)
-- [ ] Hold bill endpoint
-- [ ] Resume/continue held bill endpoint
-- [ ] List held bills endpoint
-- [ ] Delete held bill endpoint
-- [ ] Complete/checkout bill endpoint
-- [ ] Apply member to bill endpoint
+- [x] Apply discount to bill endpoint (`PUT /bills/:id/add-discount`)
+  - Validates promotion from `promotion_master`
+  - Supports THB (fixed) and percentage discounts
+- [x] Remove discount from bill endpoint (`PUT /bills/:id/remove-discount`)
+- [x] Calculate bill totals (automatic recalculation)
+  - purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount
+  - VAT calculation based on company taxType (xvat/vat)
+- [x] Hold bill endpoint (`PUT /bills/:id/hold`)
+- [x] Switch bills endpoint (`PUT /bills/switch`)
+  - Can create new bill or resume held bill
+- [ ] Cancel bill endpoint (`PUT /bills/:id/cancel`)
+- [ ] Complete/checkout bill endpoint (`PUT /bills/:id/checkout` - mock implementation)
+- [ ] Apply member to bill endpoint (if needed)
 
 ### Payment Processing
-- [ ] Process payment endpoint
+- [ ] Process payment endpoint (`PUT /bills/:id/payment` - mock implementation)
 - [ ] Payment method validation
 - [ ] Payment confirmation
 - [ ] Receipt generation
@@ -130,13 +166,14 @@
 - [ ] Reserve stock on bill creation
 - [ ] Release stock on bill cancellation
 
-### Discount Management
-- [ ] Create discount rule endpoint
-- [ ] List discount rules endpoint
-- [ ] Update discount rule endpoint
-- [ ] Delete discount rule endpoint
-- [ ] Discount calculation logic
-- [ ] Discount validation
+### Discount Management (Promotion Master)
+- [x] Discount calculation logic (THB and percentage)
+- [x] Discount validation (promotion exists check)
+- [ ] Create promotion endpoint (`POST /promotions`)
+- [ ] List promotions endpoint (`GET /promotions`)
+- [ ] Get promotion by code endpoint (`GET /promotions/:code`)
+- [ ] Update promotion endpoint (`PUT /promotions/:code`)
+- [ ] Delete promotion endpoint (`DELETE /promotions/:code`)
 
 ### Reports & Analytics
 - [ ] Sales report endpoint
@@ -150,15 +187,23 @@
 - [ ] Export reports (CSV, PDF)
 
 ### Settings Management
-- [ ] Store settings endpoint
-- [ ] Tax configuration endpoint
-- [ ] Currency settings endpoint
+- [x] Company settings endpoint (`GET /company`, `PUT /company`)
+  - Tax configuration (taxRate, taxType)
+  - Company information
+- [x] Branch settings endpoints (`GET /branches`, `GET /branches/:id`, `POST /branches`, `PUT /branches/:id`, `DELETE /branches/:id`)
+- [x] POS settings endpoints (`GET /pos`, `GET /pos/:id`, `POST /pos`, `PUT /pos/:id`, `DELETE /pos/:id`)
+- [ ] Store settings endpoint (if needed beyond branch_store)
+- [ ] Currency settings endpoint (if needed)
 - [ ] Payment methods configuration
 - [ ] Receipt template configuration
 - [ ] Printer configuration
 
 ### Search & Filtering
-- [ ] Universal search endpoint (products, members, bills)
+- [x] Universal search endpoint for parts (`GET /parts/search`)
+  - Searches across: code, barcode, name, name_th, category, store address, etc.
+  - Supports cross-branch search option
+  - Supports category and active status filters
+- [ ] Universal search endpoint (members, bills)
 - [ ] Advanced filtering for products
 - [ ] Search result ranking
 - [ ] Search history/cache
@@ -167,69 +212,107 @@
 
 ### Authentication Routes
 - [ ] POST /api/auth/register
-- [ ] POST /api/auth/login
-- [ ] POST /api/auth/logout
-- [ ] POST /api/auth/refresh
-- [ ] GET /api/auth/me
+- [x] POST /api/auth/login
+- [x] POST /api/auth/logout
+- [x] GET /api/auth/me
 
-### Product Routes
-- [ ] GET /api/products
-- [ ] GET /api/products/:id
-- [ ] POST /api/products
-- [ ] PUT /api/products/:id
-- [ ] DELETE /api/products/:id
-- [ ] GET /api/products/search
-- [ ] GET /api/products/category/:categoryId
+### Product Routes (Parts)
+- [x] GET /parts (list with pagination)
+- [x] GET /parts/:code (get by code)
+- [x] GET /parts/search (universal search)
+- [ ] POST /parts (create)
+- [ ] PUT /parts/:code (update)
+- [ ] DELETE /parts/:code (delete)
+
+### Promotion Routes
+- [ ] GET /promotions (list)
+- [ ] GET /promotions/:code (get by code)
+- [ ] POST /promotions (create)
+- [ ] PUT /promotions/:code (update)
+- [ ] DELETE /promotions/:code (delete)
 
 ### Category Routes
-- [ ] GET /api/categories
-- [ ] GET /api/categories/:id
-- [ ] POST /api/categories
-- [ ] PUT /api/categories/:id
-- [ ] DELETE /api/categories/:id
+- [ ] GET /categories (list)
+- [ ] GET /categories/:id (get by id)
+- [ ] POST /categories (create)
+- [ ] PUT /categories/:id (update)
+- [ ] DELETE /categories/:id (delete)
 
 ### Address Routes
-- [ ] GET /api/addresses
-- [ ] GET /api/addresses/:id
-- [ ] POST /api/addresses
-- [ ] PUT /api/addresses/:id
-- [ ] DELETE /api/addresses/:id
+- [ ] GET /addresses (list)
+- [ ] GET /addresses/:code (get by code)
+- [ ] POST /addresses (create)
+- [ ] PUT /addresses/:code (update)
+- [ ] DELETE /addresses/:code (delete)
 
 ### Member Routes
-- [ ] GET /api/members
-- [ ] GET /api/members/:id
-- [ ] POST /api/members
-- [ ] PUT /api/members/:id
-- [ ] DELETE /api/members/:id
-- [ ] GET /api/members/search
+- [ ] GET /members (list)
+- [ ] GET /members/:id (get by id)
+- [ ] POST /members (create)
+- [ ] PUT /members/:id (update)
+- [ ] DELETE /members/:id (delete)
+- [ ] GET /members/search (search)
+
+### Company Routes
+- [x] GET /company (get)
+- [x] PUT /company (update)
+
+### Branch Routes
+- [x] GET /branches (list)
+- [x] GET /branches/:id (get with stores)
+- [x] POST /branches (create)
+- [x] PUT /branches/:id (update)
+- [x] DELETE /branches/:id (delete)
+
+### POS Routes
+- [x] GET /pos (list)
+- [x] GET /pos/:id (get)
+- [x] POST /pos (create)
+- [x] PUT /pos/:id (update)
+- [x] DELETE /pos/:id (delete)
+
+### User Routes
+- [x] GET /users (list)
+- [x] GET /users/:id (get)
+- [x] POST /users (create)
+- [x] PUT /users/:id (update)
+- [x] DELETE /users/:id (delete)
+
+### User Branch Routes
+- [x] GET /user-branches/user/:user_id (list by user)
+- [x] GET /user-branches/branch/:branch_id (list by branch)
+- [x] GET /user-branches/:user_id/:branch_id (get)
+- [x] POST /user-branches (create)
+- [x] DELETE /user-branches/:user_id/:branch_id (delete)
 
 ### Billing Routes
-- [ ] POST /api/bills (create new empty bill)
-- [ ] GET /api/bills
-- [ ] GET /api/bills/:id
-- [ ] PUT /api/bills/:id
-- [ ] DELETE /api/bills/:id
-- [ ] POST /api/bills/:id/items (add item)
-- [ ] DELETE /api/bills/:id/items/:itemId (remove item)
-- [ ] PUT /api/bills/:id/items/:itemId (update item qty)
-- [ ] POST /api/bills/:id/discount (apply discount)
-- [ ] DELETE /api/bills/:id/discount (remove discount)
-- [ ] POST /api/bills/:id/hold (hold bill)
-- [ ] GET /api/bills/held (list held bills)
-- [ ] POST /api/bills/:id/resume (resume held bill)
-- [ ] POST /api/bills/:id/checkout (complete bill)
-- [ ] POST /api/bills/:id/payment (process payment)
+- [x] POST /bills (create new empty bill)
+- [x] GET /bills (list with pagination)
+- [x] GET /bills/:id (get bill with details and discounts)
+- [x] PUT /bills/:id/add-item (add item by part code)
+- [x] PUT /bills/:id/add-item-by-barcode (add item by barcode)
+- [x] PUT /bills/:id/remove-item (remove item with optional qty)
+- [x] PUT /bills/:id/add-discount (apply discount from promotion_master)
+- [x] PUT /bills/:id/remove-discount (remove discount)
+- [x] PUT /bills/:id/hold (hold bill)
+- [x] PUT /bills/switch (switch bills or create new)
+- [ ] PUT /bills/:id/cancel (cancel bill)
+- [ ] PUT /bills/:id/checkout (complete bill - mock implementation)
+- [ ] PUT /bills/:id/payment (process payment - mock implementation)
 
 ## Data Validation & Business Logic
 
-- [ ] Input validation for all endpoints
-- [ ] Business rule validation
-- [ ] Stock availability checks
-- [ ] Price calculation logic
-- [ ] Tax calculation logic
-- [ ] Discount calculation logic
-- [ ] Total calculation logic
-- [ ] Data integrity constraints
+- [x] Input validation for all endpoints (Gin binding)
+- [x] Business rule validation (branch/POS access, bill status, etc.)
+- [x] Branch/store filtering validation
+- [x] Price calculation logic (purchaseAmount from items)
+- [x] Tax calculation logic (xvat and vat modes)
+  - xvat: vatAmount = 0, totalAmount = amountAfterDiscount
+  - vat: Extract VAT from price (price includes VAT)
+- [x] Discount calculation logic (THB fixed and percentage)
+- [x] Total calculation logic (automatic recalculation)
+- [x] Data integrity constraints (foreign keys, ON DELETE CASCADE)
+- [ ] Stock availability checks (if needed)
 
 ## Error Handling & Logging
 
