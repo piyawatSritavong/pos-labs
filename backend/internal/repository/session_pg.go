@@ -16,23 +16,30 @@ func NewSessionRepository(db *sql.DB) SessionRepository {
 
 func (r *sessionRepositoryPG) Create(ctx context.Context, s *Session) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO "session"("id", "user_id", "ip", "user_agent", "created_at", "expires_at", "last_seen_at")
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, s.ID, s.UserID, s.IP, s.UserAgent, s.CreatedAt, s.ExpiresAt, s.LastSeen)
+		INSERT INTO "session"("id", "user_id", "branch_id", "pos_id", "ip", "user_agent", "created_at", "expires_at", "last_seen_at")
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, s.ID, s.UserID, s.BranchID, s.POSID, s.IP, s.UserAgent, s.CreatedAt, s.ExpiresAt, s.LastSeen)
 	return err
 }
 
 func (r *sessionRepositoryPG) GetValidByID(ctx context.Context, id string, ip string, now time.Time) (*Session, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT "id", "user_id", "ip", "user_agent", "created_at", "expires_at", "last_seen_at"
+		SELECT "id", "user_id", "branch_id", "pos_id", "ip", "user_agent", "created_at", "expires_at", "last_seen_at"
 		FROM "session"
 		WHERE "id" = $1
 		  AND "expires_at" > $2
 	`, id, now)
 
 	var s Session
-	if err := row.Scan(&s.ID, &s.UserID, &s.IP, &s.UserAgent, &s.CreatedAt, &s.ExpiresAt, &s.LastSeen); err != nil {
+	var branchID, posID sql.NullString
+	if err := row.Scan(&s.ID, &s.UserID, &branchID, &posID, &s.IP, &s.UserAgent, &s.CreatedAt, &s.ExpiresAt, &s.LastSeen); err != nil {
 		return nil, err
+	}
+	if branchID.Valid {
+		s.BranchID = branchID.String
+	}
+	if posID.Valid {
+		s.POSID = posID.String
 	}
 
 	// Optional strict IP check: if stored IP is non-empty and doesn't match, treat as invalid
@@ -51,6 +58,35 @@ func (r *sessionRepositoryPG) DeleteByID(ctx context.Context, id string) error {
 func (r *sessionRepositoryPG) DeleteExpired(ctx context.Context, now time.Time) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM "session" WHERE "expires_at" <= $1`, now)
 	return err
+}
+
+func (r *sessionRepositoryPG) GetByUserID(ctx context.Context, userID string) ([]*Session, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT "id", "user_id", "branch_id", "pos_id", "ip", "user_agent", "created_at", "expires_at", "last_seen_at"
+		FROM "session"
+		WHERE "user_id" = $1
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []*Session
+	for rows.Next() {
+		var s Session
+		var branchID, posID sql.NullString
+		if err := rows.Scan(&s.ID, &s.UserID, &branchID, &posID, &s.IP, &s.UserAgent, &s.CreatedAt, &s.ExpiresAt, &s.LastSeen); err != nil {
+			return nil, err
+		}
+		if branchID.Valid {
+			s.BranchID = branchID.String
+		}
+		if posID.Valid {
+			s.POSID = posID.String
+		}
+		sessions = append(sessions, &s)
+	}
+	return sessions, rows.Err()
 }
 
 func (r *sessionRepositoryPG) Touch(ctx context.Context, id string, now time.Time) error {

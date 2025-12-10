@@ -3,8 +3,12 @@ module backend
 go 1.23.0
 
 require (
+<<<<<<< HEAD
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.10.1
+=======
+	github.com/gin-gonic/gin v1.10.0
+>>>>>>> 79ea458d81f02084ae55c58093ae535821e247f8
 	github.com/golang-migrate/migrate/v4 v4.17.0
 	github.com/lib/pq v1.10.9
 	golang.org/x/crypto v0.39.0
@@ -19,8 +23,14 @@ require (
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
+<<<<<<< HEAD
 	github.com/go-playground/validator/v10 v10.26.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
+=======
+	github.com/go-playground/validator/v10 v10.22.0 // indirect
+	github.com/goccy/go-json v0.10.3 // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
+>>>>>>> 79ea458d81f02084ae55c58093ae535821e247f8
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

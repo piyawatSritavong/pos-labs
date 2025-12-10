@@ -7,8 +7,13 @@ import (
 
 type Bill struct {
 	ID            string
+	BranchID      string
+	POSID         string
 	Status        string // new, hold, completed, cancelled
 	PaymentMethod string // cash, bank, credit, debit, other
+	PaymentRef    string
+	MemberID      string
+	CustomerName  string
 	PurchaseAmount float64
 	TotalDiscount  float64
 	TotalAmount    float64
@@ -33,10 +38,31 @@ type BillDetail struct {
 	Qty         int
 }
 
+type BillDiscountDetail struct {
+	BillID        string
+	PromotionCode string
+	Unit          string
+	Amount        float64
+}
+
 type BillRepository interface {
 	GenerateBillID(ctx context.Context) (string, error)
 	Create(ctx context.Context, bill *Bill) error
 	GetByID(ctx context.Context, id string) (*Bill, error)
 	List(ctx context.Context, limit, offset int) ([]Bill, error)
+	GetFullByID(ctx context.Context, id string) (*Bill, []BillDetail, []BillDiscountDetail, error)
+	GetNewBillByPOS(ctx context.Context, posID string) (*Bill, error)
+	UpdateStatus(ctx context.Context, billID, status, updatedBy string) error
+	UpdateTimestamp(ctx context.Context, billID, updatedBy string) error
+	GetItemByPartCode(ctx context.Context, billID, partCode, addressCode string) (*BillDetail, error)
+	AddItem(ctx context.Context, detail *BillDetail) error
+	UpdateItemQty(ctx context.Context, billID, partCode, addressCode string, qty int) error
+	RemoveItem(ctx context.Context, billID, partCode, addressCode string) error
+	AddDiscount(ctx context.Context, discount *BillDiscountDetail) error
+	RemoveDiscount(ctx context.Context, billID, promotionCode string) error
+	GetDiscountByCode(ctx context.Context, billID, promotionCode string) (*BillDiscountDetail, error)
+	GetAllItems(ctx context.Context, billID string) ([]BillDetail, error)
+	GetAllDiscounts(ctx context.Context, billID string) ([]BillDiscountDetail, error)
+	UpdateAmounts(ctx context.Context, billID string, purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount float64) error
 }
 
