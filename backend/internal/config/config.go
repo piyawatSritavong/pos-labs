@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+// Pagination defaults
+const (
+	DefaultLimit  = 20
+	DefaultOffset = 0
+	MaxLimit      = 500
+)
+
 type Config struct {
 	Env            string
 	Port           string
