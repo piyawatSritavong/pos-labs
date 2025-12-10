@@ -8,7 +8,12 @@ class ApiService {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'username': username, 'password': password}),
+      body: jsonEncode({
+        'username': username,
+        'password': password,
+        "branchId": "00000",
+        "posId": "POS001",
+      }),
     );
 
     if (response.statusCode == 200) {
@@ -19,8 +24,6 @@ class ApiService {
     }
   }
 
-  /// Get current user info using bearer token
-  /// Expects response like: { "name": "Admin User", "role_id": "owner", "is_active": true }
   static Future<Map<String, dynamic>> getCurrentUser(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/auth/me'),
@@ -34,7 +37,9 @@ class ApiService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       return data;
     } else {
-      throw Exception('Failed to fetch current user: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to fetch current user: ${response.statusCode} ${response.body}',
+      );
     }
   }
 }
