@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../widgets/cart_dialog.dart';
+import '../widgets/stock_dialog.dart';
+import '../widgets/bill_dialog.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -71,33 +74,90 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
 
-                // Right: Account menu (logout)
+                // Right: Cart, Bill, Stock, and Account menu
                 Expanded(
                   flex: 2,
                   child: Align(
                     alignment: Alignment.centerRight,
-                    child: PopupMenuButton<String>(
-                      icon: const Icon(Icons.account_circle, color: Colors.white, size: 32),
-                      itemBuilder: (context) => <PopupMenuEntry<String>>[
-                        PopupMenuItem<String>(
-                          enabled: false,
-                          child: Text('สวัสดี ${auth.name ?? 'ผู้ใช้'}'),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        // Cart icon
+                        IconButton(
+                          icon: const Icon(Icons.shopping_cart, color: Colors.white, size: 28),
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => const CartDialog(),
+                            );
+                          },
                         ),
-                        const PopupMenuDivider(),
-                        PopupMenuItem<String>(
-                          value: 'logout',
-                          child: Row(
-                            children: const [
-                              Icon(Icons.logout, size: 20),
-                              SizedBox(width: 8),
-                              Text('ออกจากระบบ'),
-                            ],
-                          ),
+                        const SizedBox(width: 8),
+                        // Bill icon
+                        IconButton(
+                          icon: const Icon(Icons.receipt, color: Colors.white, size: 28),
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => const BillDialog(),
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        // Stock icon
+                        IconButton(
+                          icon: const Icon(Icons.inventory, color: Colors.white, size: 28),
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => const StockDialog(),
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        // Account menu
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.account_circle, color: Colors.white, size: 32),
+                          itemBuilder: (context) => <PopupMenuEntry<String>>[
+                            PopupMenuItem<String>(
+                              enabled: false,
+                              child: Text('สวัสดี ${auth.name ?? 'ผู้ใช้'}'),
+                            ),
+                            const PopupMenuDivider(),
+                            PopupMenuItem<String>(
+                              value: 'setting',
+                              child: Row(
+                                children: const [
+                                  Icon(Icons.settings, size: 20),
+                                  SizedBox(width: 8),
+                                  Text('Setting'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuDivider(),
+                            PopupMenuItem<String>(
+                              value: 'logout',
+                              child: Row(
+                                children: const [
+                                  Icon(Icons.logout, size: 20),
+                                  SizedBox(width: 8),
+                                  Text('ออกจากระบบ'),
+                                ],
+                              ),
+                            ),
+                          ],
+                          onSelected: (value) {
+                            if (value == 'setting') {
+                              final roleId = auth.roleId ?? 'ไม่มี roleId';
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Role: $roleId')),
+                              );
+                            } else if (value == 'logout') {
+                              auth.logout();
+                            }
+                          },
                         ),
                       ],
-                      onSelected: (value) {
-                        if (value == 'logout') auth.logout();
-                      },
                     ),
                   ),
                 ),
