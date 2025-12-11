@@ -39,7 +39,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\",\n  \"branchId\": \"00000\",\n  \"posId\": \"POS001\"\n}"
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\",\n  \"branchId\": \"00000\",\n  \"posId\": \"POS001\",\n  \"posSecret\": \"<pos_secret_from_get_pos_secret_endpoint>\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/auth/login",
@@ -961,7 +961,7 @@
                 }
               ]
             },
-            "description": "List POS. Requires 'pos:read' permission."
+            "description": "List POS. Returns array of POS objects with posId, branchId, posName, and isActive. posSecret is NOT returned for security. Use GET /pos/:id/secret to retrieve secrets. Requires 'pos:read' permission."
           },
           "response": []
         },
@@ -981,7 +981,7 @@
               "host": ["{{base_url}}"],
               "path": ["pos", "POS001"]
             },
-            "description": "Get POS by ID. Requires 'pos:read' permission."
+            "description": "Get POS by ID. Returns posId, branchId, posName, and isActive. posSecret is NOT returned for security. Use GET /pos/:id/secret to retrieve the secret. Requires 'pos:read' permission."
           },
           "response": []
         },
@@ -1009,12 +1009,12 @@
               "host": ["{{base_url}}"],
               "path": ["pos"]
             },
-            "description": "Create new POS. Requires 'pos:write' permission."
+            "description": "Create new POS. pos_secret is automatically generated and not returned in the response. Use GET /pos/:id/secret to retrieve the secret. Requires 'pos:write' permission."
           },
           "response": []
         },
         {
-          "name": "PUT /pos/:id",
+          "name": "PUT /pos/:id/toggle-activate",
           "request": {
             "method": "PUT",
             "header": [
@@ -1022,22 +1022,54 @@
                 "key": "Authorization",
                 "value": "Bearer {{auth_token}}",
                 "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"branchId\": \"00000\",\n  \"posName\": \"Updated POS Name\"\n}"
-            },
             "url": {
-              "raw": "{{base_url}}/pos/POS001",
+              "raw": "{{base_url}}/pos/POS001/toggle-activate",
               "host": ["{{base_url}}"],
-              "path": ["pos", "POS001"]
+              "path": ["pos", "POS001", "toggle-activate"]
             },
-            "description": "Update POS. Requires 'pos:write' permission."
+            "description": "Toggle POS active status. Switches is_active between true and false. Returns updated POS details. Requires 'pos:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /pos/:id/secret",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos/POS001/secret",
+              "host": ["{{base_url}}"],
+              "path": ["pos", "POS001", "secret"]
+            },
+            "description": "Retrieve POS secret. Returns the current posSecret for the specified POS. This secret is required when logging in with posId. Requires 'pos:secret' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /pos/:id/secret",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos/POS001/secret",
+              "host": ["{{base_url}}"],
+              "path": ["pos", "POS001", "secret"]
+            },
+            "description": "Refresh/regenerate POS secret. Generates a new random secret and updates it in the database. Returns the new secret. Use this if the secret is compromised or needs to be rotated. Requires 'pos:secret' permission."
           },
           "response": []
         },

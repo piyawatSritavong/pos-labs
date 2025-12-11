@@ -56,6 +56,8 @@ create table "pos_setting"(
   pos_id text,
   branch_id text not null,
   pos_name text not null,
+  pos_secret text not null,
+  is_active boolean not null default true,
   PRIMARY KEY ("pos_id"),
   CONSTRAINT "FK_pos_setting_branch_id"
     FOREIGN KEY ("branch_id")

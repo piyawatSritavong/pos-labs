@@ -64,6 +64,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo, partRepo, companyRepo, promotionRepo)
 	bills := r.Group("/bills")
 	bills.Use(authMw.RequirePermission("bills", "read"))
+	// GET endpoints allow access without posId/branchId (for admin users)
 	{
 		bills.GET("", billsHandler.List)
 		bills.GET("/:id", billsHandler.Get)
@@ -71,6 +72,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	// Create bill requires write permission
 	billsWrite := r.Group("/bills")
 	billsWrite.Use(authMw.RequirePermission("bills", "write"))
+	billsWrite.Use(middleware.RequirePOSBranch()) // Bills endpoints require POS session with branchId and posId
 	{
 		billsWrite.POST("", billsHandler.Create)
 		billsWrite.PUT("/:id/add-item", billsHandler.AddItem) // add item to bill by part code
@@ -130,7 +132,13 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	posWrite.Use(authMw.RequirePermission("pos", "write"))
 	{
 		posWrite.POST("", posHandler.Create)
-		posWrite.PUT("/:id", posHandler.Update)
+		posWrite.PUT("/:id/toggle-activate", posHandler.ToggleActivate)
+	}
+	posSecret := r.Group("/pos")
+	posSecret.Use(authMw.RequirePermission("pos", "secret")) // Special permission for retrieving and refreshing secret
+	{
+		posSecret.GET("/:id/secret", posHandler.GetSecret)
+		posSecret.PUT("/:id/secret", posHandler.RefreshSecret) // Refresh/regenerate POS secret
 	}
 	posDelete := r.Group("/pos")
 	posDelete.Use(authMw.RequirePermission("pos", "delete"))

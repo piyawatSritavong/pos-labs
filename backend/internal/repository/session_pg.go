@@ -15,10 +15,23 @@ func NewSessionRepository(db *sql.DB) SessionRepository {
 }
 
 func (r *sessionRepositoryPG) Create(ctx context.Context, s *Session) error {
+	// Convert empty strings to NULL for branch_id and pos_id
+	var branchID, posID interface{}
+	if s.BranchID != "" {
+		branchID = s.BranchID
+	} else {
+		branchID = nil
+	}
+	if s.POSID != "" {
+		posID = s.POSID
+	} else {
+		posID = nil
+	}
+
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO "session"("id", "user_id", "branch_id", "pos_id", "ip", "user_agent", "created_at", "expires_at", "last_seen_at")
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, s.ID, s.UserID, s.BranchID, s.POSID, s.IP, s.UserAgent, s.CreatedAt, s.ExpiresAt, s.LastSeen)
+	`, s.ID, s.UserID, branchID, posID, s.IP, s.UserAgent, s.CreatedAt, s.ExpiresAt, s.LastSeen)
 	return err
 }
 

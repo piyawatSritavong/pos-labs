@@ -228,7 +228,8 @@ func (h *BillsHandler) List(c *gin.Context) {
 }
 
 // Get returns a full bill with its details and discounts.
-// Uses branchId and posId from session (set at login).
+// For users with branchId/posId: validates bill belongs to their branch/POS
+// For admin users without branchId/posId: allows viewing any bill
 // Response format:
 // {
 //   ...bill_master_fields,
@@ -242,11 +243,20 @@ func (h *BillsHandler) Get(c *gin.Context) {
 		return
 	}
 
-	// Get branchId and posId from session (set by RequireAuth middleware)
-	branchID, posID, err := h.getBranchAndPOSFromContext(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+	// Get branchId and posId from session (optional for admin users)
+	branchIDVal, branchExists := c.Get("branch_id")
+	posIDVal, posExists := c.Get("pos_id")
+
+	var branchID, posID string
+	if branchExists && branchIDVal != nil {
+		if b, ok := branchIDVal.(string); ok && b != "" {
+			branchID = b
+		}
+	}
+	if posExists && posIDVal != nil {
+		if p, ok := posIDVal.(string); ok && p != "" {
+			posID = p
+		}
 	}
 
 	b, details, discounts, err := h.bills.GetFullByID(c.Request.Context(), id)
@@ -259,13 +269,16 @@ func (h *BillsHandler) Get(c *gin.Context) {
 		return
 	}
 
-	// Validate bill belongs to session's branch and POS
-	if b.BranchID != branchID || b.POSID != posID {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "bill_access_denied",
-			"message": "Bill does not belong to your current branch and POS",
-		})
-		return
+	// Only validate branch/POS access if user has branchId/posId in session
+	// Admin users without POS session can view any bill
+	if branchID != "" && posID != "" {
+		if b.BranchID != branchID || b.POSID != posID {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "bill_access_denied",
+				"message": "Bill does not belong to your current branch and POS",
+			})
+			return
+		}
 	}
 
 	detailOut := make([]gin.H, 0, len(details))
