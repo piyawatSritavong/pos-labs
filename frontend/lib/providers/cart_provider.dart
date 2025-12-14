@@ -30,6 +30,11 @@ class CartProvider extends ChangeNotifier {
 
   double get total => subtotal - discount + tax;
 
+  void setDiscount(double amount) {
+    discount = amount;
+    notifyListeners();
+  }
+
   void addProduct(Product product) {
     if (_items.containsKey(product.id)) {
       _items[product.id]!.qty += 1;
@@ -53,6 +58,7 @@ class CartProvider extends ChangeNotifier {
 
   void clear() {
     _items.clear();
+    discount = 0.0;
     notifyListeners();
   }
 }

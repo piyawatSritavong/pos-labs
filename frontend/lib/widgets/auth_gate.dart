@@ -1,3 +1,4 @@
+import 'package:frontend/screens/office_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend/screens/home_screen.dart';
@@ -29,13 +30,16 @@ class _AuthGateState extends State<AuthGate> {
         // Show loading while checking auth
         if (auth.isLoading) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
         if (auth.isAuthenticated) {
+          if (auth.isAdmin) {
+            // ถ้าเป็น role.admin ให้เข้าโหมดหลังบ้าน
+            return const OfficeScreen();
+          }
+          // ถ้าไม่ใช่ admin ให้เข้าโหมดหน้าบ้านปกติ
           return const HomeScreen(); // Replace with your main app screen
         }
 

@@ -13,7 +13,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
-    print('[HOME] auth tset: ${auth.name}');
+    // print('[HOME] auth tset: ${auth.name}');
 
     return Scaffold(
       appBar: AppBar(

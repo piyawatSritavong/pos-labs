@@ -3,18 +3,53 @@ import 'package:frontend/models/product.dart';
 import 'package:frontend/providers/cart_provider.dart';
 import 'package:provider/provider.dart';
 
-class ProductListSection extends StatelessWidget {
+class ProductListSection extends StatefulWidget {
   const ProductListSection({super.key});
 
-  // ตอนนี้ mock list เดียวก่อน
-  List<Product> get mockProducts => const [
-        Product(
-          id: 'p1',
-          name: 'ปูนฉาบมาตรฐาน (Mock)',
-          price: 1200.00,
-          code: 'PNT-001',
-        ),
-      ];
+  @override
+  State<ProductListSection> createState() => _ProductListSectionState();
+}
+
+class _ProductListSectionState extends State<ProductListSection> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchText = '';
+
+  List<Product> get _mockProducts => const [
+    Product(
+      id: 'p1',
+      name: 'ปูนฉาบมาตรฐาน (Mock)',
+      price: 1200.00,
+      code: 'PNT-001',
+    ),
+    Product(
+      id: 'p2',
+      name: 'ปูนฉาบกันซึม (Mock)',
+      price: 1500.00,
+      code: 'PNT-002',
+    ),
+    Product(
+      id: 'p3',
+      name: 'ปูนตราผึ้ง (Mock)',
+      price: 800.00,
+      code: 'PNT-102',
+    ),
+  ];
+
+  List<Product> get _filteredProducts {
+    if (_searchText.isEmpty) return _mockProducts;
+
+    final q = _searchText.toLowerCase();
+    return _mockProducts.where((p) {
+      return p.name.toLowerCase().contains(q) ||
+          p.code.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,9 +64,9 @@ class ProductListSection extends StatelessWidget {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(8),
-              itemCount: mockProducts.length,
+              itemCount: _filteredProducts.length,
               itemBuilder: (context, index) {
-                final product = mockProducts[index];
+                final product = _filteredProducts[index];
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 6),
                   child: ListTile(
@@ -42,10 +77,7 @@ class ProductListSection extends StatelessWidget {
                         color: const Color(0xFFEBEBDB),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Icon(
-                        Icons.build,
-                        color: Color(0xFF1F6F5D),
-                      ),
+                      child: const Icon(Icons.build, color: Color(0xFF1F6F5D)),
                     ),
                     title: Text(
                       product.name,
@@ -98,15 +130,50 @@ class ProductListSection extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide.none,
                       ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        vertical: 14,
-                      ),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
                     ),
+                    // 👉 พิมแล้วให้ search อัตโนมัติ
+                    onChanged: (value) {
+                      setState(() {
+                        _searchText = value;
+                      });
+                    },
+
+                    // 👉 ถ้ากด Enter (สแกนบาร์โค้ดส่วนใหญ่จะยิง Enter ให้อัตโนมัติ)
+                    //    แล้วเจอสินค้าตัวเดียว → เพิ่มเข้าตะกร้าให้เลย
                     onSubmitted: (value) {
-                      // อนาคต: หา product จาก barcode แล้ว cart.addProduct(product)
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('สแกน: $value (ยัง mock อยู่)')),
-                      );
+                      setState(() {
+                        _searchText = value;
+                      });
+
+                      final matches = _filteredProducts;
+                      if (matches.length == 1) {
+                        final product = matches.first;
+                        cart.addProduct(product);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('เพิ่ม ${product.name} เข้าตะกร้า'),
+                          ),
+                        );
+                        // เคลียร์ช่อง + เคลียร์ filter
+                        _searchController.clear();
+                        setState(() {
+                          _searchText = '';
+                        });
+                      } else if (matches.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('ไม่พบสินค้าสำหรับ "$value"')),
+                        );
+                      } else {
+                        // ถ้ามากกว่า 1 ตัว ก็ปล่อยให้ user เลือกจาก list ด้านบน
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'พบ ${matches.length} รายการ เลือกจากด้านบน',
+                            ),
+                          ),
+                        );
+                      }
                     },
                   ),
                 ),

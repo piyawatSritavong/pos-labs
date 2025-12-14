@@ -13,26 +13,34 @@ class AuthProvider extends ChangeNotifier {
   String? get roleId => _roleId;
   bool get isAuthenticated => _token != null;
   bool get isLoading => _isLoading;
+  bool get isAdmin => _roleId == 'role.admin';
 
   // When opening the app, check for existing token
   Future<void> autoLogin() async {
+    _isLoading = true;
+    notifyListeners();
+
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString('auth_token');
 
     if (savedToken != null && savedToken.isNotEmpty) {
       _token = savedToken;
-      // attempt to fetch user info for saved token
       try {
         final me = await ApiService.getCurrentUser(savedToken);
         _name = me['name'] as String?;
-        _roleId = me['role_id'] as String?;
+        // รองรับทั้ง key แบบ roleId และ role_id จาก API
+        _roleId = (me['roleId'] ?? me['role_id']) as String?;
       } catch (_) {
-        // if token invalid, clear it
+        // ถ้า token ใช้งานไม่ได้ ให้เคลียร์ทิ้ง
         _token = null;
+        _name = null;
+        _roleId = null;
         await prefs.remove('auth_token');
       }
-      notifyListeners();
     }
+
+    _isLoading = false;
+    notifyListeners();
   }
 
   // Login function
@@ -51,7 +59,8 @@ class AuthProvider extends ChangeNotifier {
       try {
         final me = await ApiService.getCurrentUser(token);
         _name = me['name'] as String?;
-        _roleId = me['role_id'] as String?;
+        // รองรับทั้ง key แบบ roleId และ role_id จาก API
+        _roleId = (me['roleId'] ?? me['role_id']) as String?;
       } catch (e) {
         // failed to fetch user info - cleanup and rethrow
         _token = null;
