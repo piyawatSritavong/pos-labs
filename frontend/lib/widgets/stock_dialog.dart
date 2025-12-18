@@ -1,202 +1,349 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/services/api_service.dart';
+import 'package:frontend/theme/app_theme.dart';
+import 'package:provider/provider.dart';
 
-class StockDialog extends StatelessWidget {
+class StockDialog extends StatefulWidget {
   const StockDialog({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Mock data - สินค้าที่ใกล้หมด
-    final mockLowStockItems = [
-      {
-        'code': 'PNT-001',
-        'name': 'ปูนฉาบมาตรฐาน',
-        'currentStock': 5,
-        'minStock': 10,
-        'unit': 'ถุง',
-      },
-      {
-        'code': 'PNT-004',
-        'name': 'ปูนซีเมนต์ขาว',
-        'currentStock': 8,
-        'minStock': 15,
-        'unit': 'ถุง',
-      },
-      {
-        'code': 'PNT-007',
-        'name': 'ทรายละเอียด',
-        'currentStock': 3,
-        'minStock': 20,
-        'unit': 'ถุง',
-      },
-      {
-        'code': 'PNT-010',
-        'name': 'กาวซีเมนต์',
-        'currentStock': 2,
-        'minStock': 5,
-        'unit': 'กระป๋อง',
-      },
-    ];
+  State<StockDialog> createState() => _StockDialogState();
+}
 
+class _StockDialogState extends State<StockDialog> {
+  bool _isLoading = false;
+  String? _error;
+  List<_LowStockPart> _lowStock = [];
+  static const double _threshold = 10;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLowStock();
+  }
+
+  double _toDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
+  }
+
+  List<_LowStockPart> _buildLowStock(List<Map<String, dynamic>> raw) {
+    final List<_LowStockPart> result = [];
+    for (final part in raw) {
+      final addresses = (part['addresses'] as List?) ?? [];
+      double total = 0;
+      final mappedAddresses = <_AddressStock>[];
+      for (final entry in addresses.whereType<Map<String, dynamic>>()) {
+        final qty = _toDouble(
+          entry['qty'] ??
+              entry['quantity'] ??
+              entry['qtyOnHand'] ??
+              entry['balance'] ??
+              entry['stock'],
+        );
+        total += qty;
+        mappedAddresses.add(
+          _AddressStock(
+            label: entry['labelTh']?.toString() ??
+                entry['label']?.toString() ??
+                entry['addressName']?.toString() ??
+                entry['addressCode']?.toString() ??
+                '-',
+            qty: qty,
+          ),
+        );
+      }
+
+      if (mappedAddresses.isEmpty) {
+        continue;
+      }
+
+      if (total <= _threshold) {
+        result.add(
+          _LowStockPart(
+            code: part['code']?.toString() ?? '',
+            name: part['nameTh']?.toString() ??
+                part['name']?.toString() ??
+                'ไม่ทราบชื่อ',
+            totalQty: total,
+            addresses: mappedAddresses,
+          ),
+        );
+      }
+    }
+    result.sort((a, b) => a.totalQty.compareTo(b.totalQty));
+    return result;
+  }
+
+  Future<void> _loadLowStock() async {
+    final auth = context.read<AuthProvider>();
+    final token = auth.token;
+    if (token == null) {
+      setState(() {
+        _error = 'token หาย กรุณา login ใหม่';
+        _lowStock = [];
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final parts = await ApiService.getParts(token: token, limit: 200, offset: 0);
+      final filtered = _buildLowStock(parts);
+      setState(() {
+        _lowStock = filtered;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.6,
-        constraints: const BoxConstraints(maxWidth: 600),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1F6F5D),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      insetPadding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 560),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppSizes.radius),
+            border: Border.all(color: AppColors.border),
+            boxShadow: AppShadows.soft,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
                 children: [
                   const Text(
-                    'สินค้าใกล้หมด',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                    'สต็อกใกล้หมด',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'ต่ำกว่า $_threshold ชิ้น',
+                      style: const TextStyle(
+                        color: AppColors.accent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
+                  const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
+                    tooltip: 'รีเฟรช',
+                    onPressed: _isLoading ? null : _loadLowStock,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: 'ปิด',
                     onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
                   ),
                 ],
               ),
-            ),
-
-            // Stock items list
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                padding: const EdgeInsets.all(16),
-                itemCount: mockLowStockItems.length,
-                itemBuilder: (context, index) {
-                  final item = mockLowStockItems[index];
-                  final currentStock = item['currentStock'] as int;
-                  final minStock = item['minStock'] as int;
-                  final isCritical = currentStock < minStock * 0.3;
-                  
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      leading: Container(
-                        width: 50,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          color: isCritical 
-                              ? Colors.red[100] 
-                              : Colors.orange[100],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          Icons.warning,
-                          color: isCritical ? Colors.red : Colors.orange,
-                        ),
-                      ),
-                      title: Text(
-                        item['name'] as String,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 4),
-                          Text('รหัส: ${item['code']}'),
-                          Text(
-                            'สต็อกปัจจุบัน: ${item['currentStock']} ${item['unit']}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isCritical ? Colors.red : Colors.orange[700],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Text(
-                            'สต็อกขั้นต่ำ: ${item['minStock']} ${item['unit']}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      trailing: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isCritical ? Colors.red : Colors.orange,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          isCritical ? 'วิกฤต' : 'ต่ำ',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            // Action button
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: Colors.grey[300]!),
+              const SizedBox(height: 16),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _error != null
+                          ? _ErrorBanner(message: _error!, onRetry: _loadLowStock)
+                          : _lowStock.isEmpty
+                              ? const _EmptyStock()
+                              : ListView.separated(
+                                  itemCount: _lowStock.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 12),
+                                  itemBuilder: (context, index) {
+                                    final part = _lowStock[index];
+                                    return Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.bg,
+                                        borderRadius: BorderRadius.circular(
+                                            AppSizes.radius),
+                                        border:
+                                            Border.all(color: AppColors.border),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Text(
+                                                part.name,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                '#${part.code}',
+                                                style: const TextStyle(
+                                                  color: AppColors.muted,
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.danger
+                                                      .withValues(alpha: 0.15),
+                                                  borderRadius:
+                                                      BorderRadius.circular(999),
+                                                ),
+                                                child: Text(
+                                                  '${part.totalQty.toStringAsFixed(0)} ชิ้น',
+                                                  style: const TextStyle(
+                                                    color: AppColors.danger,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Wrap(
+                                            spacing: 8,
+                                            runSpacing: 8,
+                                            children: part.addresses
+                                                .map(
+                                                  (address) => Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 6,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: AppColors.surface,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              999),
+                                                      border: Border.all(
+                                                        color: AppColors.border,
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      '${address.label}: ${address.qty.toStringAsFixed(0)}',
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                        color: AppColors.text,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                )
+                                                .toList(),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
                 ),
               ),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1F6F5D),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('เปิดหน้าจัดการสต็อก')),
-                    );
-                  },
-                  child: const Text(
-                    'จัดการสต็อก',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+class _LowStockPart {
+  _LowStockPart({
+    required this.code,
+    required this.name,
+    required this.totalQty,
+    required this.addresses,
+  });
+
+  final String code;
+  final String name;
+  final double totalQty;
+  final List<_AddressStock> addresses;
+}
+
+class _AddressStock {
+  _AddressStock({required this.label, required this.qty});
+
+  final String label;
+  final double qty;
+}
+
+class _EmptyStock extends StatelessWidget {
+  const _EmptyStock();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Icon(Icons.check_circle_outline,
+              size: 56, color: AppColors.primary),
+          SizedBox(height: 12),
+          Text('สต็อกเพียงพอทุกสินค้าแล้ว'),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline, color: AppColors.danger, size: 48),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.danger),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: onRetry,
+            child: const Text('ลองใหม่'),
+          ),
+        ],
+      ),
+    );
+  }
+}

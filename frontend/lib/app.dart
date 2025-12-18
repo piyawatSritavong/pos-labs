@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/widgets/auth_gate.dart';
 
 class MyApp extends StatelessWidget {
@@ -10,10 +11,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'POS Labs',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true
-      ),
+      theme: AppTheme.light(),
       home: const AuthGate(),
     );
   }

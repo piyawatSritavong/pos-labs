@@ -11,21 +11,21 @@ class OfficeScreen extends StatelessWidget {
     final auth = Provider.of<AuthProvider>(context);
 
     // ถ้าไม่ใช่ admin ห้ามเข้า ให้เด้งกลับ /home ทันที
-    if (auth.name != "Administrator") {
-      // ใช้ Future.microtask เพื่อเลี่ยง setState ระหว่าง build
-      Future.microtask(() {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-          (route) => false,
-        );
-      });
+    // if (!auth.isAdmin) {
+    //   // ใช้ Future.microtask เพื่อเลี่ยง setState ระหว่าง build
+    //   Future.microtask(() {
+    //     Navigator.of(context).pushAndRemoveUntil(
+    //       MaterialPageRoute(builder: (_) => const HomeScreen()),
+    //       (route) => false,
+    //     );
+    //   });
 
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
+    //   return const Scaffold(
+    //     body: Center(
+    //       child: CircularProgressIndicator(),
+    //     ),
+    //   );
+    // }
 
     // ถ้าเป็น admin จริง แสดงหน้า office ได้
     return Scaffold(
@@ -63,21 +63,21 @@ class OfficeSettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
 
-    // กันกรณี user ปกติหลุดมาหน้านี้โดยตรง
-    if (auth.name != "Administrator") {
-      Future.microtask(() {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-          (route) => false,
-        );
-      });
+    // ถ้าไม่ใช่ admin ห้ามเข้า ให้เด้งกลับ /home ทันที
+    // if (!auth.isAdmin) {
+    //   Future.microtask(() {
+    //     Navigator.of(context).pushAndRemoveUntil(
+    //       MaterialPageRoute(builder: (_) => const HomeScreen()),
+    //       (route) => false,
+    //     );
+    //   });
 
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
+    //   return const Scaffold(
+    //     body: Center(
+    //       child: CircularProgressIndicator(),
+    //     ),
+    //   );
+    // }
 
     return Scaffold(
       appBar: AppBar(
