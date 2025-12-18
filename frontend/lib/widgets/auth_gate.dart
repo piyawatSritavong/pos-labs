@@ -1,3 +1,4 @@
+import 'package:frontend/screens/office_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend/screens/home_screen.dart';
@@ -33,9 +34,9 @@ class _AuthGateState extends State<AuthGate> {
         }
 
         if (auth.isAuthenticated) {
-          // if (auth.isAdmin) {
-          //   return const OfficeScreen();
-          // }
+          if (auth.isAdmin) {
+            return const OfficeScreen();
+          }
 
           return const HomeScreen();
         }
