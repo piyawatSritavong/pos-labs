@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/screens/office_screen.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/widgets/search_parts_dialog.dart';
@@ -296,6 +297,7 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
     return Row(
       children: [
         const SizedBox(width: 12),
@@ -346,11 +348,17 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
           ),
           itemBuilder: (context) => [
             const PopupMenuItem(value: 'profile', child: Text('โปรไฟล์')),
+            if (auth.isAdmin)
+              const PopupMenuItem(value: 'office', child: Text('OFFICE')),
             const PopupMenuItem(value: 'logout', child: Text('ออกจากระบบ')),
           ],
           onSelected: (value) {
             if (value == 'logout') {
               context.read<AuthProvider>().logout();
+            } else if (value == 'office') {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const OfficeScreen()),
+              );
             }
           },
         ),

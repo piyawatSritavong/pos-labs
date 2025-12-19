@@ -241,6 +241,122 @@ class ApiService {
     return _extractObjectFromResponse(decoded, '/parts/:code');
   }
 
+  // ====================== Office APIs ======================
+
+  static Future<List<Map<String, dynamic>>> getUsers({
+    required String token,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/users').replace(
+      queryParameters: {'limit': '$limit', 'offset': '$offset'},
+    );
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load users: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractListFromResponse(decoded, '/users');
+  }
+
+  static Future<Map<String, dynamic>> getCompany({
+    required String token,
+  }) async {
+    final uri = Uri.parse('$baseUrl/company');
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load company: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/company');
+  }
+
+  static Future<List<Map<String, dynamic>>> getBranches({
+    required String token,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/branches').replace(
+      queryParameters: {'limit': '$limit', 'offset': '$offset'},
+    );
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load branches: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractListFromResponse(decoded, '/branches');
+  }
+
+  static Future<List<Map<String, dynamic>>> getPosDevices({
+    required String token,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/pos').replace(
+      queryParameters: {'limit': '$limit', 'offset': '$offset'},
+    );
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load POS devices: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractListFromResponse(decoded, '/pos');
+  }
+
+  static Future<List<Map<String, dynamic>>> getUserBranches({
+    required String token,
+    String? userId,
+    String? branchId,
+  }) async {
+    late Uri uri;
+    if (userId != null && branchId != null) {
+      uri = Uri.parse('$baseUrl/user-branches/$userId/$branchId');
+    } else if (userId != null) {
+      uri = Uri.parse('$baseUrl/user-branches/user/$userId');
+    } else if (branchId != null) {
+      uri = Uri.parse('$baseUrl/user-branches/branch/$branchId');
+    } else {
+      uri = Uri.parse('$baseUrl/user-branches');
+    }
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load user branches: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractListFromResponse(decoded, '/user-branches');
+  }
+
   // ====================== Bills (ตะกร้า / ใบเสร็จ) ======================
 
   // GET /bills?limit=&offset=

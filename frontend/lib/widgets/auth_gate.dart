@@ -34,9 +34,9 @@ class _AuthGateState extends State<AuthGate> {
         }
 
         if (auth.isAuthenticated) {
-          if (auth.isAdmin) {
-            return const OfficeScreen();
-          }
+          // if (auth.isAdmin) {
+          //   return const OfficeScreen();
+          // }
 
           return const HomeScreen();
         }

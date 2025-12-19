@@ -2,89 +2,992 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/screens/home_screen.dart';
+import 'package:frontend/services/api_service.dart';
+import 'package:frontend/theme/app_theme.dart';
 
-class OfficeScreen extends StatelessWidget {
+class OfficeScreen extends StatefulWidget {
   const OfficeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final auth = Provider.of<AuthProvider>(context);
+  State<OfficeScreen> createState() => _OfficeScreenState();
+}
 
-    // ถ้าไม่ใช่ admin ห้ามเข้า ให้เด้งกลับ /home ทันที
+class _OfficeScreenState extends State<OfficeScreen> {
+  static final _menuItems = [
+    _SidebarItem('Overview', Icons.dashboard_outlined),
+    _SidebarItem('Users', Icons.people_alt_outlined),
+    _SidebarItem('Company', Icons.business_outlined),
+    _SidebarItem('Branches', Icons.store_outlined),
+    _SidebarItem('POS & User Branches', Icons.link_outlined),
+  ];
+  int _selectedIndex = 0;
+  bool _isLoading = true;
+  String? _error;
+  String? _mockNotice;
+
+  List<Map<String, dynamic>> _users = [];
+  List<Map<String, dynamic>> _branches = [];
+  List<Map<String, dynamic>> _posDevices = [];
+  List<Map<String, dynamic>> _userBranches = [];
+  Map<String, dynamic>? _company;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadDashboard();
+    });
+  }
+
+  Future<void> _loadDashboard() async {
+    final auth = context.read<AuthProvider>();
+    final token = auth.token;
+    if (token == null) {
+      _applyMockData('token หาย – แสดงข้อมูลตัวอย่าง');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final results = await Future.wait([
+        ApiService.getUsers(token: token),
+        ApiService.getCompany(token: token),
+        ApiService.getBranches(token: token, limit: 100),
+        ApiService.getPosDevices(token: token, limit: 100),
+        ApiService.getUserBranches(token: token),
+      ]);
+
+      setState(() {
+        _mockNotice = null;
+        _users = results[0] as List<Map<String, dynamic>>;
+        _company = results[1] as Map<String, dynamic>;
+        _branches = results[2] as List<Map<String, dynamic>>;
+        _posDevices = results[3] as List<Map<String, dynamic>>;
+        _userBranches = results[4] as List<Map<String, dynamic>>;
+      });
+    } catch (e) {
+      _applyMockData('โหลดข้อมูลจริงไม่สำเร็จ: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _applyMockData(String reason) {
+    setState(() {
+      _mockNotice = reason;
+      _error = null;
+      _isLoading = false;
+      _company = {
+        'companyNameTh': 'บริษัทตัวอย่าง จำกัด',
+        'companyAddressTh': '123 ถนนสุขุมวิท กรุงเทพฯ',
+        'phone': '02-123-4567',
+        'email': 'info@example.com',
+        'website': 'https://example.com',
+        'taxRate': 0.07,
+        'taxType': 'vat',
+      };
+      _users = [
+        {
+          'name': 'Mock Admin',
+          'username': 'admin',
+          'roleId': 'role.admin',
+          'isActive': true,
+        },
+        {
+          'name': 'Mock Cashier',
+          'username': 'cashier',
+          'roleId': 'role.cashier',
+          'isActive': true,
+        },
+      ];
+      _branches = [
+        {
+          'branchId': '00000',
+          'branchNameTh': 'สาขากลางเมือง',
+          'branchAddressTh': '456 ถนนพระราม 9',
+          'phone': '02-222-2222',
+        },
+      ];
+      _posDevices = [
+        {'posId': 'POS001', 'branchId': '00000'},
+        {'posId': 'POS002', 'branchId': '00000'},
+      ];
+      _userBranches = [
+        {'userId': 'admin', 'branchId': '00000'},
+        {'userId': 'cashier', 'branchId': '00000'},
+      ];
+    });
+  }
+
+  Widget _buildGuardedBody(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
     if (!auth.isAdmin) {
-      // ใช้ Future.microtask เพื่อเลี่ยง setState ระหว่าง build
       Future.microtask(() {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const HomeScreen()),
           (route) => false,
         );
       });
-
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
-    // ถ้าเป็น admin จริง แสดงหน้า office ได้
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Office (Back Office)'),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('ยินดีต้อนรับ Administrator'),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                // ตัวอย่างปุ่มไปหน้า settings ในอนาคต
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const OfficeSettingsScreen(),
+      backgroundColor: AppColors.bg,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? _ErrorState(message: _error!, onRetry: _loadDashboard)
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _Sidebar(
+                      items: _menuItems,
+                      selectedIndex: _selectedIndex,
+                      onSelect: (index) =>
+                          setState(() => _selectedIndex = index),
+                    ),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          _TopBar(onSearch: (query) {}),
+                          if (_mockNotice != null)
+                            _NoticeBanner(message: _mockNotice!),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+                              child: _buildContentForIndex(_selectedIndex),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _buildGuardedBody(context);
+  }
+
+  Widget _buildContentForIndex(int index) {
+    switch (index) {
+      case 0:
+        return _OverviewTab(
+          company: _company,
+          users: _users,
+          branches: _branches,
+          posDevices: _posDevices,
+          userBranches: _userBranches,
+        );
+      case 1:
+        return _UsersTab(data: _users);
+      case 2:
+        return _CompanyTab(data: _company);
+      case 3:
+        return _BranchesTab(data: _branches);
+      case 4:
+        return _PosUserBranchesTab(
+          posDevices: _posDevices,
+          userBranches: _userBranches,
+        );
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+}
+
+class _OverviewTab extends StatelessWidget {
+  const _OverviewTab({
+    required this.company,
+    required this.users,
+    required this.branches,
+    required this.posDevices,
+    required this.userBranches,
+  });
+
+  final Map<String, dynamic>? company;
+  final List<Map<String, dynamic>> users;
+  final List<Map<String, dynamic>> branches;
+  final List<Map<String, dynamic>> posDevices;
+  final List<Map<String, dynamic>> userBranches;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              _StatCard(
+                title: 'Users',
+                value: users.length.toString(),
+                icon: Icons.people_alt_outlined,
+              ),
+              _StatCard(
+                title: 'Branches',
+                value: branches.length.toString(),
+                icon: Icons.store_outlined,
+              ),
+              _StatCard(
+                title: 'POS Devices',
+                value: posDevices.length.toString(),
+                icon: Icons.point_of_sale_outlined,
+              ),
+              _StatCard(
+                title: 'User/Branch links',
+                value: userBranches.length.toString(),
+                icon: Icons.link_outlined,
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: const [
+              Expanded(
+                flex: 2,
+                child: _ChartCard(
+                  title: 'ยอดขายรายเดือน',
+                  subtitle: 'ข้อมูลจำลอง',
+                ),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: _ChartCard(
+                  title: 'อัตราการเติบโต',
+                  subtitle: 'จำลอง',
+                  variant: ChartVariant.ring,
+                ),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: _ChartCard(
+                  title: 'ลูกค้าใหม่',
+                  subtitle: 'จำลอง',
+                  variant: ChartVariant.purple,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          if (company != null)
+            _SectionContainer(
+              title: 'Company Profile',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    company?['companyNameTh']?.toString() ??
+                        company?['companyName']?.toString() ??
+                        'ไม่ทราบชื่อ',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                );
-              },
-              child: const Text('ตั้งค่าระบบ (ตัวอย่าง)'),
+                  const SizedBox(height: 8),
+                  Text(
+                    company?['companyAddressTh']?.toString() ??
+                        company?['companyAddress']?.toString() ??
+                        '-',
+                    style: const TextStyle(color: AppColors.muted),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 8,
+                    children: [
+                      _InlineInfo(
+                        label: 'โทร',
+                        value: company?['phone']?.toString() ?? '-',
+                      ),
+                      _InlineInfo(
+                        label: 'อีเมล',
+                        value: company?['email']?.toString() ?? '-',
+                      ),
+                      _InlineInfo(
+                        label: 'ภาษี',
+                        value:
+                            '${((company?['taxRate'] ?? 0) * 100).toStringAsFixed(2)}% (${company?['taxType'] ?? '-'})',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
 }
 
-class OfficeSettingsScreen extends StatelessWidget {
-  const OfficeSettingsScreen({super.key});
+class _UsersTab extends StatelessWidget {
+  const _UsersTab({required this.data});
+
+  final List<Map<String, dynamic>> data;
 
   @override
   Widget build(BuildContext context) {
-    final auth = Provider.of<AuthProvider>(context);
+    return _SectionContainer(
+      title: 'Users',
+      child: data.isEmpty
+          ? const _EmptyMessage(message: 'ยังไม่มีผู้ใช้งาน')
+          : ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: data.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final user = data[index];
+                final role = user['roleId'] ?? user['role_id'] ?? '-';
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                    child: const Icon(Icons.person, color: AppColors.primary),
+                  ),
+                  title: Text(user['name']?.toString() ?? 'ไม่ทราบชื่อ'),
+                  subtitle: Text('${user['username'] ?? '-'}  •  $role'),
+                  trailing: Text(
+                    (user['isActive'] == false ? 'Inactive' : 'Active'),
+                    style: TextStyle(
+                      color: user['isActive'] == false
+                          ? AppColors.muted
+                          : AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
 
-    // ถ้าไม่ใช่ admin ห้ามเข้า ให้เด้งกลับ /home ทันที
-    if (!auth.isAdmin) {
-      Future.microtask(() {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-          (route) => false,
-        );
-      });
+class _CompanyTab extends StatelessWidget {
+  const _CompanyTab({required this.data});
 
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
+  final Map<String, dynamic>? data;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionContainer(
+      title: 'Company Settings',
+      child: data == null
+          ? const _EmptyMessage(message: 'ไม่พบข้อมูลบริษัท')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _DetailRow(label: 'ชื่อ (TH)', value: data?['companyNameTh']),
+                _DetailRow(label: 'ชื่อ (EN)', value: data?['companyName']),
+                _DetailRow(label: 'ที่อยู่', value: data?['companyAddressTh']),
+                _DetailRow(label: 'โทรศัพท์', value: data?['phone']),
+                _DetailRow(label: 'อีเมล', value: data?['email']),
+                _DetailRow(label: 'เว็บไซต์', value: data?['website']),
+                _DetailRow(
+                  label: 'ประเภทภาษี',
+                  value:
+                      '${data?['taxType'] ?? '-'} (${((data?['taxRate'] ?? 0) * 100).toStringAsFixed(2)}%)',
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _BranchesTab extends StatelessWidget {
+  const _BranchesTab({required this.data});
+
+  final List<Map<String, dynamic>> data;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionContainer(
+      title: 'Branches',
+      child: data.isEmpty
+          ? const _EmptyMessage(message: 'ยังไม่มีข้อมูลสาขา')
+          : ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: data.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final branch = data[index];
+                return ListTile(
+                  title: Text(
+                    branch['branchNameTh']?.toString() ??
+                        branch['branchName']?.toString() ??
+                        'ไม่ทราบชื่อ',
+                  ),
+                  subtitle: Text(
+                    branch['branchAddressTh']?.toString() ??
+                        branch['branchAddress']?.toString() ??
+                        '-',
+                  ),
+                  trailing: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('#${branch['branchId'] ?? '-'}'),
+                      Text(
+                        branch['phone']?.toString() ?? '',
+                        style: const TextStyle(color: AppColors.muted),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _PosUserBranchesTab extends StatelessWidget {
+  const _PosUserBranchesTab({
+    required this.posDevices,
+    required this.userBranches,
+  });
+
+  final List<Map<String, dynamic>> posDevices;
+  final List<Map<String, dynamic>> userBranches;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionContainer(
+            title: 'POS Devices',
+            child: posDevices.isEmpty
+                ? const _EmptyMessage(message: 'ยังไม่มี POS ที่ลงทะเบียน')
+                : ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: posDevices.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final pos = posDevices[index];
+                      return ListTile(
+                        leading: const Icon(Icons.point_of_sale_outlined),
+                        title: Text(pos['posId']?.toString() ?? 'POS'),
+                        subtitle: Text('สาขา ${pos['branchId'] ?? '-'}'),
+                      );
+                    },
+                  ),
+          ),
+          const SizedBox(height: 24),
+          _SectionContainer(
+            title: 'User Branch Assignments',
+            child: userBranches.isEmpty
+                ? const _EmptyMessage(message: 'ยังไม่มีการกำหนดสาขาให้ผู้ใช้')
+                : ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: userBranches.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final link = userBranches[index];
+                      return ListTile(
+                        leading: const Icon(Icons.link_outlined),
+                        title: Text('User: ${link['userId'] ?? '-'}'),
+                        subtitle: Text('Branch: ${link['branchId'] ?? '-'}'),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.title,
+    required this.value,
+    required this.icon,
+  });
+
+  final String title;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 180,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppShadows.soft,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: AppColors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppColors.muted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionContainer extends StatelessWidget {
+  const _SectionContainer({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppShadows.soft,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.label, required this.value});
+
+  final String label;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(label, style: const TextStyle(color: AppColors.muted)),
+          ),
+          Expanded(
+            child: Text(
+              value?.toString() ?? '-',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineInfo extends StatelessWidget {
+  const _InlineInfo({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: AppColors.muted),
         ),
-      );
+        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+
+class _EmptyMessage extends StatelessWidget {
+  const _EmptyMessage({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(message, style: const TextStyle(color: AppColors.muted)),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline, size: 48, color: AppColors.danger),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.danger),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(onPressed: onRetry, child: const Text('ลองใหม่')),
+        ],
+      ),
+    );
+  }
+}
+
+class _Sidebar extends StatelessWidget {
+  const _Sidebar({
+    required this.items,
+    required this.selectedIndex,
+    required this.onSelect,
+  });
+
+  final List<_SidebarItem> items;
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 260,
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(right: BorderSide(color: AppColors.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child:
+                    const Icon(Icons.dashboard_customize, color: AppColors.primary),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'POS Office',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () {},
+            icon: const Icon(Icons.add),
+            label: const Text('Register action'),
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: ListView.builder(
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                final isActive = index == selectedIndex;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => onSelect(index),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? AppColors.primary.withValues(alpha: 0.12)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            item.icon,
+                            color: isActive ? AppColors.primary : AppColors.muted,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            item.label,
+                            style: TextStyle(
+                              color:
+                                  isActive ? AppColors.primary : AppColors.muted,
+                              fontWeight:
+                                  isActive ? FontWeight.bold : FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppSizes.radius),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Get mobile app',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 12),
+                Row(
+                  children: [
+                    Icon(Icons.android, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Text('Play Store'),
+                  ],
+                ),
+                SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.apple, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Text('App Store'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.onSearch});
+
+  final ValueChanged<String> onSearch;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: AppColors.bg,
+                prefixIcon: const Icon(Icons.search),
+                hintText: 'Search...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(999),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onSubmitted: onSearch,
+            ),
+          ),
+          const SizedBox(width: 24),
+          IconButton(
+            icon: const Icon(Icons.notifications_none),
+            onPressed: () {},
+          ),
+          const SizedBox(width: 12),
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+            child: const Icon(Icons.person, color: AppColors.primary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarItem {
+  const _SidebarItem(this.label, this.icon);
+  final String label;
+  final IconData icon;
+}
+
+class _NoticeBanner extends StatelessWidget {
+  const _NoticeBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.accent.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: AppColors.accent),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(color: AppColors.accent),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum ChartVariant { line, ring, purple }
+
+class _ChartCard extends StatelessWidget {
+  const _ChartCard({
+    required this.title,
+    required this.subtitle,
+    this.variant = ChartVariant.line,
+  });
+
+  final String title;
+  final String subtitle;
+  final ChartVariant variant;
+
+  @override
+  Widget build(BuildContext context) {
+    final Gradient gradient;
+    Color accent;
+    switch (variant) {
+      case ChartVariant.ring:
+        gradient = const LinearGradient(
+          colors: [Color(0xFF14B8A6), Color(0xFF6D28D9)],
+        );
+        accent = const Color(0xFF14B8A6);
+        break;
+      case ChartVariant.purple:
+        gradient = const LinearGradient(
+          colors: [Color(0xFF5B21B6), Color(0xFF8B5CF6)],
+        );
+        accent = Colors.white;
+        break;
+      default:
+        gradient = const LinearGradient(
+          colors: [Color(0xFFF472B6), Color(0xFFFBBF24)],
+        );
+        accent = AppColors.text;
+        break;
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Office Settings'),
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: variant == ChartVariant.purple ? AppColors.primary : AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppShadows.soft,
       ),
-      body: const Center(
-        child: Text('หน้านี้สำหรับตั้งค่าระบบ (เฉพาะ Admin)'),
+      height: 230,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: accent,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            style: TextStyle(color: accent.withOpacity(0.7)),
+          ),
+          const Spacer(),
+          Container(
+            height: 120,
+            decoration: BoxDecoration(
+              gradient: gradient,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Center(
+              child: Text(
+                'Chart Placeholder',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
