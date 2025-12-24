@@ -84,7 +84,7 @@ class ApiService {
 
     if (decoded is Map<String, dynamic>) {
       // ลองดู key มาตรฐานก่อน
-      final listKeys = ['items', 'data', 'parts', 'results'];
+      final listKeys = ['items', 'data', 'users', 'parts', 'results'];
       for (final key in listKeys) {
         if (decoded[key] is List) {
           return (decoded[key] as List)
@@ -265,6 +265,114 @@ class ApiService {
     return _extractListFromResponse(decoded, '/users');
   }
 
+  static Future<Map<String, dynamic>> getUserById({
+    required String token,
+    required String userId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/users/$userId');
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load user: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/users/:id');
+  }
+
+  static Future<Map<String, dynamic>> createUser({
+    required String token,
+    required String username,
+    required String roleId,
+    required String name,
+    required String password,
+    bool isActive = true,
+    bool isSuperuser = false,
+  }) async {
+    final uri = Uri.parse('$baseUrl/users');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'username': username,
+        'roleId': roleId,
+        'name': name,
+        'password': password,
+        'isActive': isActive,
+        'isSuperuser': isSuperuser,
+      }),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('Failed to create user: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/users');
+  }
+
+  static Future<Map<String, dynamic>> updateUser({
+    required String token,
+    required String userId,
+    required String username,
+    required String roleId,
+    required String name,
+    String? password,
+    bool? isActive,
+    bool? isSuperuser,
+  }) async {
+    final uri = Uri.parse('$baseUrl/users/$userId');
+    final body = <String, dynamic>{
+      'username': username,
+      'roleId': roleId,
+      'name': name,
+    };
+    if (password != null && password.isNotEmpty) {
+      body['password'] = password;
+    }
+    if (isActive != null) {
+      body['isActive'] = isActive;
+    }
+    if (isSuperuser != null) {
+      body['isSuperuser'] = isSuperuser;
+    }
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to update user: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/users/:id');
+  }
+
+  static Future<void> deleteUser({
+    required String token,
+    required String userId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/users/$userId');
+    final response = await http.delete(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete user: ${response.statusCode} ${response.body}');
+    }
+  }
+
   static Future<Map<String, dynamic>> getCompany({
     required String token,
   }) async {
@@ -278,6 +386,47 @@ class ApiService {
     );
     if (response.statusCode != 200) {
       throw Exception('Failed to load company: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/company');
+  }
+
+  // PUT /company - อัพเดทข้อมูล company
+  static Future<Map<String, dynamic>> updateCompany({
+    required String token,
+    required String companyName,
+    required String companyNameTh,
+    required String companyAddress,
+    required String companyAddressTh,
+    required String phone,
+    required String email,
+    required String website,
+    String? logoUrl,
+    required double taxRate,
+    required String taxType,
+  }) async {
+    final uri = Uri.parse('$baseUrl/company');
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'companyName': companyName,
+        'companyNameTh': companyNameTh,
+        'companyAddress': companyAddress,
+        'companyAddressTh': companyAddressTh,
+        'phone': phone,
+        'email': email,
+        'website': website,
+        'logoUrl': logoUrl ?? '',
+        'taxRate': taxRate,
+        'taxType': taxType,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to update company: ${response.statusCode} ${response.body}');
     }
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/company');
@@ -303,6 +452,113 @@ class ApiService {
     }
     final decoded = jsonDecode(response.body);
     return _extractListFromResponse(decoded, '/branches');
+  }
+
+  // GET /branches/:id - ดึงข้อมูล branch ตาม ID
+  static Future<Map<String, dynamic>> getBranchById({
+    required String token,
+    required String branchId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/branches/$branchId');
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load branch: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/branches/:id');
+  }
+
+  // POST /branches - สร้าง branch ใหม่
+  static Future<Map<String, dynamic>> createBranch({
+    required String token,
+    required String branchId,
+    required String branchName,
+    String? branchNameTh,
+    String? address,
+    String? addressTh,
+    String? phone,
+    bool isActive = true,
+  }) async {
+    final uri = Uri.parse('$baseUrl/branches');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'branchId': branchId,
+        'branchName': branchName,
+        'branchNameTh': branchNameTh ?? '',
+        'address': address ?? '',
+        'addressTh': addressTh ?? '',
+        'phone': phone ?? '',
+        'isActive': isActive,
+      }),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('Failed to create branch: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/branches');
+  }
+
+  // PUT /branches/:id - อัพเดท branch
+  static Future<Map<String, dynamic>> updateBranch({
+    required String token,
+    required String branchId,
+    required String branchName,
+    String? branchNameTh,
+    String? address,
+    String? addressTh,
+    String? phone,
+    bool isActive = true,
+  }) async {
+    final uri = Uri.parse('$baseUrl/branches/$branchId');
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'branchName': branchName,
+        'branchNameTh': branchNameTh ?? '',
+        'address': address ?? '',
+        'addressTh': addressTh ?? '',
+        'phone': phone ?? '',
+        'isActive': isActive,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to update branch: ${response.statusCode} ${response.body}');
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/branches/:id');
+  }
+
+  // DELETE /branches/:id - ลบ branch
+  static Future<void> deleteBranch({
+    required String token,
+    required String branchId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/branches/$branchId');
+    final response = await http.delete(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete branch: ${response.statusCode} ${response.body}');
+    }
   }
 
   static Future<List<Map<String, dynamic>>> getPosDevices({
@@ -340,7 +596,7 @@ class ApiService {
     } else if (branchId != null) {
       uri = Uri.parse('$baseUrl/user-branches/branch/$branchId');
     } else {
-      uri = Uri.parse('$baseUrl/user-branches');
+      throw Exception('getUserBranches requires userId or branchId');
     }
 
     final response = await http.get(

@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/providers/branches_provider.dart';
+import 'package:frontend/providers/company_provider.dart';
+import 'package:frontend/providers/users_provider.dart';
 import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/widgets/branches/branches_tab.dart';
+import 'package:frontend/widgets/company/company_tab.dart';
+import 'package:frontend/widgets/users/users_tab.dart';
 
 class OfficeScreen extends StatefulWidget {
   const OfficeScreen({super.key});
@@ -58,16 +64,43 @@ class _OfficeScreenState extends State<OfficeScreen> {
         ApiService.getCompany(token: token),
         ApiService.getBranches(token: token, limit: 100),
         ApiService.getPosDevices(token: token, limit: 100),
-        ApiService.getUserBranches(token: token),
       ]);
+
+      final users = results[0] as List<Map<String, dynamic>>;
+      final company = results[1] as Map<String, dynamic>;
+      final branches = results[2] as List<Map<String, dynamic>>;
+      final posDevices = results[3] as List<Map<String, dynamic>>;
+
+      // Backend ไม่มี GET /user-branches (list all)
+      // เราเลย aggregate จาก GET /user-branches/branch/:branch_id แทน
+      final branchIds = branches
+          .map((b) => b['branchId']?.toString() ?? b['branch_id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      final userBranchesByBranch = await Future.wait(
+        branchIds.map((id) async {
+          try {
+            return await ApiService.getUserBranches(token: token, branchId: id);
+          } catch (_) {
+            return <Map<String, dynamic>>[];
+          }
+        }),
+      );
+
+      final userBranches = <Map<String, dynamic>>[];
+      for (final list in userBranchesByBranch) {
+        userBranches.addAll(list);
+      }
 
       setState(() {
         _mockNotice = null;
-        _users = results[0] as List<Map<String, dynamic>>;
-        _company = results[1] as Map<String, dynamic>;
-        _branches = results[2] as List<Map<String, dynamic>>;
-        _posDevices = results[3] as List<Map<String, dynamic>>;
-        _userBranches = results[4] as List<Map<String, dynamic>>;
+        _users = users;
+        _company = company;
+        _branches = branches;
+        _posDevices = posDevices;
+        _userBranches = userBranches;
       });
     } catch (e) {
       _applyMockData('โหลดข้อมูลจริงไม่สำเร็จ: $e');
@@ -186,11 +219,11 @@ class _OfficeScreenState extends State<OfficeScreen> {
           userBranches: _userBranches,
         );
       case 1:
-        return _UsersTab(data: _users);
+        return UsersTab(data: _users);
       case 2:
-        return _CompanyTab(data: _company);
+        return CompanyTab(data: _company);
       case 3:
-        return _BranchesTab(data: _branches);
+        return BranchesTab(data: _branches);
       case 4:
         return _PosUserBranchesTab(
           posDevices: _posDevices,
@@ -219,232 +252,126 @@ class _OverviewTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 16,
-            runSpacing: 16,
+    // ใช้ Consumer เพื่อรับข้อมูลล่าสุดจาก providers
+    return Consumer3<UsersProvider, CompanyProvider, BranchesProvider>(
+      builder: (context, usersProvider, companyProvider, branchesProvider, _) {
+        // ใช้ข้อมูลจาก provider ถ้ามี, ไม่งั้นใช้จาก props
+        final currentUsers = usersProvider.users.isNotEmpty 
+            ? usersProvider.users 
+            : users;
+        final currentCompany = companyProvider.company ?? company;
+        final currentBranches = branchesProvider.branches.isNotEmpty
+            ? branchesProvider.branches
+            : branches;
+
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _StatCard(
-                title: 'Users',
-                value: users.length.toString(),
-                icon: Icons.people_alt_outlined,
-              ),
-              _StatCard(
-                title: 'Branches',
-                value: branches.length.toString(),
-                icon: Icons.store_outlined,
-              ),
-              _StatCard(
-                title: 'POS Devices',
-                value: posDevices.length.toString(),
-                icon: Icons.point_of_sale_outlined,
-              ),
-              _StatCard(
-                title: 'User/Branch links',
-                value: userBranches.length.toString(),
-                icon: Icons.link_outlined,
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: const [
-              Expanded(
-                flex: 2,
-                child: _ChartCard(
-                  title: 'ยอดขายรายเดือน',
-                  subtitle: 'ข้อมูลจำลอง',
-                ),
-              ),
-              SizedBox(width: 16),
-              Expanded(
-                child: _ChartCard(
-                  title: 'อัตราการเติบโต',
-                  subtitle: 'จำลอง',
-                  variant: ChartVariant.ring,
-                ),
-              ),
-              SizedBox(width: 16),
-              Expanded(
-                child: _ChartCard(
-                  title: 'ลูกค้าใหม่',
-                  subtitle: 'จำลอง',
-                  variant: ChartVariant.purple,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          if (company != null)
-            _SectionContainer(
-              title: 'Company Profile',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
                 children: [
-                  Text(
-                    company?['companyNameTh']?.toString() ??
-                        company?['companyName']?.toString() ??
-                        'ไม่ทราบชื่อ',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  _StatCard(
+                    title: 'Users',
+                    value: currentUsers.length.toString(),
+                    icon: Icons.people_alt_outlined,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    company?['companyAddressTh']?.toString() ??
-                        company?['companyAddress']?.toString() ??
-                        '-',
-                    style: const TextStyle(color: AppColors.muted),
+                  _StatCard(
+                    title: 'Branches',
+                    value: currentBranches.length.toString(),
+                    icon: Icons.store_outlined,
                   ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 8,
-                    children: [
-                      _InlineInfo(
-                        label: 'โทร',
-                        value: company?['phone']?.toString() ?? '-',
-                      ),
-                      _InlineInfo(
-                        label: 'อีเมล',
-                        value: company?['email']?.toString() ?? '-',
-                      ),
-                      _InlineInfo(
-                        label: 'ภาษี',
-                        value:
-                            '${((company?['taxRate'] ?? 0) * 100).toStringAsFixed(2)}% (${company?['taxType'] ?? '-'})',
-                      ),
-                    ],
+                  _StatCard(
+                    title: 'POS Devices',
+                    value: posDevices.length.toString(),
+                    icon: Icons.point_of_sale_outlined,
+                  ),
+                  _StatCard(
+                    title: 'User/Branch links',
+                    value: userBranches.length.toString(),
+                    icon: Icons.link_outlined,
                   ),
                 ],
               ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _UsersTab extends StatelessWidget {
-  const _UsersTab({required this.data});
-
-  final List<Map<String, dynamic>> data;
-
-  @override
-  Widget build(BuildContext context) {
-    return _SectionContainer(
-      title: 'Users',
-      child: data.isEmpty
-          ? const _EmptyMessage(message: 'ยังไม่มีผู้ใช้งาน')
-          : ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: data.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final user = data[index];
-                final role = user['roleId'] ?? user['role_id'] ?? '-';
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    child: const Icon(Icons.person, color: AppColors.primary),
-                  ),
-                  title: Text(user['name']?.toString() ?? 'ไม่ทราบชื่อ'),
-                  subtitle: Text('${user['username'] ?? '-'}  •  $role'),
-                  trailing: Text(
-                    (user['isActive'] == false ? 'Inactive' : 'Active'),
-                    style: TextStyle(
-                      color: user['isActive'] == false
-                          ? AppColors.muted
-                          : AppColors.primary,
-                      fontWeight: FontWeight.w600,
+              const SizedBox(height: 24),
+              Row(
+                children: const [
+                  Expanded(
+                    flex: 2,
+                    child: _ChartCard(
+                      title: 'ยอดขายรายเดือน',
+                      subtitle: 'ข้อมูลจำลอง',
                     ),
                   ),
-                );
-              },
-            ),
-    );
-  }
-}
-
-class _CompanyTab extends StatelessWidget {
-  const _CompanyTab({required this.data});
-
-  final Map<String, dynamic>? data;
-
-  @override
-  Widget build(BuildContext context) {
-    return _SectionContainer(
-      title: 'Company Settings',
-      child: data == null
-          ? const _EmptyMessage(message: 'ไม่พบข้อมูลบริษัท')
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _DetailRow(label: 'ชื่อ (TH)', value: data?['companyNameTh']),
-                _DetailRow(label: 'ชื่อ (EN)', value: data?['companyName']),
-                _DetailRow(label: 'ที่อยู่', value: data?['companyAddressTh']),
-                _DetailRow(label: 'โทรศัพท์', value: data?['phone']),
-                _DetailRow(label: 'อีเมล', value: data?['email']),
-                _DetailRow(label: 'เว็บไซต์', value: data?['website']),
-                _DetailRow(
-                  label: 'ประเภทภาษี',
-                  value:
-                      '${data?['taxType'] ?? '-'} (${((data?['taxRate'] ?? 0) * 100).toStringAsFixed(2)}%)',
-                ),
-              ],
-            ),
-    );
-  }
-}
-
-class _BranchesTab extends StatelessWidget {
-  const _BranchesTab({required this.data});
-
-  final List<Map<String, dynamic>> data;
-
-  @override
-  Widget build(BuildContext context) {
-    return _SectionContainer(
-      title: 'Branches',
-      child: data.isEmpty
-          ? const _EmptyMessage(message: 'ยังไม่มีข้อมูลสาขา')
-          : ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: data.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final branch = data[index];
-                return ListTile(
-                  title: Text(
-                    branch['branchNameTh']?.toString() ??
-                        branch['branchName']?.toString() ??
-                        'ไม่ทราบชื่อ',
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: _ChartCard(
+                      title: 'อัตราการเติบโต',
+                      subtitle: 'จำลอง',
+                      variant: ChartVariant.ring,
+                    ),
                   ),
-                  subtitle: Text(
-                    branch['branchAddressTh']?.toString() ??
-                        branch['branchAddress']?.toString() ??
-                        '-',
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: _ChartCard(
+                      title: 'ลูกค้าใหม่',
+                      subtitle: 'จำลอง',
+                      variant: ChartVariant.purple,
+                    ),
                   ),
-                  trailing: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisAlignment: MainAxisAlignment.center,
+                ],
+              ),
+              const SizedBox(height: 24),
+              if (currentCompany != null)
+                _SectionContainer(
+                  title: 'Company Profile',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('#${branch['branchId'] ?? '-'}'),
                       Text(
-                        branch['phone']?.toString() ?? '',
+                        currentCompany['companyNameTh']?.toString() ??
+                            currentCompany['companyName']?.toString() ??
+                            'ไม่ทราบชื่อ',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        currentCompany['companyAddressTh']?.toString() ??
+                            currentCompany['companyAddress']?.toString() ??
+                            '-',
                         style: const TextStyle(color: AppColors.muted),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 16,
+                        runSpacing: 8,
+                        children: [
+                          _InlineInfo(
+                            label: 'โทร',
+                            value: currentCompany['phone']?.toString() ?? '-',
+                          ),
+                          _InlineInfo(
+                            label: 'อีเมล',
+                            value: currentCompany['email']?.toString() ?? '-',
+                          ),
+                          _InlineInfo(
+                            label: 'ภาษี',
+                            value:
+                                '${((currentCompany['taxRate'] ?? 0) * 100).toStringAsFixed(2)}% (${currentCompany['taxType'] ?? '-'})',
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                );
-              },
-            ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
