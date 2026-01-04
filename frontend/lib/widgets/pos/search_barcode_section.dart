@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/models/product.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
-import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/api_parts.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -87,7 +87,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
 
     setState(() => _isLoading = true);
     try {
-      final raw = await ApiService.getPartByCode(token: token, code: trimmed);
+      final raw = await ApiPartsService.getPartByCode(token: token, code: trimmed);
       final product = _mapProduct(raw);
       _products = [product];
       if (_lastAutoAddedBarcode != trimmed) {

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/api_bills.dart';
 
 double _toDouble(dynamic v) {
   if (v == null) return 0.0;
@@ -113,7 +113,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiService.switchBill(
+      final bill = await ApiBillsService.switchBill(
         token: token,
         targetBillId: targetBillId,
       );
@@ -143,7 +143,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiService.addItemToBillByBarcode(
+      final bill = await ApiBillsService.addItemToBillByBarcode(
         token: token,
         billId: _billId!,
         barcode: barcode,
@@ -173,7 +173,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiService.addItemToBill(
+      final bill = await ApiBillsService.addItemToBill(
         token: token,
         billId: _billId!,
         partCode: partCode,
@@ -209,7 +209,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiService.removeItemFromBill(
+      final bill = await ApiBillsService.removeItemFromBill(
         token: token,
         billId: _billId!,
         partCode: partCode,
@@ -235,7 +235,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiService.payBill(token: token, billId: _billId!);
+      final bill = await ApiBillsService.payBill(token: token, billId: _billId!);
       _applyBill(bill);
     } finally {
       isLoading = false;
@@ -255,7 +255,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiService.addBillDiscount(
+      final bill = await ApiBillsService.addBillDiscount(
         token: token,
         billId: _billId!,
         promotionCode: promotionCode,
@@ -270,7 +270,7 @@ class BillProvider extends ChangeNotifier {
   Future<void> _reloadBill({required String token}) async {
     if (_billId == null) return;
     try {
-      final latest = await ApiService.getBill(token: token, billId: _billId!);
+      final latest = await ApiBillsService.getBill(token: token, billId: _billId!);
       _applyBill(latest);
     } catch (_) {
       // ignore sync errors

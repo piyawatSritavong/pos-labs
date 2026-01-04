@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/services/api_branches.dart';
+import 'package:frontend/services/api_company.dart';
+import 'package:frontend/services/api_pos.dart';
+import 'package:frontend/services/api_user_branches.dart';
+import 'package:frontend/services/api_users.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/branches_provider.dart';
 import 'package:frontend/providers/company_provider.dart';
 import 'package:frontend/providers/users_provider.dart';
 import 'package:frontend/screens/home_screen.dart';
-import 'package:frontend/services/api_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/widgets/branches/branches_tab.dart';
 import 'package:frontend/widgets/company/company_tab.dart';
@@ -60,10 +64,10 @@ class _OfficeScreenState extends State<OfficeScreen> {
 
     try {
       final results = await Future.wait([
-        ApiService.getUsers(token: token),
-        ApiService.getCompany(token: token),
-        ApiService.getBranches(token: token, limit: 100),
-        ApiService.getPosDevices(token: token, limit: 100),
+        ApiUsersService.getUsers(token: token),
+        ApiCompanyService.getCompany(token: token),
+        ApiBranchesService.getBranches(token: token, limit: 100),
+        ApiPosService.getPosDevices(token: token, limit: 100),
       ]);
 
       final users = results[0] as List<Map<String, dynamic>>;
@@ -82,7 +86,7 @@ class _OfficeScreenState extends State<OfficeScreen> {
       final userBranchesByBranch = await Future.wait(
         branchIds.map((id) async {
           try {
-            return await ApiService.getUserBranches(token: token, branchId: id);
+            return await ApiUserBranchesService.getUserBranches(token: token, branchId: id);
           } catch (_) {
             return <Map<String, dynamic>>[];
           }

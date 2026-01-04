@@ -1,16 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:frontend/providers/auth_provider.dart';
-import 'package:frontend/screens/office_screen.dart';
-import 'package:frontend/theme/app_theme.dart';
-import 'package:frontend/services/api_service.dart';
-import 'package:frontend/widgets/search_parts_dialog.dart';
-import 'package:frontend/widgets/hold_bill_dialog.dart';
-import 'package:frontend/widgets/bill_log_dialog.dart';
-import 'package:frontend/widgets/cart_summary_section.dart';
-import 'package:frontend/widgets/search_barcode_section.dart';
-import 'package:frontend/widgets/stock_dialog.dart';
+import 'package:frontend/services/api_bills.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/screens/office_screen.dart';
+import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/widgets/pos/stock_dialog.dart';
+import 'package:frontend/widgets/pos/bill_log_dialog.dart';
+import 'package:frontend/widgets/pos/hold_bill_dialog.dart';
+import 'package:frontend/widgets/pos/search_parts_dialog.dart';
+import 'package:frontend/widgets/pos/cart_summary_section.dart';
+import 'package:frontend/widgets/pos/search_barcode_section.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -275,7 +275,7 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
     setState(() => _isLoading = true);
     try {
       final bills =
-          await ApiService.getBills(token: token, limit: 100, offset: 0);
+          await ApiBillsService.getBills(token: token, limit: 100, offset: 0);
       final hold = bills
           .where(
             (b) => (b['status']?.toString().toLowerCase() ?? '') == 'hold',

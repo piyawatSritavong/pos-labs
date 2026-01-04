@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/services/api_bills.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
-import 'package:frontend/services/api_service.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 
@@ -41,7 +41,7 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
     });
 
     try {
-      final bills = await ApiService.getBills(
+      final bills = await ApiBillsService.getBills(
         token: token,
         limit: 100,
         offset: 0,
@@ -195,7 +195,7 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
 
     try {
       // ต้องมี endpoint /bills/:id/cancel ที่ backend
-      await ApiService.cancelBill(token: token, billId: billId);
+      await ApiBillsService.cancelBill(token: token, billId: billId);
       await _loadHeldBills(); // reload list หลังลบ
     } catch (e) {
       if (mounted) {

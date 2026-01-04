@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/api_users.dart';
 
 class UsersProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _users = [];
@@ -24,7 +24,7 @@ class UsersProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final results = await ApiService.getUsers(
+      final results = await ApiUsersService.getUsers(
         token: token,
         limit: limit,
         offset: offset,
@@ -47,7 +47,7 @@ class UsersProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final user = await ApiService.getUserById(token: token, userId: userId);
+      final user = await ApiUsersService.getUserById(token: token, userId: userId);
       return user;
     } catch (e) {
       _error = e.toString();
@@ -73,7 +73,7 @@ class UsersProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final newUser = await ApiService.createUser(
+      final newUser = await ApiUsersService.createUser(
         token: token,
         username: username,
         roleId: roleId,
@@ -109,7 +109,7 @@ class UsersProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final updatedUser = await ApiService.updateUser(
+      final updatedUser = await ApiUsersService.updateUser(
         token: token,
         userId: userId,
         username: username,
@@ -145,7 +145,7 @@ class UsersProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await ApiService.deleteUser(token: token, userId: userId);
+      await ApiUsersService.deleteUser(token: token, userId: userId);
       // Remove from local list
       _users.removeWhere((u) => u['id']?.toString() == userId);
       // Refresh list to ensure consistency - ต้อง reset isLoading ก่อนเรียก loadUsers

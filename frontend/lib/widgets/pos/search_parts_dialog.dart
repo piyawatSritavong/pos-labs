@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/models/product.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
-import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/api_parts.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -52,7 +52,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
 
     setState(() => _isLoading = true);
     try {
-      final raw = await ApiService.searchParts(
+      final raw = await ApiPartsService.searchParts(
         token: token,
         query: '',
         limit: 45,
@@ -99,7 +99,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       _isLoading = true;
     });
     try {
-      final raw = await ApiService.searchParts(
+      final raw = await ApiPartsService.searchParts(
         token: token,
         query: query,
         limit: 20,

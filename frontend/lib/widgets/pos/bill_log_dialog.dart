@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
-import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/api_bills.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -77,7 +77,7 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
     });
 
     try {
-      final bills = await ApiService.getBills(token: token, limit: 200, offset: 0);
+      final bills = await ApiBillsService.getBills(token: token, limit: 200, offset: 0);
       final filtered = bills.whereType<Map<String, dynamic>>().where((bill) {
         final status = (bill['status']?.toString().toLowerCase() ?? '');
         if (status == 'hold') return false;

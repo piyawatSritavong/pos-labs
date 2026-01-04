@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
-import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/api_parts.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -94,7 +94,7 @@ class _StockDialogState extends State<StockDialog> {
     });
 
     try {
-      final parts = await ApiService.getParts(token: token, limit: 200, offset: 0);
+      final parts = await ApiPartsService.getParts(token: token, limit: 200, offset: 0);
       final filtered = _buildLowStock(parts);
       setState(() {
         _lowStock = filtered;

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/api_company.dart';
 
 class CompanyProvider extends ChangeNotifier {
   Map<String, dynamic>? _company;
@@ -23,7 +23,7 @@ class CompanyProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await ApiService.getCompany(token: token);
+      final result = await ApiCompanyService.getCompany(token: token);
       _company = result;
     } catch (e) {
       _error = e.toString();
@@ -52,7 +52,7 @@ class CompanyProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final updatedCompany = await ApiService.updateCompany(
+      final updatedCompany = await ApiCompanyService.updateCompany(
         token: token,
         companyName: companyName,
         companyNameTh: companyNameTh,

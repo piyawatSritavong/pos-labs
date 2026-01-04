@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/api_branches.dart';
 
 class BranchesProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _branches = [];
@@ -23,7 +23,7 @@ class BranchesProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await ApiService.getBranches(token: token);
+      final result = await ApiBranchesService.getBranches(token: token);
       _branches = result;
     } catch (e) {
       _error = e.toString();
@@ -39,7 +39,7 @@ class BranchesProvider extends ChangeNotifier {
     required String branchId,
   }) async {
     try {
-      return await ApiService.getBranchById(
+      return await ApiBranchesService.getBranchById(
         token: token,
         branchId: branchId,
       );
@@ -66,7 +66,7 @@ class BranchesProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final newBranch = await ApiService.createBranch(
+      final newBranch = await ApiBranchesService.createBranch(
         token: token,
         branchId: branchId,
         branchName: branchName,
@@ -105,7 +105,7 @@ class BranchesProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final updatedBranch = await ApiService.updateBranch(
+      final updatedBranch = await ApiBranchesService.updateBranch(
         token: token,
         branchId: branchId,
         branchName: branchName,
@@ -138,7 +138,7 @@ class BranchesProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await ApiService.deleteBranch(
+      await ApiBranchesService.deleteBranch(
         token: token,
         branchId: branchId,
       );
