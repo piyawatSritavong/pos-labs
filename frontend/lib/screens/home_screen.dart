@@ -4,6 +4,7 @@ import 'package:frontend/services/api_bills.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/screens/office_screen.dart';
+import 'package:frontend/screens/login_screen.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/widgets/pos/stock_dialog.dart';
 import 'package:frontend/widgets/pos/bill_log_dialog.dart';
@@ -347,14 +348,17 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
             child: const Icon(Icons.person, color: AppColors.primary),
           ),
           itemBuilder: (context) => [
-            const PopupMenuItem(value: 'profile', child: Text('โปรไฟล์')),
             if (auth.isAdmin)
               const PopupMenuItem(value: 'office', child: Text('OFFICE')),
             const PopupMenuItem(value: 'logout', child: Text('ออกจากระบบ')),
           ],
-          onSelected: (value) {
+          onSelected: (value) async {
             if (value == 'logout') {
-              context.read<AuthProvider>().logout();
+              await context.read<AuthProvider>().logout();
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+              );
             } else if (value == 'office') {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const OfficeScreen()),

@@ -10,6 +10,7 @@ import 'package:frontend/providers/branches_provider.dart';
 import 'package:frontend/providers/company_provider.dart';
 import 'package:frontend/providers/users_provider.dart';
 import 'package:frontend/screens/home_screen.dart';
+import 'package:frontend/screens/login_screen.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/widgets/branches/branches_tab.dart';
 import 'package:frontend/widgets/company/company_tab.dart';
@@ -302,7 +303,6 @@ class _OverviewTab extends StatelessWidget {
               Row(
                 children: const [
                   Expanded(
-                    flex: 2,
                     child: _ChartCard(
                       title: 'ยอดขายรายเดือน',
                       subtitle: 'ข้อมูลจำลอง',
@@ -314,14 +314,6 @@ class _OverviewTab extends StatelessWidget {
                       title: 'อัตราการเติบโต',
                       subtitle: 'จำลอง',
                       variant: ChartVariant.ring,
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: _ChartCard(
-                      title: 'ลูกค้าใหม่',
-                      subtitle: 'จำลอง',
-                      variant: ChartVariant.purple,
                     ),
                   ),
                 ],
@@ -533,35 +525,6 @@ class _SectionContainer extends StatelessWidget {
   }
 }
 
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.label, required this.value});
-
-  final String label;
-  final String? value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 140,
-            child: Text(label, style: const TextStyle(color: AppColors.muted)),
-          ),
-          Expanded(
-            child: Text(
-              value?.toString() ?? '-',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _InlineInfo extends StatelessWidget {
   const _InlineInfo({required this.label, required this.value});
 
@@ -666,12 +629,6 @@ class _Sidebar extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.add),
-            label: const Text('Register action'),
-          ),
-          const SizedBox(height: 24),
           Expanded(
             child: ListView.builder(
               itemCount: items.length,
@@ -718,39 +675,6 @@ class _Sidebar extends StatelessWidget {
               },
             ),
           ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AppSizes.radius),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
-                  'Get mobile app',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 12),
-                Row(
-                  children: [
-                    Icon(Icons.android, color: AppColors.primary),
-                    SizedBox(width: 8),
-                    Text('Play Store'),
-                  ],
-                ),
-                SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.apple, color: AppColors.primary),
-                    SizedBox(width: 8),
-                    Text('App Store'),
-                  ],
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -764,6 +688,7 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       decoration: const BoxDecoration(
@@ -772,31 +697,35 @@ class _TopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(
-            child: TextField(
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: AppColors.bg,
-                prefixIcon: const Icon(Icons.search),
-                hintText: 'Search...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(999),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onSubmitted: onSearch,
+          const Spacer(),
+          PopupMenuButton<String>(
+            offset: const Offset(0, 48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-          ),
-          const SizedBox(width: 24),
-          IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: () {},
-          ),
-          const SizedBox(width: 12),
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-            child: const Icon(Icons.person, color: AppColors.primary),
+            child: CircleAvatar(
+              radius: 22,
+              backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+              child: const Icon(Icons.person, color: AppColors.primary),
+            ),
+            itemBuilder: (context) => [
+              if (auth.isAdmin)
+                const PopupMenuItem(value: 'pos', child: Text('POS')),
+              const PopupMenuItem(value: 'logout', child: Text('ออกจากระบบ')),
+            ],
+            onSelected: (value) async {
+              if (value == 'logout') {
+                await context.read<AuthProvider>().logout();
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (route) => false,
+                );
+              } else if (value == 'pos') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const HomeScreen()),
+                );
+              }
+            },
           ),
         ],
       ),

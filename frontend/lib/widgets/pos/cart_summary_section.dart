@@ -177,16 +177,9 @@ class _CartSummarySectionState extends State<CartSummarySection> {
   }
 
   Future<void> _handleConfirmPayment(BuildContext context) async {
-    if (!_canConfirmPayment) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('เลือกวิธีชำระเงินให้เรียบร้อย')),
-      );
-      return;
-    }
-
-    final auth = context.read<AuthProvider>();
     final bill = context.read<BillProvider>();
     final messenger = ScaffoldMessenger.of(context);
+    final auth = context.read<AuthProvider>();
     final token = auth.token;
     if (token == null) {
       messenger.showSnackBar(
@@ -194,6 +187,36 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       );
       return;
     }
+
+    // Show payment method dialog first
+    final selectedMethod = await showDialog<PaymentMethod>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _PaymentMethodDialog(),
+    );
+
+    if (selectedMethod == null || !mounted) return;
+
+    setState(() {
+      _selectedMethod = selectedMethod;
+      _qrPaymentVerified = false;
+    });
+
+    // If QR, show QR payment dialog
+    if (selectedMethod == PaymentMethod.qr) {
+      final qrVerified = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const _QrPaymentDialog(),
+      );
+      if (!mounted) return;
+      if (qrVerified != true) {
+        return;
+      }
+      setState(() => _qrPaymentVerified = true);
+    }
+
+    if (!mounted) return;
 
     var usedMock = false;
     try {
@@ -302,7 +325,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                                 percent.toDouble(),
                                 subtotal,
                               ),
-                              child: Text('$percent%'),
+                              child: Text('$percent'),
                             ),
                         ],
                       ),
@@ -373,53 +396,17 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'วิธีชำระเงิน',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ChoiceChip(
-                          label: const Text('เงินสด'),
-                          selected: _selectedMethod == PaymentMethod.cash,
-                          onSelected: (selected) {
-                            if (selected) {
-                              _handleSelectPayment(PaymentMethod.cash);
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ChoiceChip(
-                          label: const Text('QR Code'),
-                          selected: _selectedMethod == PaymentMethod.qr,
-                          onSelected: (selected) {
-                            if (selected) {
-                              _handleSelectPayment(PaymentMethod.qr);
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: (bill.isLoading ||
-                    total <= 0 ||
-                    _selectedMethod == null ||
-                    !_canConfirmPayment)
+            onPressed: (bill.isLoading || total <= 0)
                 ? null
                 : () => _handleConfirmPayment(context),
             child: Text(
-              'ยืนยัน • ${items.length} รายการ • ฿${total.toStringAsFixed(0)}',
+              'ยืนยัน • ${items.length} รายการ • ฿${total.toStringAsFixed(2)}',
             ),
           ),
           const SizedBox(height: 12),
@@ -702,6 +689,61 @@ class ReceiptDialog extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PaymentMethodDialog extends StatelessWidget {
+  const _PaymentMethodDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'วิธีชำระเงิน',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(PaymentMethod.cash),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text('เงินสด'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(PaymentMethod.qr),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text('QR Code'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('ยกเลิก'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

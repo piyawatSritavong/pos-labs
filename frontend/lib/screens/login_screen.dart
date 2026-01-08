@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -28,7 +29,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await auth.login(_username, _password);
-      // ถ้า success, AuthGate จะสลับไปหน้า Home เอง
+      // Navigate to HomeScreen on success
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (route) => false,
+      );
     } catch (e) {
       // แสดง error
       ScaffoldMessenger.of(context).showSnackBar(
