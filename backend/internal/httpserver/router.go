@@ -47,6 +47,20 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		authGroup.GET("/me", authMw.RequireAuth(), authHandler.Me)
 	}
 
+	// QR Image (static file serving)
+	staticDir := cfg.StaticFilesPath
+	qrImageHandler := handlers.NewQRImageHandler(staticDir)
+	qrImage := r.Group("/assets")
+	qrImage.Use(authMw.RequirePermission("qr_image", "read"))
+	{
+		qrImage.GET("/qr-image", qrImageHandler.Get)
+	}
+	qrImageWrite := r.Group("/assets")
+	qrImageWrite.Use(authMw.RequirePermission("qr_image", "write"))
+	{
+		qrImageWrite.PUT("/qr-image", qrImageHandler.Put)
+	}
+
 	// Protected resources examples
 	partRepo := repository.NewPartRepository(db)
 	partsHandler := handlers.NewPartsHandler(partRepo)
@@ -82,8 +96,14 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		billsWrite.PUT("/:id/remove-discount", billsHandler.RemoveDiscount) // remove discount from bill
 		billsWrite.PUT("/:id/hold", billsHandler.Hold) // hold bill
 		billsWrite.PUT("/switch", billsHandler.SwitchBill) // switch bills: if currentBillId not provided, create new bill; otherwise hold current and resume target
-		billsWrite.PUT("/:id/checkout", billsHandler.Checkout) // complete bill
 		billsWrite.PUT("/:id/payment", billsHandler.Payment) // process payment
+		billsWrite.PUT("/:id/cancel", billsHandler.Cancel) // cancel bill
+	}
+	billsDelete := r.Group("/bills")
+	billsDelete.Use(authMw.RequirePermission("bills", "delete"))
+	billsDelete.Use(middleware.RequirePOSBranch()) // Bills endpoints require POS session with branchId and posId
+	{
+		billsDelete.DELETE("/:id", billsHandler.Delete) // delete bill permanently
 	}
 
 	// Company (read and update only)
@@ -144,6 +164,47 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	posDelete.Use(authMw.RequirePermission("pos", "delete"))
 	{
 		posDelete.DELETE("/:id", posHandler.Delete)
+	}
+
+	// Promotions (CRUD)
+	promotionHandler := handlers.NewPromotionHandler(promotionRepo)
+	promotions := r.Group("/promotions")
+	promotions.Use(authMw.RequirePermission("promotions", "read"))
+	{
+		promotions.GET("", promotionHandler.List)
+		promotions.GET("/:code", promotionHandler.Get)
+	}
+	promotionsWrite := r.Group("/promotions")
+	promotionsWrite.Use(authMw.RequirePermission("promotions", "write"))
+	{
+		promotionsWrite.POST("", promotionHandler.Create)
+		promotionsWrite.PUT("/:code", promotionHandler.Update)
+	}
+	promotionsDelete := r.Group("/promotions")
+	promotionsDelete.Use(authMw.RequirePermission("promotions", "delete"))
+	{
+		promotionsDelete.DELETE("/:code", promotionHandler.Delete)
+	}
+
+	// Addresses (CRUD)
+	addressRepo := repository.NewAddressRepository(db)
+	addressHandler := handlers.NewAddressHandler(addressRepo)
+	addresses := r.Group("/addresses")
+	addresses.Use(authMw.RequirePermission("addresses", "read"))
+	{
+		addresses.GET("", addressHandler.List)
+		addresses.GET("/:code", addressHandler.Get)
+	}
+	addressesWrite := r.Group("/addresses")
+	addressesWrite.Use(authMw.RequirePermission("addresses", "write"))
+	{
+		addressesWrite.POST("", addressHandler.Create)
+		addressesWrite.PUT("/:code", addressHandler.Update)
+	}
+	addressesDelete := r.Group("/addresses")
+	addressesDelete.Use(authMw.RequirePermission("addresses", "delete"))
+	{
+		addressesDelete.DELETE("/:code", addressHandler.Delete)
 	}
 
 	// Users (CRUD)

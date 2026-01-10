@@ -55,6 +55,7 @@ func SeedCoreData(db *sql.DB) error {
 		{"perm.parts.delete", "Delete parts", "delete", "parts", "Delete part master data"},
 		{"perm.bills.read", "Read bills", "read", "bills", "Read bill data"},
 		{"perm.bills.write", "Write bills", "write", "bills", "Create/update bills"},
+		{"perm.bills.delete", "Delete bills", "delete", "bills", "Delete bills permanently"},
 		{"perm.users.mgmt", "Manage users", "manage", "users", "Manage users and roles"},
 		{"perm.users.read", "Read users", "read", "users", "Read users"},
 		{"perm.users.write", "Write users", "write", "users", "Create/update users"},
@@ -76,6 +77,14 @@ func SeedCoreData(db *sql.DB) error {
 		{"perm.pos.secret", "Read POS secret", "secret", "pos", "Retrieve and refresh POS secret"},
 		{"perm.user_branch.read", "Read user branches", "read", "user_branch", "Read user-branch associations"},
 		{"perm.user_branch.write", "Write user branches", "write", "user_branch", "Create/update user-branch associations"},
+		{"perm.promotions.read", "Read promotions", "read", "promotions", "Read promotion master data"},
+		{"perm.promotions.write", "Write promotions", "write", "promotions", "Create/update promotion master data"},
+		{"perm.promotions.delete", "Delete promotions", "delete", "promotions", "Delete promotion master data"},
+		{"perm.addresses.read", "Read addresses", "read", "addresses", "Read address master data"},
+		{"perm.addresses.write", "Write addresses", "write", "addresses", "Create/update address master data"},
+		{"perm.addresses.delete", "Delete addresses", "delete", "addresses", "Delete address master data"},
+		{"perm.qr_image.read", "Read QR image", "read", "qr_image", "Read QR code image"},
+		{"perm.qr_image.write", "Write QR image", "write", "qr_image", "Upload/replace QR code image"},
 	}
 
 	for _, p := range permissions {
@@ -108,6 +117,8 @@ func SeedCoreData(db *sql.DB) error {
 		"perm.parts.read",
 		"perm.bills.read",
 		"perm.bills.write",
+		"perm.promotions.read",
+		"perm.qr_image.read",
 	}
 	for _, pid := range cashierPerms {
 		if _, err := tx.Exec(`
