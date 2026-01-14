@@ -93,7 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _HeaderBar(
+              HeaderBar(
                 authName: auth.name ?? 'ร้านตัวอย่าง',
                 searchController: _searchController,
                 onSearchTap: _openSearchDialog,
@@ -130,8 +130,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _HeaderBar extends StatelessWidget {
-  const _HeaderBar({
+class HeaderBar extends StatelessWidget {
+  const HeaderBar({
     required this.authName,
     required this.searchController,
     required this.onSearchTap,
@@ -251,6 +251,8 @@ class _HeaderBar extends StatelessWidget {
 }
 
 class _HeaderActionGroup extends StatefulWidget {
+  const _HeaderActionGroup();
+
   @override
   State<_HeaderActionGroup> createState() => _HeaderActionGroupState();
 }

@@ -1,8 +1,8 @@
-import 'package:frontend/screens/office_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/login_screen.dart';
+import 'package:frontend/screens/customer_screen.dart';
 import 'package:frontend/providers/auth_provider.dart';
 
 class AuthGate extends StatefulWidget {
@@ -16,7 +16,7 @@ class _AuthGateState extends State<AuthGate> {
   @override
   void initState() {
     super.initState();
-    // Auto-login when app starts
+    // Auto-login
     Future.delayed(Duration.zero, () {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       auth.autoLogin();
@@ -33,11 +33,11 @@ class _AuthGateState extends State<AuthGate> {
           );
         }
 
+        if (auth.isCustomerDisplay) {
+          return const CustomerScreen();
+        }
+        
         if (auth.isAuthenticated) {
-          // if (auth.isAdmin) {
-          //   return const OfficeScreen();
-          // }
-
           return const HomeScreen();
         }
 

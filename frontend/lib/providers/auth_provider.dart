@@ -7,6 +7,7 @@ class AuthProvider extends ChangeNotifier {
   String? _name;
   String? _roleId;
   bool _isLoading = false;
+  bool _isCustomerDisplay = false;
 
   String? get token => _token;
   String? get name => _name;
@@ -14,6 +15,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _token != null;
   bool get isLoading => _isLoading;
   bool get isAdmin => _roleId == 'role.admin';
+  bool get isCustomerDisplay => _isCustomerDisplay;
 
   // When opening the app, check for existing token
   Future<void> autoLogin() async {
@@ -22,20 +24,32 @@ class AuthProvider extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString('auth_token');
+    final savedIsCustomerDisplay = prefs.getBool('auth_is_customer_display') ?? false;
 
     if (savedToken != null && savedToken.isNotEmpty) {
-      _token = savedToken;
-      try {
-        final me = await ApiService.getCurrentUser(savedToken);
-        _name = me['name'] as String?;
-        // รองรับทั้ง key แบบ roleId และ role_id จาก API
-        _roleId = (me['roleId'] ?? me['role_id']) as String?;
-      } catch (_) {
-        // ถ้า token ใช้งานไม่ได้ ให้เคลียร์ทิ้ง
-        _token = null;
-        _name = null;
-        _roleId = null;
-        await prefs.remove('auth_token');
+      if (savedIsCustomerDisplay) {
+        // Restore mock customer-display account without calling API
+        _token = savedToken;
+        _name = 'Customer Display';
+        _roleId = 'role.customer_display';
+        _isCustomerDisplay = true;
+      } else {
+        _token = savedToken;
+        try {
+          final me = await ApiService.getCurrentUser(savedToken);
+          _name = me['name'] as String?;
+          // รองรับทั้ง key แบบ roleId และ role_id จาก API
+          _roleId = (me['roleId'] ?? me['role_id']) as String?;
+          _isCustomerDisplay = false;
+        } catch (_) {
+          // ถ้า token ใช้งานไม่ได้ ให้เคลียร์ทิ้ง
+          _token = null;
+          _name = null;
+          _roleId = null;
+          _isCustomerDisplay = false;
+          await prefs.remove('auth_token');
+          await prefs.remove('auth_is_customer_display');
+        }
       }
     }
 
@@ -48,6 +62,22 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    // Mock root account for CustomerScreen
+    if (username == 'root' && password == 'root123') {
+      _token = 'mock-root-token';
+      _name = 'Customer Display';
+      _roleId = 'role.customer_display';
+      _isCustomerDisplay = true;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_token', _token!);
+      await prefs.setBool('auth_is_customer_display', true);
+
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    }
+
     try {
       final token = await ApiService.login(username, password);
       _token = token;
@@ -59,12 +89,14 @@ class AuthProvider extends ChangeNotifier {
       try {
         final me = await ApiService.getCurrentUser(token);
         _name = me['name'] as String?;
-        // รองรับทั้ง key แบบ roleId และ role_id จาก API
         _roleId = (me['roleId'] ?? me['role_id']) as String?;
+        _isCustomerDisplay = false;
+        await prefs.setBool('auth_is_customer_display', false);
       } catch (e) {
-        // failed to fetch user info - cleanup and rethrow
         _token = null;
+        _isCustomerDisplay = false;
         await prefs.remove('auth_token');
+        await prefs.remove('auth_is_customer_display');
         _isLoading = false;
         notifyListeners();
         rethrow;
@@ -74,6 +106,9 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
+      _isCustomerDisplay = false;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('auth_is_customer_display');
       _isLoading = false;
       notifyListeners();
       rethrow;
@@ -83,8 +118,12 @@ class AuthProvider extends ChangeNotifier {
   // Logout function
   Future<void> logout() async {
     _token = null;
+    _name = null;
+    _roleId = null;
+    _isCustomerDisplay = false;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
+    await prefs.remove('auth_is_customer_display');
     notifyListeners();
   }
 }
