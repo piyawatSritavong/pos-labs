@@ -570,3 +570,41 @@ func (r *billRepositoryPG) UpdateAmounts(ctx context.Context, billID string, pur
 	return err
 }
 
+func (r *billRepositoryPG) UpdatePayment(ctx context.Context, billID, paymentMethod, paymentRef, updatedBy string) error {
+	// Convert empty strings to NULL for nullable fields
+	var pm, pr sql.NullString
+	if paymentMethod != "" {
+		pm = sql.NullString{String: paymentMethod, Valid: true}
+	}
+	if paymentRef != "" {
+		pr = sql.NullString{String: paymentRef, Valid: true}
+	}
+
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE "bill_master"
+		SET "payment_method" = $1, "payment_ref" = $2, "status" = 'completed', "updated_at" = now(), "updated_by" = $3
+		WHERE "id" = $4
+	`, pm, pr, updatedBy, billID)
+	return err
+}
+
+func (r *billRepositoryPG) Delete(ctx context.Context, billID string) error {
+	result, err := r.db.ExecContext(ctx, `
+		DELETE FROM "bill_master"
+		WHERE "id" = $1
+	`, billID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+

@@ -1,0 +1,215 @@
+package handlers
+
+import (
+	"net/http"
+	"strconv"
+
+	"backend/internal/config"
+	"backend/internal/repository"
+
+	"github.com/gin-gonic/gin"
+)
+
+type AddressHandler struct {
+	addresses repository.AddressRepository
+}
+
+func NewAddressHandler(addresses repository.AddressRepository) *AddressHandler {
+	return &AddressHandler{addresses: addresses}
+}
+
+func (h *AddressHandler) List(c *gin.Context) {
+	limit := config.DefaultLimit
+	offset := config.DefaultOffset
+
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= config.MaxLimit {
+			limit = n
+		}
+	}
+	if v := c.Query("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	addresses, err := h.addresses.List(c.Request.Context(), limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_list_addresses"})
+		return
+	}
+
+	out := make([]gin.H, 0, len(addresses))
+	for _, a := range addresses {
+		out = append(out, gin.H{
+			"code":     a.Code,
+			"partCode": a.PartCode,
+			"storeId":  a.StoreID,
+			"shelf":    a.Shelf,
+			"qty":      a.Qty,
+			"min":      a.Min,
+			"max":      a.Max,
+			"rop":      a.Rop,
+			"remarks":  a.Remarks,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"addresses": out,
+	})
+}
+
+func (h *AddressHandler) Get(c *gin.Context) {
+	code := c.Param("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_address_code"})
+		return
+	}
+
+	address, err := h.addresses.GetByCode(c.Request.Context(), code)
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "address_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_address"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":     address.Code,
+		"partCode": address.PartCode,
+		"storeId":  address.StoreID,
+		"shelf":    address.Shelf,
+		"qty":      address.Qty,
+		"min":      address.Min,
+		"max":      address.Max,
+		"rop":      address.Rop,
+		"remarks":  address.Remarks,
+	})
+}
+
+func (h *AddressHandler) Create(c *gin.Context) {
+	var req struct {
+		Code     string `json:"code" binding:"required"`
+		PartCode string `json:"partCode" binding:"required"`
+		StoreID  string `json:"storeId" binding:"required"`
+		Shelf    string `json:"shelf"`
+		Qty      int    `json:"qty"`
+		Min      int    `json:"min"`
+		Max      int    `json:"max"`
+		Rop      int    `json:"rop"`
+		Remarks  string `json:"remarks"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+
+	address := &repository.Address{
+		Code:     req.Code,
+		PartCode: req.PartCode,
+		StoreID:  req.StoreID,
+		Shelf:    req.Shelf,
+		Qty:      req.Qty,
+		Min:      req.Min,
+		Max:      req.Max,
+		Rop:      req.Rop,
+		Remarks:  req.Remarks,
+	}
+
+	if err := h.addresses.Create(c.Request.Context(), address); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_create_address"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"code":     address.Code,
+		"partCode": address.PartCode,
+		"storeId":  address.StoreID,
+		"shelf":    address.Shelf,
+		"qty":      address.Qty,
+		"min":      address.Min,
+		"max":      address.Max,
+		"rop":      address.Rop,
+		"remarks":  address.Remarks,
+	})
+}
+
+func (h *AddressHandler) Update(c *gin.Context) {
+	code := c.Param("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_address_code"})
+		return
+	}
+
+	var req struct {
+		PartCode string `json:"partCode" binding:"required"`
+		StoreID  string `json:"storeId" binding:"required"`
+		Shelf    string `json:"shelf"`
+		Qty      int    `json:"qty"`
+		Min      int    `json:"min"`
+		Max      int    `json:"max"`
+		Rop      int    `json:"rop"`
+		Remarks  string `json:"remarks"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+
+	address := &repository.Address{
+		Code:     code,
+		PartCode: req.PartCode,
+		StoreID:  req.StoreID,
+		Shelf:    req.Shelf,
+		Qty:      req.Qty,
+		Min:      req.Min,
+		Max:      req.Max,
+		Rop:      req.Rop,
+		Remarks:  req.Remarks,
+	}
+
+	if err := h.addresses.Update(c.Request.Context(), address); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "address_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_update_address"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":     address.Code,
+		"partCode": address.PartCode,
+		"storeId":  address.StoreID,
+		"shelf":    address.Shelf,
+		"qty":      address.Qty,
+		"min":      address.Min,
+		"max":      address.Max,
+		"rop":      address.Rop,
+		"remarks":  address.Remarks,
+	})
+}
+
+func (h *AddressHandler) Delete(c *gin.Context) {
+	code := c.Param("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_address_code"})
+		return
+	}
+
+	if err := h.addresses.Delete(c.Request.Context(), code); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "address_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_delete_address"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "address_deleted"})
+}
+

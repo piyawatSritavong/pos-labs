@@ -1,0 +1,26 @@
+Updates: 20260110
+
+New APIs:
+- Promotions CRUD: GET/POST/PUT/DELETE /promotions (admin: all, cashier: read)
+- Addresses CRUD: GET/POST/PUT/DELETE /addresses (admin only)
+- QR Image: GET/PUT /assets/qr-image (admin: read/write, cashier: read)
+
+Bills:
+- Payment: PUT /bills/:id/payment (accepts paymentMethod/paymentRef, sets status=completed)
+- Cancel: PUT /bills/:id/cancel (status=new/hold → cancelled)
+- Delete: DELETE /bills/:id (admin only, cascade delete)
+- Removed: PUT /bills/:id/checkout
+- Status validation: All modifications (add/remove items, discounts, payment) require status="new"
+
+POS:
+- Added pos_secret and is_active fields
+- Endpoints: PUT /pos/:id/toggle-activate, GET/PUT /pos/:id/secret
+- Login now validates pos_secret and is_active
+
+Schema:
+- promotion_master: code, details, unit (THB/%), amount
+- address_master: FK cascade delete, part_code/store_id NOT NULL
+- pos_setting: pos_secret, is_active
+
+Permissions:
+- Added: bills.delete, promotions.*, addresses.*, qr_image.*, pos.secret

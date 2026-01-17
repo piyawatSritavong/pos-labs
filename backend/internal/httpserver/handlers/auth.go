@@ -47,6 +47,7 @@ type loginRequest struct {
 	Password string `json:"password" binding:"required"`
 	BranchID string `json:"branchId" binding:"omitempty"`
 	POSID    string `json:"posId" binding:"omitempty"`
+	POSSecret string `json:"posSecret" binding:"omitempty"`
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -97,8 +98,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			return
 		}
 
-		// Validate posId exists
-		_, err = h.pos.GetByID(ctx, req.POSID)
+		// Validate posId exists and is active
+		pos, err := h.pos.GetByID(ctx, req.POSID)
 		if err != nil {
 			if repository.IsNotFoundError(err) {
 				c.JSON(http.StatusBadRequest, gin.H{
@@ -108,6 +109,33 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_validate_pos"})
+			return
+		}
+
+		// Validate POS is active
+		if !pos.IsActive {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "pos_inactive",
+				"message": "POS is not active",
+			})
+			return
+		}
+
+		// Require posSecret when posId is provided
+		if req.POSSecret == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "missing_pos_secret",
+				"message": "POS secret is required when logging in with posId",
+			})
+			return
+		}
+
+		// Validate posSecret matches
+		if pos.POSSecret != req.POSSecret {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid_pos_secret",
+				"message": "Invalid POS secret",
+			})
 			return
 		}
 
@@ -200,20 +228,9 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	}
 
 	// Get branchId and posId from session context (set by RequireAuth middleware)
-	branchIDVal, _ := c.Get("branch_id")
-	posIDVal, _ := c.Get("pos_id")
-
-	var branchID, posID string
-	if branchIDVal != nil {
-		if b, ok := branchIDVal.(string); ok {
-			branchID = b
-		}
-	}
-	if posIDVal != nil {
-		if p, ok := posIDVal.(string); ok {
-			posID = p
-		}
-	}
+	// These are set from the session's branch_id and pos_id fields
+	branchIDVal, branchExists := c.Get("branch_id")
+	posIDVal, posExists := c.Get("pos_id")
 
 	response := gin.H{
 		"name":   user.Name,
@@ -221,12 +238,18 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		"active": user.IsActive,
 	}
 
-	// Include branchId and posId if they exist in session
-	if branchID != "" {
-		response["branchId"] = branchID
+	// Include branchId if it exists in session (non-empty string)
+	if branchExists && branchIDVal != nil {
+		if branchID, ok := branchIDVal.(string); ok && branchID != "" {
+			response["branchId"] = branchID
+		}
 	}
-	if posID != "" {
-		response["posId"] = posID
+
+	// Include posId if it exists in session (non-empty string)
+	if posExists && posIDVal != nil {
+		if posID, ok := posIDVal.(string); ok && posID != "" {
+			response["posId"] = posID
+		}
 	}
 
 	c.JSON(http.StatusOK, response)

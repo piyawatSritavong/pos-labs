@@ -64,5 +64,7 @@ type BillRepository interface {
 	GetAllItems(ctx context.Context, billID string) ([]BillDetail, error)
 	GetAllDiscounts(ctx context.Context, billID string) ([]BillDiscountDetail, error)
 	UpdateAmounts(ctx context.Context, billID string, purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount float64) error
+	UpdatePayment(ctx context.Context, billID, paymentMethod, paymentRef, updatedBy string) error
+	Delete(ctx context.Context, billID string) error
 }
 
