@@ -11,7 +11,7 @@ import (
 	"backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
-    "github.com/gin-contrib/cors"
+  "github.com/gin-contrib/cors"
 )
 
 func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
@@ -43,6 +43,13 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	// Health
 	healthHandler := handlers.NewHealthHandler(db)
 	r.GET("/health", healthHandler.Health)
+
+		// ---- Mock test endpoint ----
+	r.GET("/test", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "welcome",
+		})
+	})
 
 	// Repositories needed for auth handler
 	branchRepo := repository.NewBranchRepository(db)
