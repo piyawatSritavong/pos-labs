@@ -5,10 +5,8 @@ import 'package:http/http.dart' as http;
 class ApiService {
   // ตรวจสอบว่าแอปกำลังรันอยู่ในโหมด Release (Production) หรือไม่
   static const bool _isProduction = bool.fromEnvironment('dart.vm.product');
-
-  // ถ้าเป็น Production ให้ใส่ URL ของ EC2 (ที่เราจะสร้าง) ถ้าไม่ใช่ให้ใช้ localhost
   static const String baseUrl = _isProduction
-      ? 'https://api.yourdomain.com' // <-- เดี๋ยวเราจะเอา URL ของ AWS มาใส่ที่นี่
+      ? 'http://54.169.213.40:8080'
       : 'http://localhost:8080';
 
   static const String _branchId = '00000';
