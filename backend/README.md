@@ -58,7 +58,7 @@ On startup (`cmd/server/main.go`):
 3. Seeds core data via `internal/db.SeedCoreData` (idempotent - skips if data exists):
    - Inserts default `permission` rows for:
      - Parts: `read`, `write`, `delete`
-     - Bills: `read`, `write`
+     - Bills: `read`, `write`, `delete`
      - Users: `read`, `write`, `delete`, `manage`
      - Roles: `read`, `write`, `delete`
      - Permissions: `read`, `write`, `delete`
@@ -209,8 +209,31 @@ On startup (`cmd/server/main.go`):
   - Backend automatically finds and holds the current "new" bill for the same POS.
   - Returns full bill details with items and discounts.
   - Uses `branchId` and `posId` from session (set at login).
-- `PUT /bills/:id/checkout` – Complete bill (requires `bills:write`, mock implementation).
-- `PUT /bills/:id/payment` – Process payment (requires `bills:write`, mock implementation).
+- `PUT /bills/:id/payment` – Process payment for bill (requires `bills:write`).
+  - Request body: `{ "paymentMethod": "cash", "paymentRef": "REF123" }` (both fields optional).
+  - Validates bill status must be "new" to process payment.
+  - Updates `payment_method`, `payment_ref`, and sets status to "completed".
+  - Returns full bill details with updated status.
+  - Uses `branchId` and `posId` from session (set at login).
+- `PUT /bills/:id/cancel` – Cancel bill (requires `bills:write`).
+  - Updates bill status to "cancelled" (does not delete the bill).
+  - Only allows cancelling bills with status "new" or "hold".
+  - Returns full bill details with updated status.
+  - Uses `branchId` and `posId` from session (set at login).
+- `DELETE /bills/:id` – Delete bill permanently (requires `bills:delete` permission, admin only).
+  - Permanently deletes bill and all related records (cascade delete: bill items, discounts).
+  - Cannot be undone.
+  - Uses `branchId` and `posId` from session (set at login).
+
+**Bill Status Rules:**
+- Bill status must be **"new"** for all modification operations:
+  - Adding items (`PUT /bills/:id/add-item`, `PUT /bills/:id/add-item-by-barcode`)
+  - Removing items (`PUT /bills/:id/remove-item`)
+  - Adding discounts (`PUT /bills/:id/add-discount`)
+  - Removing discounts (`PUT /bills/:id/remove-discount`)
+  - Processing payment (`PUT /bills/:id/payment`)
+- Only one bill with status "new" per POS (enforced in `POST /bills`).
+- Returns 400 error if trying to modify a bill that's not "new".
 
 **Bill Amount Calculation:**
 All bill amounts are automatically recalculated after any item or discount operation:
@@ -350,7 +373,7 @@ backend/
 Permissions follow the pattern `perm.{resource}.{action}`:
 
 - **Parts**: `perm.parts.read`, `perm.parts.write`, `perm.parts.delete`
-- **Bills**: `perm.bills.read`, `perm.bills.write`
+- **Bills**: `perm.bills.read`, `perm.bills.write`, `perm.bills.delete`
 - **Users**: `perm.users.read`, `perm.users.write`, `perm.users.delete`, `perm.users.mgmt`
 - **Roles**: `perm.roles.read`, `perm.roles.write`, `perm.roles.delete`
 - **Permissions**: `perm.permissions.read`, `perm.permissions.write`, `perm.permissions.delete`

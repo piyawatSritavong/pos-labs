@@ -23,6 +23,7 @@ type Config struct {
 	DBSSLMode      string
 	SessionSecret  string
 	SessionDuration string
+	StaticFilesPath string
 }
 
 func Load() Config {
@@ -37,6 +38,7 @@ func Load() Config {
 		DBSSLMode:     getEnv("DB_SSLMODE", "disable"),
 		SessionSecret: getEnv("SESSION_SECRET", "dev-session-secret-change-me"),
 		SessionDuration: getEnv("SESSION_DURATION", "4h"),
+		StaticFilesPath: getEnv("STATIC_FILES_PATH", "static"),
 	}
 }
 

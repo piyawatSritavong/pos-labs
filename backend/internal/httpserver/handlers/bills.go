@@ -54,6 +54,18 @@ func (h *BillsHandler) validateBillAccess(ctx context.Context, billID, branchID,
 	return nil
 }
 
+// validateBillStatusNew validates that a bill has status "new"
+func (h *BillsHandler) validateBillStatusNew(ctx context.Context, billID string) error {
+	bill, err := h.bills.GetByID(ctx, billID)
+	if err != nil {
+		return err
+	}
+	if bill.Status != "new" {
+		return fmt.Errorf("bill status must be 'new', current status: '%s'", bill.Status)
+	}
+	return nil
+}
+
 type BillsHandler struct {
 	bills      repository.BillRepository
 	branches   repository.BranchRepository
@@ -357,6 +369,16 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 		return
 	}
 
+	// Validate bill status is "new"
+	ctx := c.Request.Context()
+	if err := h.validateBillStatusNew(ctx, id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_bill_status",
+			"message": fmt.Sprintf("Bill status must be 'new' to add items. %s", err.Error()),
+		})
+		return
+	}
+
 	var req struct {
 		PartCode    string `json:"partCode" binding:"required"`
 		AddressCode string `json:"addressCode" binding:"required"`
@@ -478,6 +500,16 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
+		})
+		return
+	}
+
+	// Validate bill status is "new"
+	ctx := c.Request.Context()
+	if err := h.validateBillStatusNew(ctx, id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_bill_status",
+			"message": fmt.Sprintf("Bill status must be 'new' to add items. %s", err.Error()),
 		})
 		return
 	}
@@ -609,6 +641,16 @@ func (h *BillsHandler) RemoveItem(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
+		})
+		return
+	}
+
+	// Validate bill status is "new"
+	ctx := c.Request.Context()
+	if err := h.validateBillStatusNew(ctx, id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_bill_status",
+			"message": fmt.Sprintf("Bill status must be 'new' to remove items. %s", err.Error()),
 		})
 		return
 	}
@@ -781,6 +823,16 @@ func (h *BillsHandler) AddDiscount(c *gin.Context) {
 		return
 	}
 
+	// Validate bill status is "new"
+	ctx := c.Request.Context()
+	if err := h.validateBillStatusNew(ctx, id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_bill_status",
+			"message": fmt.Sprintf("Bill status must be 'new' to modify discounts. %s", err.Error()),
+		})
+		return
+	}
+
 	var req struct {
 		PromotionCode string `json:"promotionCode" binding:"required"`
 	}
@@ -863,6 +915,16 @@ func (h *BillsHandler) RemoveDiscount(c *gin.Context) {
 		return
 	}
 
+	// Validate bill status is "new"
+	ctx := c.Request.Context()
+	if err := h.validateBillStatusNew(ctx, id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_bill_status",
+			"message": fmt.Sprintf("Bill status must be 'new' to modify discounts. %s", err.Error()),
+		})
+		return
+	}
+
 	var req struct {
 		PromotionCode string `json:"promotionCode" binding:"required"`
 	}
@@ -871,8 +933,6 @@ func (h *BillsHandler) RemoveDiscount(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
 		return
 	}
-
-	ctx := c.Request.Context()
 
 	// Check if discount exists
 	_, err = h.bills.GetDiscountByCode(ctx, id, req.PromotionCode)
@@ -1318,8 +1378,8 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// Checkout completes a bill (mock implementation)
-func (h *BillsHandler) Checkout(c *gin.Context) {
+// Cancel cancels a bill
+func (h *BillsHandler) Cancel(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_bill_id"})
@@ -1333,7 +1393,8 @@ func (h *BillsHandler) Checkout(c *gin.Context) {
 	}
 
 	// Validate bill belongs to session's branch and POS
-	if err := h.validateBillAccess(c.Request.Context(), id, branchID, posID); err != nil {
+	ctx := c.Request.Context()
+	if err := h.validateBillAccess(ctx, id, branchID, posID); err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
 			return
@@ -1345,15 +1406,146 @@ func (h *BillsHandler) Checkout(c *gin.Context) {
 		return
 	}
 
-	// Mock response
+	// Get bill to check current status
+	bill, err := h.bills.GetByID(ctx, id)
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_bill"})
+		return
+	}
+
+	// Validate bill status is "new" or "hold" (can't cancel completed bills)
+	if bill.Status != "new" && bill.Status != "hold" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_bill_status",
+			"message": fmt.Sprintf("Can only cancel bills with status 'new' or 'hold'. Current status: '%s'", bill.Status),
+		})
+		return
+	}
+
+	// Get user for updated_by
+	userVal, _ := c.Get("user")
+	user, _ := userVal.(*repository.User)
+
+	// Update status to "cancelled"
+	if err := h.bills.UpdateStatus(ctx, id, "cancelled", user.ID); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_cancel_bill"})
+		return
+	}
+
+	// Get updated bill with full details
+	updatedBill, details, discounts, err := h.bills.GetFullByID(ctx, id)
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_bill"})
+		return
+	}
+
+	// Format response
+	detailOut := make([]gin.H, 0, len(details))
+	for _, d := range details {
+		detailOut = append(detailOut, gin.H{
+			"partCode":    d.PartCode,
+			"addressCode": d.AddressCode,
+			"unit": gin.H{
+				"id":      d.UnitID,
+				"label":   d.UnitLabel,
+				"labelTh": d.UnitLabelTH,
+			},
+			"name":  d.Name,
+			"cost":  d.Cost,
+			"price": d.Price,
+			"qty":   d.Qty,
+		})
+	}
+
+	discountOut := make([]gin.H, 0, len(discounts))
+	for _, d := range discounts {
+		discountOut = append(discountOut, gin.H{
+			"promotionCode": d.PromotionCode,
+			"unit":          d.Unit,
+			"amount":        d.Amount,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "bill_checkout_completed",
-		"billId":  id,
-		"status":  "completed",
+		"billId":        updatedBill.ID,
+		"branchId":      updatedBill.BranchID,
+		"posId":         updatedBill.POSID,
+		"status":        updatedBill.Status,
+		"paymentMethod": updatedBill.PaymentMethod,
+		"paymentRef":    updatedBill.PaymentRef,
+		"memberId":      updatedBill.MemberID,
+		"customerName":  updatedBill.CustomerName,
+		"purchaseAmount": updatedBill.PurchaseAmount,
+		"totalDiscount": updatedBill.TotalDiscount,
+		"totalAmount":   updatedBill.TotalAmount,
+		"vatAmount":     updatedBill.VATAmount,
+		"xvatAmount":    updatedBill.XVATAmount,
+		"createdAt":     updatedBill.CreatedAt.Format(time.RFC3339),
+		"updatedAt":     updatedBill.UpdatedAt.Format(time.RFC3339),
+		"createdBy":     updatedBill.CreatedBy,
+		"updatedBy":     updatedBill.UpdatedBy,
+		"details":       detailOut,
+		"discounts":     discountOut,
 	})
 }
 
-// Payment processes payment for a bill (mock implementation)
+// Delete permanently deletes a bill
+func (h *BillsHandler) Delete(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_bill_id"})
+		return
+	}
+
+	branchID, posID, err := h.getBranchAndPOSFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate bill belongs to session's branch and POS
+	ctx := c.Request.Context()
+	if err := h.validateBillAccess(ctx, id, branchID, posID); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "bill_access_denied",
+			"message": "Bill does not belong to your current branch and POS",
+		})
+		return
+	}
+
+	// Delete bill (cascade deletes related records)
+	if err := h.bills.Delete(ctx, id); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_delete_bill"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "bill_deleted",
+		"billId":  id,
+	})
+}
+
+// Payment processes payment for a bill
 func (h *BillsHandler) Payment(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -1368,7 +1560,8 @@ func (h *BillsHandler) Payment(c *gin.Context) {
 	}
 
 	// Validate bill belongs to session's branch and POS
-	if err := h.validateBillAccess(c.Request.Context(), id, branchID, posID); err != nil {
+	ctx := c.Request.Context()
+	if err := h.validateBillAccess(ctx, id, branchID, posID); err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
 			return
@@ -1380,11 +1573,97 @@ func (h *BillsHandler) Payment(c *gin.Context) {
 		return
 	}
 
-	// Mock response
+	// Validate bill status is "new"
+	if err := h.validateBillStatusNew(ctx, id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_bill_status",
+			"message": fmt.Sprintf("Bill status must be 'new' to process payment. %s", err.Error()),
+		})
+		return
+	}
+
+	var req struct {
+		PaymentMethod string `json:"paymentMethod"`
+		PaymentRef    string `json:"paymentRef"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+
+	// Get user for updated_by
+	userVal, _ := c.Get("user")
+	user, _ := userVal.(*repository.User)
+
+	// Update payment info and set status to "completed"
+	if err := h.bills.UpdatePayment(ctx, id, req.PaymentMethod, req.PaymentRef, user.ID); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_process_payment"})
+		return
+	}
+
+	// Get updated bill with full details
+	bill, details, discounts, err := h.bills.GetFullByID(ctx, id)
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_bill"})
+		return
+	}
+
+	// Format response
+	detailOut := make([]gin.H, 0, len(details))
+	for _, d := range details {
+		detailOut = append(detailOut, gin.H{
+			"partCode":    d.PartCode,
+			"addressCode": d.AddressCode,
+			"unit": gin.H{
+				"id":      d.UnitID,
+				"label":   d.UnitLabel,
+				"labelTh": d.UnitLabelTH,
+			},
+			"name":  d.Name,
+			"cost":  d.Cost,
+			"price": d.Price,
+			"qty":   d.Qty,
+		})
+	}
+
+	discountOut := make([]gin.H, 0, len(discounts))
+	for _, d := range discounts {
+		discountOut = append(discountOut, gin.H{
+			"promotionCode": d.PromotionCode,
+			"unit":          d.Unit,
+			"amount":        d.Amount,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "payment_processed",
-		"billId":  id,
-		"status":  "completed",
+		"billId":        bill.ID,
+		"branchId":      bill.BranchID,
+		"posId":         bill.POSID,
+		"status":        bill.Status,
+		"paymentMethod": bill.PaymentMethod,
+		"paymentRef":    bill.PaymentRef,
+		"memberId":      bill.MemberID,
+		"customerName":  bill.CustomerName,
+		"purchaseAmount": bill.PurchaseAmount,
+		"totalDiscount": bill.TotalDiscount,
+		"totalAmount":   bill.TotalAmount,
+		"vatAmount":     bill.VATAmount,
+		"xvatAmount":    bill.XVATAmount,
+		"createdAt":     bill.CreatedAt.Format(time.RFC3339),
+		"updatedAt":     bill.UpdatedAt.Format(time.RFC3339),
+		"createdBy":     bill.CreatedBy,
+		"updatedBy":     bill.UpdatedBy,
+		"details":       detailOut,
+		"discounts":     discountOut,
 	})
 }
 

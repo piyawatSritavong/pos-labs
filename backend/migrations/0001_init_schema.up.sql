@@ -111,8 +111,8 @@ CREATE INDEX "unique" ON "part_master" ("bar_code");
 
 CREATE TABLE "address_master" (
   "code" text,
-  "part_code" text,
-  "store_id" text,
+  "part_code" text NOT NULL,
+  "store_id" text NOT NULL,
   "shelf" text,
   "qty" integer,
   "min" integer,
@@ -122,10 +122,12 @@ CREATE TABLE "address_master" (
   PRIMARY KEY ("code"),
   CONSTRAINT "FK_address_master_part_code"
     FOREIGN KEY ("part_code")
-      REFERENCES "part_master"("code"),
+      REFERENCES "part_master"("code")
+      ON DELETE CASCADE,
   CONSTRAINT "FK_address_master_store_id"
     FOREIGN KEY ("store_id")
       REFERENCES "store_master"("id")
+      ON DELETE CASCADE
 );
 
 CREATE INDEX "idx_address_master_part_code" ON "address_master" ("part_code");
