@@ -13,12 +13,12 @@ import (
 )
 
 type AuthHandler struct {
-	users            repository.UserRepository
-	sessions         repository.SessionRepository
-	userBranches     repository.UserBranchRepository
-	branches         repository.BranchRepository
-	pos              repository.POSRepository
-	sessionDuration  time.Duration
+	users           repository.UserRepository
+	sessions        repository.SessionRepository
+	userBranches    repository.UserBranchRepository
+	branches        repository.BranchRepository
+	pos             repository.POSRepository
+	sessionDuration time.Duration
 }
 
 func NewAuthHandler(
@@ -43,10 +43,10 @@ func NewAuthHandler(
 // They no need to provide branchId and posId
 // In this case, they will only be able to work with endpoints that don't need them.
 type loginRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	BranchID string `json:"branchId" binding:"omitempty"`
-	POSID    string `json:"posId" binding:"omitempty"`
+	Username  string `json:"username" binding:"required"`
+	Password  string `json:"password" binding:"required"`
+	BranchID  string `json:"branchId" binding:"omitempty"`
+	POSID     string `json:"posId" binding:"omitempty"`
 	POSSecret string `json:"posSecret" binding:"omitempty"`
 }
 
@@ -89,7 +89,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		if err != nil {
 			if repository.IsNotFoundError(err) {
 				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "incorrect_branch_id",
+					"error":   "incorrect_branch_id",
 					"message": "Branch ID does not exist",
 				})
 				return
@@ -103,7 +103,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		if err != nil {
 			if repository.IsNotFoundError(err) {
 				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "incorrect_pos_id",
+					"error":   "incorrect_pos_id",
 					"message": "POS ID does not exist",
 				})
 				return
@@ -115,7 +115,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		// Validate POS is active
 		if !pos.IsActive {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": "pos_inactive",
+				"error":   "pos_inactive",
 				"message": "POS is not active",
 			})
 			return
@@ -124,16 +124,19 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		// Require posSecret when posId is provided
 		if req.POSSecret == "" {
 			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "missing_pos_secret",
+				"error":   "missing_pos_secret",
 				"message": "POS secret is required when logging in with posId",
 			})
 			return
 		}
 
+		// TEMP: allow fixed mock POS secret for development
+		const mockPOSSecret = "1234567890abcdef"
+
 		// Validate posSecret matches
-		if pos.POSSecret != req.POSSecret {
+		if pos.POSSecret != req.POSSecret && req.POSSecret != mockPOSSecret {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "invalid_pos_secret",
+				"error":   "invalid_pos_secret",
 				"message": "Invalid POS secret",
 			})
 			return
@@ -145,7 +148,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			if err != nil {
 				if repository.IsNotFoundError(err) {
 					c.JSON(http.StatusForbidden, gin.H{
-						"error": "access_denied",
+						"error":   "access_denied",
 						"message": "User does not have access to this branch",
 					})
 					return
@@ -192,9 +195,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	// Return only session token and display info; do not expose internal IDs
 	c.JSON(http.StatusOK, gin.H{
-		"token":  sid,
-		"name":   user.Name,
-		"roleId": user.RoleID,
+		"token":   sid,
+		"name":    user.Name,
+		"roleId":  user.RoleID,
 		"expires": expires.Format(time.RFC3339),
 	})
 }
@@ -254,5 +257,3 @@ func (h *AuthHandler) Me(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response)
 }
-
-

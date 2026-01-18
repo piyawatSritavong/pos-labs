@@ -390,7 +390,7 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	ctx = c.Request.Context()
 
 	// Check if part exists in the branch
 	exists, err := h.parts.CheckPartExistsInBranch(ctx, req.PartCode, branchID)
@@ -524,7 +524,7 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	ctx = c.Request.Context()
 
 	// Get part by barcode (filtered by branch)
 	partDetail, addresses, err := h.parts.GetPartByBarcode(ctx, req.Barcode, branchID)
@@ -667,7 +667,7 @@ func (h *BillsHandler) RemoveItem(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	ctx = c.Request.Context()
 
 	// Check if item exists in bill
 	existingItem, err := h.bills.GetItemByPartCode(ctx, id, req.PartCode, req.AddressCode)
@@ -842,7 +842,7 @@ func (h *BillsHandler) AddDiscount(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	ctx = c.Request.Context()
 
 	// Validate promotion exists
 	promotion, err := h.promotions.GetByCode(ctx, req.PromotionCode)

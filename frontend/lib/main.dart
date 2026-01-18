@@ -1,5 +1,9 @@
+// ignore: deprecated_member_use
+import 'dart:html' as html;
+
 import 'package:flutter/material.dart';
 import 'package:frontend/app.dart';
+import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/providers/branches_provider.dart';
@@ -20,4 +24,17 @@ void main() {
       child: const MyApp(),
     ),
   );
+
+  HomeScreen.openCustomerWindowFn = () {
+    final origin = html.window.location.origin;
+    final path = html.window.location.pathname;
+    final baseUrl = '$origin$path';
+    final customerUrl = '$baseUrl#/customer';
+
+    html.window.open(
+      customerUrl,
+      '_blank',
+      'noopener,noreferrer,toolbar=no,menubar=no,width=1024,height=768,left=100,top=100',
+    );
+  };
 }

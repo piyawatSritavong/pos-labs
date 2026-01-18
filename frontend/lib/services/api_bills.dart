@@ -97,7 +97,7 @@ class ApiBillsService {
     return _extractListFromResponse(decoded, '/bills');
   }
 
-  // /bills/switch — สร้างบิลใหม่ (targetBillId ว่าง) หรือสลับไปบิลอื่น
+  // PUT /bills/switch — สร้างบิลใหม่ (targetBillId ว่าง) หรือสลับไปบิลอื่น
   static Future<Map<String, dynamic>> switchBill({
     required String token,
     String? targetBillId,
@@ -125,7 +125,7 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/switch');
   }
 
-  // /bills/:id/add-item — เพิ่มสินค้าจาก partCode + addressCode
+  // PUT /bills/:id/add-item — เพิ่มสินค้าจาก partCode + addressCode
   static Future<Map<String, dynamic>> addItemToBill({
     required String token,
     required String billId,
@@ -158,7 +158,7 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id/add-item');
   }
 
-  // /bills/:id/add-item-by-barcode — เพิ่มสินค้าจากบาร์โค้ด
+  // PUT /bills/:id/add-item-by-barcode — เพิ่มสินค้าจากบาร์โค้ด
   static Future<Map<String, dynamic>> addItemToBillByBarcode({
     required String token,
     required String billId,
@@ -189,7 +189,7 @@ class ApiBillsService {
     );
   }
 
-  // /bills/:id/remove-item — ลบ/ลดจำนวนสินค้าในบิล
+  // PUT /bills/:id/remove-item — ลบ/ลดจำนวนสินค้าในบิล
   static Future<Map<String, dynamic>> removeItemFromBill({
     required String token,
     required String billId,
@@ -224,7 +224,7 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id/remove-item');
   }
 
-  // /bills/:id/add-discount — ใช้ promotionCode
+  // PUT /bills/:id/add-discount — ใช้ promotionCode
   static Future<Map<String, dynamic>> addBillDiscount({
     required String token,
     required String billId,
@@ -251,7 +251,7 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id/add-discount');
   }
 
-  // /bills/:id/remove-discount — ลบส่วนลด
+  // PUT /bills/:id/remove-discount — ลบส่วนลด
   static Future<Map<String, dynamic>> removeBillDiscount({
     required String token,
     required String billId,
@@ -278,12 +278,21 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id/remove-discount');
   }
 
-  // /bills/:id/payment — ชำระเงิน
+  // PUT /bills/:id/payment — ชำระเงิน
   static Future<Map<String, dynamic>> payBill({
     required String token,
     required String billId,
+    String paymentMethod = 'cash',
+    String? paymentRef,
   }) async {
     final uri = Uri.parse('$baseUrl/bills/$billId/payment');
+
+    final body = <String, dynamic>{
+      'paymentMethod': paymentMethod,
+    };
+    if (paymentRef != null && paymentRef.isNotEmpty) {
+      body['paymentRef'] = paymentRef;
+    }
 
     final response = await http.put(
       uri,
@@ -291,6 +300,7 @@ class ApiBillsService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
+      body: jsonEncode(body),
     );
 
     if (response.statusCode != 200) {
@@ -303,7 +313,7 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id/payment');
   }
 
-  // /bills/:id — ดึงบิลเต็ม ๆ (ใช้ตอน refresh)
+  // GET /bills/:id — ดึงบิลเต็ม ๆ (ใช้ตอน refresh)
   static Future<Map<String, dynamic>> getBill({
     required String token,
     required String billId,
@@ -328,7 +338,7 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id');
   }
 
-  // /bills/:id/cancel — ยกเลิกบิล (ต้องมี endpoint นี้ที่ backend)
+  // /bills/:id/cancel — ยกเลิกบิล
   static Future<void> cancelBill({
     required String token,
     required String billId,
@@ -346,6 +356,79 @@ class ApiBillsService {
     if (response.statusCode != 200) {
       throw Exception(
         'Failed to cancel bill: ${response.statusCode} ${response.body}',
+      );
+    }
+  }
+
+  // POST /bills - สร้างบิลใหม่ (ว่าง) ใช้ branchId/posId จาก session
+  static Future<Map<String, dynamic>> createBill({
+    required String token,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills');
+
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      // ตาม Postman ใช้ body ว่าง ๆ "{}"
+      body: jsonEncode({}),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(
+        'Failed to create bill: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/bills');
+  }
+
+  // PUT /bills/:id/hold - เปลี่ยนสถานะบิลเป็น hold
+  static Future<Map<String, dynamic>> holdBill({
+    required String token,
+    required String billId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/$billId/hold');
+
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to hold bill: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/bills/:id/hold');
+  }
+
+  // DELETE /bills/:id - ลบบิลพร้อมรายละเอียดทั้งหมด
+  static Future<void> deleteBill({
+    required String token,
+    required String billId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/$billId');
+
+    final response = await http.delete(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception(
+        'Failed to delete bill: ${response.statusCode} ${response.body}',
       );
     }
   }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:frontend/screens/backoffice_screen.dart';
 import 'package:frontend/services/api_bills.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/theme/app_theme.dart';
@@ -15,6 +16,8 @@ import 'package:frontend/widgets/pos/search_barcode_section.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  static void Function()? openCustomerWindowFn;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -338,6 +341,14 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
             );
           },
         ),
+        const SizedBox(width: 12),
+        if (HomeScreen.openCustomerWindowFn != null)
+          _HeaderIconButton(
+            icon: Icons.open_in_new_rounded,
+            onTap: () {
+              HomeScreen.openCustomerWindowFn?.call();
+            },
+          ),
         const SizedBox(width: 16),
         PopupMenuButton<String>(
           offset: const Offset(0, 48),
@@ -363,7 +374,7 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
               );
             } else if (value == 'office') {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const OfficeScreen()),
+                MaterialPageRoute(builder: (_) => const BackofficeScreen()),
               );
             }
           },
