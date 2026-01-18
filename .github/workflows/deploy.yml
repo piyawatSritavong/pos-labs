@@ -1,4 +1,4 @@
-name: Build, tag, and push image to Amazon ECR
+name: Build and push image to Amazon ECR
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build, tag, and push image to Amazon ECR
+      - name: Build and push image to Amazon ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: pos-backend # ชื่อที่ตั้งใน ECR
