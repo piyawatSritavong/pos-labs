@@ -46,9 +46,9 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 
 		// ---- Mock test endpoint ----
 	r.GET("/test", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "welcome",
-		})
+			c.JSON(200, gin.H{
+					"message": "welcome",
+			})
 	})
 
 	// Repositories needed for auth handler
