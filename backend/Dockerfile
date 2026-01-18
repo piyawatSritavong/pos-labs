@@ -10,8 +10,7 @@ RUN go build -o main ./cmd/server/main.go
 FROM alpine:latest
 WORKDIR /root/
 COPY --from=builder /app/main .
-# ถ้ามีไฟล์ .env หรือโฟลเดอร์ assets ให้ copy มาด้วย
-# COPY --from=builder /app/.env . 
+COPY --from=builder /app/migrations ./migrations
 
 EXPOSE 8080
 CMD ["./main"]
