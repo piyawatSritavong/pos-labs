@@ -85,6 +85,9 @@ func SeedCoreData(db *sql.DB) error {
 		{"perm.addresses.delete", "Delete addresses", "delete", "addresses", "Delete address master data"},
 		{"perm.qr_image.read", "Read QR image", "read", "qr_image", "Read QR code image"},
 		{"perm.qr_image.write", "Write QR image", "write", "qr_image", "Upload/replace QR code image"},
+		{"perm.reports_bill.read", "Read bill reports", "read", "reports_bill", "Export bill reports as CSV"},
+		{"perm.reports_parts.read", "Read parts reports", "read", "reports_parts", "Export parts reports as CSV"},
+		{"perm.reports_inventory.read", "Read inventory reports", "read", "reports_inventory", "Export inventory reports as CSV"},
 	}
 
 	for _, p := range permissions {
@@ -182,7 +185,7 @@ func SeedCoreData(db *sql.DB) error {
 		return err
 	}
 	posSecret := hex.EncodeToString(posSecretBytes)
-	
+
 	if _, err := tx.Exec(`
 		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active")
 		VALUES ($1, $2, $3, $4, $5)
@@ -227,5 +230,3 @@ func SeedCoreData(db *sql.DB) error {
 	log.Printf("Core data seeding completed")
 	return nil
 }
-
-

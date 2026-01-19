@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"backend/internal/config"
@@ -230,7 +231,7 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 	return bill, details, discounts, nil
 }
 
-func (r *billRepositoryPG) List(ctx context.Context, limit, offset int) ([]Bill, error) {
+func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom, dateTo *time.Time) ([]Bill, error) {
 	if limit <= 0 {
 		limit = config.DefaultLimit
 	}
@@ -238,7 +239,8 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int) ([]Bill,
 		offset = 0
 	}
 
-	rows, err := r.db.QueryContext(ctx, `
+	// Build query with optional date filtering
+	query := `
 		SELECT
 			"id", "branch_id", "pos_id", "status", "payment_method", "payment_ref",
 			"member_id", "customer_name",
@@ -246,9 +248,34 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int) ([]Bill,
 			"vat_amount", "xvat_amount",
 			"created_at", "updated_at", "created_by", "updated_by"
 		FROM "bill_master"
-		ORDER BY "created_at" DESC
-		LIMIT $1 OFFSET $2
-	`, limit, offset)
+	`
+	args := []interface{}{}
+	argIndex := 1
+
+	// Add date filtering if provided
+	// Note: dates are already normalized by the handler (start of day for dateFrom, end of day for dateTo)
+	if dateFrom != nil || dateTo != nil {
+		conditions := []string{}
+		if dateFrom != nil {
+			conditions = append(conditions, fmt.Sprintf(`"created_at" >= $%d`, argIndex))
+			args = append(args, *dateFrom)
+			argIndex++
+		}
+		if dateTo != nil {
+			conditions = append(conditions, fmt.Sprintf(`"created_at" < $%d`, argIndex))
+			args = append(args, *dateTo)
+			argIndex++
+		}
+		if len(conditions) > 0 {
+			query += " WHERE " + strings.Join(conditions, " AND ")
+		}
+	}
+
+	query += " ORDER BY \"created_at\" DESC"
+	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
+	args = append(args, limit, offset)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -607,4 +634,3 @@ func (r *billRepositoryPG) Delete(ctx context.Context, billID string) error {
 
 	return nil
 }
-
