@@ -121,16 +121,15 @@ func SeedMockData(db *sql.DB) error {
 		}
 	}
 
-	numCategories := len(categories)
-  if numCategories == 0 {
-      return fmt.Errorf("seed failed: no categories defined to associate with parts")
-  }
+	if len(categories) == 0 {
+			return fmt.Errorf("no categories")
+	}
 
   // Parts
   for i := 1; i <= 10; i++ {
     code := fmt.Sprintf("P%04d", i)
     barCode := fmt.Sprintf("885000%04d", i)
-    categoryID := categories[(i-1)%numCategories].ID 
+    categoryID := categories[(i-1)%len(categories)].ID
     unitID := "pcs"
 
     if _, err := tx.Exec(`
