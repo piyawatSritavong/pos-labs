@@ -43,14 +43,14 @@ jobs:
       - name: Run Govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          cd backend && govulncheck ./...
+          cd backend && $(go env GOPATH)/bin/govulncheck ./...
 
       # 3. SAST (GoSec Tool) 
       # ตรวจ Source Code Security
       - name: Run Gosec
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          cd backend && gosec ./...
+          cd backend && $(go env GOPATH)/bin/gosec ./...
 
       # 4. Container Scanning (Trivy Tool)
       # ตรวจสอบ "ความปลอดภัยของ Docker Image"
