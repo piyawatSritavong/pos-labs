@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"os"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
@@ -131,10 +132,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		}
 
 		// TEMP: allow fixed mock POS secret for development
-		const mockPOSSecret = "1234567890abcdef"
+		posSecretEnv := os.Getenv("POS_TERMINAL_SECRET")
 
 		// Validate posSecret matches
-		if pos.POSSecret != req.POSSecret && req.POSSecret != mockPOSSecret {
+		if pos.POSSecret != req.POSSecret && req.POSSecret != posSecretEnv {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error":   "invalid_pos_secret",
 				"message": "Invalid POS secret",

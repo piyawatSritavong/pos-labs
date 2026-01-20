@@ -11,7 +11,11 @@ class ApiService {
 
   static const String _branchId = '00000';
   static const String _posId = 'POS001';
-  static const String _posSecret = '1234567890abcdef'; // Mock secret
+  // ใช้ String.fromEnvironment เพื่อดึงค่าตอน Build
+  static const String _posSecret = String.fromEnvironment(
+    'POS_SECRET',
+    defaultValue: 'default_if_needed',
+  );
 
   // ======================================================================
   // 0) Helpers

@@ -101,4 +101,4 @@ jobs:
             docker pull ${{ steps.login-ecr.outputs.registry }}/pos-backend:latest
 
             # 4. รัน Container ใหม่ด้วย Image ล่าสุด
-            docker run -d --name my-api --network="host" ${{ steps.login-ecr.outputs.registry }}/pos-backend:latest
+            docker run -d --name my-api -e POS_TERMINAL_SECRET=${{ secrets.POS_TERMINAL_SECRET }} --network="host" ${{ steps.login-ecr.outputs.registry }}/pos-backend:latest
