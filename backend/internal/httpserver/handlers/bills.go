@@ -1102,7 +1102,9 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 		if err != nil {
 			// Rollback: resume the held bill if we just held it
 			if heldBillID != "" {
-				h.bills.UpdateStatus(ctx, heldBillID, "new", user.ID)
+				if rollbackErr := h.bills.UpdateStatus(ctx, heldBillID, "new", user.ID); rollbackErr != nil {
+            log.Printf("critical: failed to rollback bill status for ID %s: %v", heldBillID, rollbackErr)
+        }
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_generate_bill_id"})
 			return
@@ -1134,7 +1136,9 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 		if err := h.bills.Create(ctx, bill); err != nil {
 			// Rollback: resume the held bill if we just held it
 			if heldBillID != "" {
-				h.bills.UpdateStatus(ctx, heldBillID, "new", user.ID)
+				if rollbackErr := h.bills.UpdateStatus(ctx, heldBillID, "new", user.ID); rollbackErr != nil {
+            log.Printf("critical: failed to rollback bill status for ID %s: %v", heldBillID, rollbackErr)
+        }
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "failed_to_create_bill",
@@ -1312,7 +1316,9 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 	if err := h.bills.UpdateStatus(ctx, req.TargetBillID, "new", user.ID); err != nil {
 		// Rollback: resume the held bill if we just held it
 		if heldBillID != "" {
-			h.bills.UpdateStatus(ctx, heldBillID, "new", user.ID)
+			if rollbackErr := h.bills.UpdateStatus(ctx, heldBillID, "new", user.ID); rollbackErr != nil {
+            log.Printf("critical: failed to resume held bill ID %s during rollback: %v", heldBillID, rollbackErr)
+        }
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_resume_target_bill"})
 		return

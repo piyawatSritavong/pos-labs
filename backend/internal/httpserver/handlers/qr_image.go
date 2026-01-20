@@ -149,7 +149,7 @@ func (h *QRImageHandler) Put(c *gin.Context) {
 
 	// Save new image
 	newImagePath := filepath.Join(h.imageDir, qrImageName+ext)
-	if err := os.WriteFile(newImagePath, imageData, 0644); err != nil {
+	if err := os.WriteFile(newImagePath, imageData, 0600); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "failed_to_save_image",
 			"message": err.Error(),
