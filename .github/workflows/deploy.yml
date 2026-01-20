@@ -14,6 +14,11 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v3 # ดึงโค้ดจาก Repository ลงมาที่เครื่องรันงาน
+      
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24' # ระบุเวอร์ชันให้ชัดเจน
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1 # ยืนยันตัวตนกับ AWS โดยใช้ Keys ที่เก็บใน Secrets
