@@ -103,14 +103,14 @@ func SeedMockData(db *sql.DB) error {
 
 	// Categories
 	categories := []struct {
-    ID   string
-    Name string
-    NameTH string
-  }{
-    {"CAT001", "Beverages", "เครื่องดื่ม"},
-    {"CAT002", "Snacks", "ขนมขบเคี้ยว"},
-    {"CAT003", "Household", "ของใช้ในบ้าน"},
-  }
+		ID   string
+		Name string
+		NameTH string
+	}{
+		{"CAT001", "Beverages", "เครื่องดื่ม"},
+		{"CAT002", "Snacks", "ขนมขบเคี้ยว"},
+		{"CAT003", "Household", "ของใช้ในบ้าน"},
+	}
 
 	for _, c := range categories {
 		if _, err := tx.Exec(`
@@ -121,30 +121,26 @@ func SeedMockData(db *sql.DB) error {
 		}
 	}
 
-	if len(categories) == 0 {
-			return fmt.Errorf("no categories")
+	// Parts
+	for i := 1; i <= 10; i++ {
+		code := fmt.Sprintf("P%04d", i)
+		barCode := fmt.Sprintf("885000%04d", i)
+		categoryID := categories[(i-1)%len(categories)].ID // #nosec G602
+		unitID := "pcs"
+
+		if _, err := tx.Exec(`
+			INSERT INTO "part_master"(
+				"code", "bar_code", "category_id", "unit_id",
+				"name", "name_th", "details", "cost", "price", "image", "is_active"
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, 10.00, 15.00, '', true)
+		`, code, barCode, categoryID, unitID,
+			fmt.Sprintf("Sample Part %02d", i),
+			fmt.Sprintf("สินค้า ตัวอย่าง %02d", i),
+			"Development mock item"); err != nil {
+			return err
+		}
 	}
-
-  // Parts
-  for i := 1; i <= 10; i++ {
-    code := fmt.Sprintf("P%04d", i)
-    barCode := fmt.Sprintf("885000%04d", i)
-    categoryID := categories[(i-1)%len(categories)].ID
-    unitID := "pcs"
-
-    if _, err := tx.Exec(`
-      INSERT INTO "part_master"(
-        "code", "bar_code", "category_id", "unit_id",
-        "name", "name_th", "details", "cost", "price", "image", "is_active"
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 10.00, 15.00, '', true)
-    `, code, barCode, categoryID, unitID,
-      fmt.Sprintf("Sample Part %02d", i),
-      fmt.Sprintf("สินค้า ตัวอย่าง %02d", i),
-      "Development mock item"); err != nil {
-      return err
-    }
-  }
 
 	// Addresses: put each part into the main store at shelf A-01, qty 100
 	for i := 1; i <= 10; i++ {
