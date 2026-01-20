@@ -110,3 +110,41 @@ func (r *addressRepositoryPG) Delete(ctx context.Context, code string) error {
 	return nil
 }
 
+func (r *addressRepositoryPG) DecreaseInventory(ctx context.Context, addressCode string, qty int) (bool, error) {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE "address_master"
+		SET "qty" = "qty" - $1
+		WHERE "code" = $2 AND "qty" >= $1
+	`, qty, addressCode)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	return rowsAffected > 0, nil
+}
+
+func (r *addressRepositoryPG) IncreaseInventory(ctx context.Context, addressCode string, qty int) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE "address_master"
+		SET "qty" = "qty" + $1
+		WHERE "code" = $2
+	`, qty, addressCode)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
