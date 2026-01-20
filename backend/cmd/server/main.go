@@ -54,8 +54,14 @@ func main() {
 
 	addr := ":" + cfg.Port
 	log.Printf("Starting backend server on %s", addr)
-	if err := http.ListenAndServe(addr, engine); err != nil {
-		log.Fatalf("server stopped with error: %v", err)
+	server := &http.Server{
+			Addr:         addr,
+			Handler:      engine,
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 10 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
+			log.Fatalf("server stopped with error: %v", err)
 	}
 }
 

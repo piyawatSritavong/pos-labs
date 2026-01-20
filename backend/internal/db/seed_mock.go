@@ -103,14 +103,14 @@ func SeedMockData(db *sql.DB) error {
 
 	// Categories
 	categories := []struct {
-		ID   string
-		Name string
-		NameTH string
-	}{
-		{"CAT001", "Beverages", "เครื่องดื่ม"},
-		{"CAT002", "Snacks", "ขนมขบเคี้ยว"},
-		{"CAT003", "Household", "ของใช้ในบ้าน"},
-	}
+    ID   string
+    Name string
+    NameTH string
+  }{
+    {"CAT001", "Beverages", "เครื่องดื่ม"},
+    {"CAT002", "Snacks", "ขนมขบเคี้ยว"},
+    {"CAT003", "Household", "ของใช้ในบ้าน"},
+  }
 
 	for _, c := range categories {
 		if _, err := tx.Exec(`
@@ -126,8 +126,8 @@ func SeedMockData(db *sql.DB) error {
       return fmt.Errorf("seed failed: no categories defined to associate with parts")
   }
 
-	// Parts
-for i := 1; i <= 10; i++ {
+  // Parts
+  for i := 1; i <= 10; i++ {
     code := fmt.Sprintf("P%04d", i)
     barCode := fmt.Sprintf("885000%04d", i)
     categoryID := categories[(i-1)%numCategories].ID 

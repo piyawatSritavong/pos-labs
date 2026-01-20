@@ -133,7 +133,7 @@ func (h *QRImageHandler) Put(c *gin.Context) {
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(h.imageDir, 0755); err != nil {
+	if err := os.MkdirAll(h.imageDir, 0750); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "failed_to_create_directory",
 			"message": err.Error(),
