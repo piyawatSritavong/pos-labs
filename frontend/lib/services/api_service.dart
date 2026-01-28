@@ -125,7 +125,23 @@ class ApiService {
     throw Exception('Unexpected /auth/login response format: ${response.body}');
   }
 
-  // 1.2) GET /auth/me
+  // 1.2) POST /auth/logout
+  static Future<void> logout(String token) async {
+    final uri = Uri.parse('$baseUrl/auth/logout');
+
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Logout failed: ${response.statusCode} ${response.body}');
+    }
+  }
+
+  // 1.3) GET /auth/me
   static Future<Map<String, dynamic>> getCurrentUser(String token) async {
     final uri = Uri.parse('$baseUrl/auth/me');
 
@@ -183,15 +199,35 @@ class ApiService {
   // 3) /bills
   // ======================================================================
 
-  // GET /bills?limit=&offset=
+  // GET /bills?limit=&offset=&date=&date_from=&date_to=
   static Future<List<Map<String, dynamic>>> getBills({
     required String token,
     int limit = 20,
     int offset = 0,
+    String? date,
+    String? dateFrom,
+    String? dateTo,
   }) async {
-    final uri = Uri.parse(
-      '$baseUrl/bills',
-    ).replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
+    final queryParams = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+
+    // According to backend docs, `date` is mutually exclusive with `date_from`/`date_to`.
+    if (date != null && date.isNotEmpty) {
+      queryParams['date'] = date;
+    } else {
+      if (dateFrom != null && dateFrom.isNotEmpty) {
+        queryParams['date_from'] = dateFrom;
+      }
+      if (dateTo != null && dateTo.isNotEmpty) {
+        queryParams['date_to'] = dateTo;
+      }
+    }
+
+    final uri = Uri.parse('$baseUrl/bills').replace(
+      queryParameters: queryParams,
+    );
 
     final response = await http.get(
       uri,

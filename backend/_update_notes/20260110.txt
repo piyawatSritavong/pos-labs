@@ -24,3 +24,25 @@ Schema:
 
 Permissions:
 - Added: bills.delete, promotions.*, addresses.*, qr_image.*, pos.secret
+
+// ===================
+
+Updates: 20260120
+
+Bills:
+- GET /bills: Added date filtering (query params: `date`, `date_from`, `date_to`)
+  - Formats: ISO string (RFC3339) or yyyy-mm-dd
+  - Default: Current date in UTC+7 (00:00 to 23:59) if no params provided
+  - Use case: Frontend dashboard queries with date filtering
+- Inventory management: Add/remove items, cancel, and delete operations now update inventory
+  - Add item: Checks sufficient inventory at address_master, atomically reduces qty before adding to bill
+  - Remove item: Returns inventory to address_master
+  - Cancel bill: Returns all items' inventory to their addresses
+  - Delete bill: Returns inventory (if status != "completed"), prevents deletion of completed bills
+
+Repository:
+- BillRepository.List(): Added optional dateFrom, dateTo parameters
+- Dynamic SQL query building with date filtering on created_at field
+
+Documentation:
+- Updated Postman collection with date filtering parameters

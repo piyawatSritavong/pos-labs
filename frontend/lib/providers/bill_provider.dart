@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
-import 'package:frontend/services/api_bills.dart';
+import 'package:frontend/services/api_service.dart';
 
 double _toDouble(dynamic v) {
   if (v == null) return 0.0;
@@ -279,7 +279,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.switchBill(
+      final bill = await ApiService.switchBill(
         token: token,
         targetBillId: targetBillId,
       );
@@ -309,7 +309,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.addItemToBillByBarcode(
+      final bill = await ApiService.addItemToBillByBarcode(
         token: token,
         billId: _billId!,
         barcode: barcode,
@@ -339,7 +339,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.addItemToBill(
+      final bill = await ApiService.addItemToBill(
         token: token,
         billId: _billId!,
         partCode: partCode,
@@ -357,7 +357,16 @@ class BillProvider extends ChangeNotifier {
   }
 
   Future<void> clearBill({required String token}) async {
-    await switchBill(token: token);
+    // ถ้ามีบิลอยู่ ให้ยกเลิกบิลก่อนเพื่อคืนสต็อกใน backend
+    if (_billId != null) {
+      try {
+        await ApiService.cancelBill(token: token, billId: _billId!);
+      } catch (_) {
+        // ถ้ายกเลิกบิลล้มเหลว ไม่ให้แอปค้าง แต่ยังคงพยายามสลับไปบิลใหม่
+      }
+    }
+
+    await switchBill(token: token, targetBillId: '');
   }
 
   Future<void> removeItem({
@@ -375,7 +384,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.removeItemFromBill(
+      final bill = await ApiService.removeItemFromBill(
         token: token,
         billId: _billId!,
         partCode: partCode,
@@ -393,7 +402,11 @@ class BillProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> payCurrentBill({required String token}) async {
+  Future<void> payCurrentBill({
+    required String token,
+    String paymentMethod = 'cash',
+    String? paymentRef,
+  }) async {
     if (_billId == null) {
       throw Exception('Bill id is not initialized');
     }
@@ -401,11 +414,60 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.payBill(
+      final bill = await ApiService.payBill(
         token: token,
         billId: _billId!,
+        paymentMethod: paymentMethod,
+        paymentRef: paymentRef,
       );
       _applyBill(bill);
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> holdCurrentBill({required String token}) async {
+    if (_billId == null) {
+      throw Exception('Bill id is not initialized');
+    }
+    isLoading = true;
+    notifyListeners();
+    try {
+      final bill = await ApiService.holdBill(token: token, billId: _billId!);
+      _applyBill(bill);
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> cancelCurrentBill({required String token}) async {
+    if (_billId == null) {
+      throw Exception('Bill id is not initialized');
+    }
+    isLoading = true;
+    notifyListeners();
+    try {
+      await ApiService.cancelBill(token: token, billId: _billId!);
+      // หลังยกเลิกบิลปัจจุบันแล้ว สลับไปสร้างบิลใหม่ว่าง ๆ
+      await switchBill(token: token, targetBillId: '');
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteCurrentBill({required String token}) async {
+    if (_billId == null) {
+      throw Exception('Bill id is not initialized');
+    }
+    isLoading = true;
+    notifyListeners();
+    try {
+      await ApiService.deleteBill(token: token, billId: _billId!);
+      // หลังลบบิลแล้ว สร้างบิลใหม่ให้พร้อมใช้งานต่อ
+      await switchBill(token: token, targetBillId: '');
     } finally {
       isLoading = false;
       notifyListeners();
@@ -424,7 +486,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.addBillDiscount(
+      final bill = await ApiService.addBillDiscount(
         token: token,
         billId: _billId!,
         promotionCode: promotionCode,
@@ -439,7 +501,7 @@ class BillProvider extends ChangeNotifier {
   Future<void> _reloadBill({required String token}) async {
     if (_billId == null) return;
     try {
-      final latest = await ApiBillsService.getBill(
+      final latest = await ApiService.getBill(
         token: token,
         billId: _billId!,
       );

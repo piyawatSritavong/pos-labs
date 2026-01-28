@@ -30,7 +30,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		MaxAge: 12 * time.Hour,
 	}))
 	r.Use(gin.Logger(), gin.Recovery())
-	
+
 	// CORS middleware (environment-aware)
 	r.Use(middleware.CORS(cfg))
 
@@ -93,7 +93,8 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	billRepo := repository.NewBillRepository(db)
 	companyRepo := repository.NewCompanyRepository(db)
 	promotionRepo := repository.NewPromotionRepository(db)
-	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo, partRepo, companyRepo, promotionRepo)
+	addressRepo := repository.NewAddressRepository(db)
+	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo, partRepo, companyRepo, promotionRepo, addressRepo)
 	bills := r.Group("/bills")
 	bills.Use(authMw.RequirePermission("bills", "read"))
 	// GET endpoints allow access without posId/branchId (for admin users)
@@ -107,21 +108,31 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	billsWrite.Use(middleware.RequirePOSBranch()) // Bills endpoints require POS session with branchId and posId
 	{
 		billsWrite.POST("", billsHandler.Create)
-		billsWrite.PUT("/:id/add-item", billsHandler.AddItem) // add item to bill by part code
+		billsWrite.PUT("/:id/add-item", billsHandler.AddItem)                     // add item to bill by part code
 		billsWrite.PUT("/:id/add-item-by-barcode", billsHandler.AddItemByBarcode) // add item to bill by barcode
-		billsWrite.PUT("/:id/remove-item", billsHandler.RemoveItem) // remove item from bill
-		billsWrite.PUT("/:id/add-discount", billsHandler.AddDiscount) // apply discount to bill
-		billsWrite.PUT("/:id/remove-discount", billsHandler.RemoveDiscount) // remove discount from bill
-		billsWrite.PUT("/:id/hold", billsHandler.Hold) // hold bill
-		billsWrite.PUT("/switch", billsHandler.SwitchBill) // switch bills: if currentBillId not provided, create new bill; otherwise hold current and resume target
-		billsWrite.PUT("/:id/payment", billsHandler.Payment) // process payment
-		billsWrite.PUT("/:id/cancel", billsHandler.Cancel) // cancel bill
+		billsWrite.PUT("/:id/remove-item", billsHandler.RemoveItem)               // remove item from bill
+		billsWrite.PUT("/:id/add-discount", billsHandler.AddDiscount)             // apply discount to bill
+		billsWrite.PUT("/:id/remove-discount", billsHandler.RemoveDiscount)       // remove discount from bill
+		billsWrite.PUT("/:id/hold", billsHandler.Hold)                            // hold bill
+		billsWrite.PUT("/switch", billsHandler.SwitchBill)                        // switch bills: if currentBillId not provided, create new bill; otherwise hold current and resume target
+		billsWrite.PUT("/:id/payment", billsHandler.Payment)                      // process payment
+		billsWrite.PUT("/:id/cancel", billsHandler.Cancel)                        // cancel bill
 	}
 	billsDelete := r.Group("/bills")
 	billsDelete.Use(authMw.RequirePermission("bills", "delete"))
 	billsDelete.Use(middleware.RequirePOSBranch()) // Bills endpoints require POS session with branchId and posId
 	{
 		billsDelete.DELETE("/:id", billsHandler.Delete) // delete bill permanently
+	}
+
+	// Reports (CSV exports)
+	reportRepo := repository.NewReportRepository(db)
+	reportsHandler := handlers.NewReportsHandler(reportRepo)
+	reports := r.Group("/reports")
+	{
+		reports.GET("/bills", authMw.RequirePermission("reports_bill", "read"), reportsHandler.BillsReport)              // bills report with date filter
+		reports.GET("/parts", authMw.RequirePermission("reports_parts", "read"), reportsHandler.PartsReport)             // all parts report
+		reports.GET("/inventory", authMw.RequirePermission("reports_inventory", "read"), reportsHandler.InventoryReport) // all inventory report
 	}
 
 	// Company (read and update only)
@@ -205,7 +216,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	}
 
 	// Addresses (CRUD)
-	addressRepo := repository.NewAddressRepository(db)
+	// addressRepo already created above for BillsHandler
 	addressHandler := handlers.NewAddressHandler(addressRepo)
 	addresses := r.Group("/addresses")
 	addresses.Use(authMw.RequirePermission("addresses", "read"))
@@ -268,5 +279,3 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 
 	return r
 }
-
-

@@ -73,9 +73,10 @@ type BillsHandler struct {
 	parts      repository.PartRepository
 	company    repository.CompanyRepository
 	promotions repository.PromotionRepository
+	addresses  repository.AddressRepository
 }
 
-func NewBillsHandler(bills repository.BillRepository, branches repository.BranchRepository, pos repository.POSRepository, parts repository.PartRepository, company repository.CompanyRepository, promotions repository.PromotionRepository) *BillsHandler {
+func NewBillsHandler(bills repository.BillRepository, branches repository.BranchRepository, pos repository.POSRepository, parts repository.PartRepository, company repository.CompanyRepository, promotions repository.PromotionRepository, addresses repository.AddressRepository) *BillsHandler {
 	return &BillsHandler{
 		bills:      bills,
 		branches:   branches,
@@ -83,6 +84,7 @@ func NewBillsHandler(bills repository.BillRepository, branches repository.Branch
 		parts:      parts,
 		company:    company,
 		promotions: promotions,
+		addresses:  addresses,
 	}
 }
 
@@ -134,8 +136,8 @@ func (h *BillsHandler) Create(c *gin.Context) {
 	}
 	if err == nil && existingBill != nil {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "pos_has_active_bill",
-			"message": "POS already has a bill with status 'new'. Please hold the existing bill before creating a new one.",
+			"error":          "pos_has_active_bill",
+			"message":        "POS already has a bill with status 'new'. Please hold the existing bill before creating a new one.",
 			"existingBillId": existingBill.ID,
 		})
 		return
@@ -150,30 +152,30 @@ func (h *BillsHandler) Create(c *gin.Context) {
 
 	now := time.Now().UTC()
 
-		// Create empty bill (using branchId and posId from session)
-		newBill := &repository.Bill{
-			ID:            billID,
-			BranchID:      branchID,
-			POSID:         posID,
-			Status:        "new",
-			PaymentMethod: "", // empty initially
-			PaymentRef:    "",
-			MemberID:      "",
-			CustomerName:  "ทั่วไป", // default customer name
-			PurchaseAmount: 0,
-			TotalDiscount:  0,
-			TotalAmount:    0,
-			VATAmount:      0,
-			XVATAmount:     0,
-			CreatedAt:      now,
-			UpdatedAt:      now,
-			CreatedBy:      user.ID,
-			UpdatedBy:      user.ID,
-		}
+	// Create empty bill (using branchId and posId from session)
+	newBill := &repository.Bill{
+		ID:             billID,
+		BranchID:       branchID,
+		POSID:          posID,
+		Status:         "new",
+		PaymentMethod:  "", // empty initially
+		PaymentRef:     "",
+		MemberID:       "",
+		CustomerName:   "ทั่วไป", // default customer name
+		PurchaseAmount: 0,
+		TotalDiscount:  0,
+		TotalAmount:    0,
+		VATAmount:      0,
+		XVATAmount:     0,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		CreatedBy:      user.ID,
+		UpdatedBy:      user.ID,
+	}
 
 	if err := h.bills.Create(ctx, newBill); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed_to_create_bill",
+			"error":   "failed_to_create_bill",
 			"message": "Failed to create bill",
 		})
 		return
@@ -201,11 +203,80 @@ func (h *BillsHandler) List(c *gin.Context) {
 		}
 	}
 
-	bills, err := h.bills.List(c.Request.Context(), limit, offset)
+	// Parse date filtering parameters
+	var dateFrom, dateTo *time.Time
+
+	// Support both "date" (single day) and "date_from"/"date_to" (range)
+	if dateStr := c.Query("date"); dateStr != "" {
+		date, err := parseDate(dateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_date_format",
+				"message": err.Error(),
+			})
+			return
+		}
+		// For single date, set both from and to to the same day
+		dateStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+		dateEnd := dateStart.Add(24 * time.Hour)
+		dateFrom = &dateStart
+		dateTo = &dateEnd
+	} else {
+		// Support date range with date_from and date_to
+		if dateFromStr := c.Query("date_from"); dateFromStr != "" {
+			date, err := parseDate(dateFromStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error":   "invalid_date_from_format",
+					"message": err.Error(),
+				})
+				return
+			}
+			dateStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+			dateFrom = &dateStart
+		}
+		if dateToStr := c.Query("date_to"); dateToStr != "" {
+			date, err := parseDate(dateToStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error":   "invalid_date_to_format",
+					"message": err.Error(),
+				})
+				return
+			}
+			dateEnd := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC).Add(24 * time.Hour)
+			dateTo = &dateEnd
+		}
+	}
+
+	// If no date parameters provided, default to current date in UTC+7
+	if dateFrom == nil && dateTo == nil {
+		// Get current time in UTC+7 (Thailand timezone)
+		utc := time.Now().UTC()
+		utc7 := utc.Add(7 * time.Hour)
+
+		// Get date components in UTC+7
+		year, month, day := utc7.Date()
+
+		// Start of day: 00:00 UTC+7 converted to UTC
+		// 00:00 UTC+7 = 17:00 previous day UTC
+		dateStartUTC7 := time.Date(year, month, day, 0, 0, 0, 0, time.FixedZone("UTC+7", 7*3600))
+		dateStartUTC := dateStartUTC7.UTC()
+
+		// End of day: start of next day in UTC+7, converted to UTC
+		// This gives us 00:00 next day UTC+7 = 17:00 same day UTC (exclusive comparison)
+		dateEndUTC7 := time.Date(year, month, day, 0, 0, 0, 0, time.FixedZone("UTC+7", 7*3600)).Add(24 * time.Hour)
+		dateEndUTC := dateEndUTC7.UTC()
+
+		dateFrom = &dateStartUTC
+		dateTo = &dateEndUTC
+	}
+
+	bills, err := h.bills.List(c.Request.Context(), limit, offset, dateFrom, dateTo)
 	if err != nil {
 		log.Printf("Error listing bills: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed_to_list_bills",
+			"error":   "failed_to_list_bills",
 			"message": err.Error(),
 		})
 		return
@@ -214,14 +285,14 @@ func (h *BillsHandler) List(c *gin.Context) {
 	out := make([]gin.H, 0, len(bills))
 	for _, b := range bills {
 		out = append(out, gin.H{
-			"id":            b.ID,
-			"branchId":     b.BranchID,
-			"posId":        b.POSID,
-			"status":       b.Status,
-			"paymentMethod": b.PaymentMethod,
-			"paymentRef":   b.PaymentRef,
-			"memberId":     b.MemberID,
-			"customerName": b.CustomerName,
+			"id":             b.ID,
+			"branchId":       b.BranchID,
+			"posId":          b.POSID,
+			"status":         b.Status,
+			"paymentMethod":  b.PaymentMethod,
+			"paymentRef":     b.PaymentRef,
+			"memberId":       b.MemberID,
+			"customerName":   b.CustomerName,
 			"purchaseAmount": b.PurchaseAmount,
 			"totalDiscount":  b.TotalDiscount,
 			"totalAmount":    b.TotalAmount,
@@ -243,11 +314,12 @@ func (h *BillsHandler) List(c *gin.Context) {
 // For users with branchId/posId: validates bill belongs to their branch/POS
 // For admin users without branchId/posId: allows viewing any bill
 // Response format:
-// {
-//   ...bill_master_fields,
-//   "details":   [ { ...bill_item_detail } ],
-//   "discounts": [ { ...bill_discount_detail } ]
-// }
+//
+//	{
+//	  ...bill_master_fields,
+//	  "details":   [ { ...bill_item_detail } ],
+//	  "discounts": [ { ...bill_discount_detail } ]
+//	}
 func (h *BillsHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -286,7 +358,7 @@ func (h *BillsHandler) Get(c *gin.Context) {
 	if branchID != "" && posID != "" {
 		if b.BranchID != branchID || b.POSID != posID {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": "bill_access_denied",
+				"error":   "bill_access_denied",
 				"message": "Bill does not belong to your current branch and POS",
 			})
 			return
@@ -327,7 +399,7 @@ func (h *BillsHandler) Get(c *gin.Context) {
 		"paymentMethod":  b.PaymentMethod,
 		"paymentRef":     b.PaymentRef,
 		"memberId":       b.MemberID,
-		"customerName":  b.CustomerName,
+		"customerName":   b.CustomerName,
 		"purchaseAmount": b.PurchaseAmount,
 		"totalDiscount":  b.TotalDiscount,
 		"totalAmount":    b.TotalAmount,
@@ -363,7 +435,7 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "bill_access_denied",
+			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
@@ -427,6 +499,20 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 		return
 	}
 
+	// Check and reduce inventory before adding to bill
+	decreased, err := h.addresses.DecreaseInventory(ctx, req.AddressCode, req.Qty)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_check_inventory"})
+		return
+	}
+	if !decreased {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "not_enough_inventory",
+			"message": fmt.Sprintf("Insufficient inventory at address %s. Requested: %d", req.AddressCode, req.Qty),
+		})
+		return
+	}
+
 	// Check if item already exists in bill
 	existingItem, err := h.bills.GetItemByPartCode(ctx, id, req.PartCode, req.AddressCode)
 	if err != nil && !repository.IsNotFoundError(err) {
@@ -451,13 +537,13 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 			BillID:      id,
 			PartCode:    req.PartCode,
 			AddressCode: req.AddressCode,
-			UnitID:     partDetail.UnitID,
-			UnitLabel:  partDetail.UnitLabel,
+			UnitID:      partDetail.UnitID,
+			UnitLabel:   partDetail.UnitLabel,
 			UnitLabelTH: partDetail.UnitLabelTH,
-			Name:       partDetail.Name,
-			Cost:       partDetail.Cost,
-			Price:      partDetail.Price,
-			Qty:        req.Qty,
+			Name:        partDetail.Name,
+			Cost:        partDetail.Cost,
+			Price:       partDetail.Price,
+			Qty:         req.Qty,
 		}
 		if err := h.bills.AddItem(ctx, detail); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_add_item"})
@@ -498,7 +584,7 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "bill_access_denied",
+			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
@@ -564,6 +650,20 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 		return
 	}
 
+	// Check and reduce inventory before adding to bill
+	decreased, err := h.addresses.DecreaseInventory(ctx, selectedAddress.Code, req.Qty)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_check_inventory"})
+		return
+	}
+	if !decreased {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "not_enough_inventory",
+			"message": fmt.Sprintf("Insufficient inventory at address %s. Requested: %d", selectedAddress.Code, req.Qty),
+		})
+		return
+	}
+
 	// Check if item already exists in bill
 	existingItem, err := h.bills.GetItemByPartCode(ctx, id, partDetail.Code, selectedAddress.Code)
 	if err != nil && !repository.IsNotFoundError(err) {
@@ -588,13 +688,13 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 			BillID:      id,
 			PartCode:    partDetail.Code,
 			AddressCode: selectedAddress.Code,
-			UnitID:     partDetail.UnitID,
-			UnitLabel:  partDetail.UnitLabel,
+			UnitID:      partDetail.UnitID,
+			UnitLabel:   partDetail.UnitLabel,
 			UnitLabelTH: partDetail.UnitLabelTH,
-			Name:       partDetail.Name,
-			Cost:       partDetail.Cost,
-			Price:      partDetail.Price,
-			Qty:        req.Qty,
+			Name:        partDetail.Name,
+			Cost:        partDetail.Cost,
+			Price:       partDetail.Price,
+			Qty:         req.Qty,
 		}
 		if err := h.bills.AddItem(ctx, detail); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_add_item"})
@@ -639,7 +739,7 @@ func (h *BillsHandler) RemoveItem(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "bill_access_denied",
+			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
@@ -690,6 +790,12 @@ func (h *BillsHandler) RemoveItem(c *gin.Context) {
 		removeQty = 1 // Default to 1 if not specified or invalid
 	}
 
+	// Calculate quantity to return to inventory
+	returnQty := existingItem.Qty
+	if !req.IsRemoveAll && existingItem.Qty > removeQty {
+		returnQty = removeQty
+	}
+
 	if req.IsRemoveAll {
 		// Delete the item completely
 		if err := h.bills.RemoveItem(ctx, id, req.PartCode, req.AddressCode); err != nil {
@@ -711,6 +817,12 @@ func (h *BillsHandler) RemoveItem(c *gin.Context) {
 				return
 			}
 		}
+	}
+
+	// Return inventory to address
+	if err := h.addresses.IncreaseInventory(ctx, req.AddressCode, returnQty); err != nil {
+		// Log error but don't fail the request (inventory return is important but shouldn't block removal)
+		log.Printf("Warning: failed to return inventory to address %s: %v", req.AddressCode, err)
 	}
 
 	// Recalculate bill amounts
@@ -817,7 +929,7 @@ func (h *BillsHandler) AddDiscount(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "bill_access_denied",
+			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
@@ -909,7 +1021,7 @@ func (h *BillsHandler) RemoveDiscount(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "bill_access_denied",
+			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
@@ -1004,7 +1116,7 @@ func (h *BillsHandler) Hold(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "bill_access_denied",
+			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
@@ -1024,8 +1136,8 @@ func (h *BillsHandler) Hold(c *gin.Context) {
 	// Only allow holding bills with status "new"
 	if bill.Status != "new" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid_bill_status",
-			"message": "Only bills with status 'new' can be held",
+			"error":         "invalid_bill_status",
+			"message":       "Only bills with status 'new' can be held",
 			"currentStatus": bill.Status,
 		})
 		return
@@ -1114,14 +1226,14 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 
 		// Create new bill (using branchId and posId from session)
 		bill := &repository.Bill{
-			ID:            billID,
-			BranchID:      branchID,
-			POSID:         posID,
-			Status:        "new",
-			PaymentMethod: "",
-			PaymentRef:    "",
-			MemberID:      "",
-			CustomerName:  "ทั่วไป",
+			ID:             billID,
+			BranchID:       branchID,
+			POSID:          posID,
+			Status:         "new",
+			PaymentMethod:  "",
+			PaymentRef:     "",
+			MemberID:       "",
+			CustomerName:   "ทั่วไป",
 			PurchaseAmount: 0,
 			TotalDiscount:  0,
 			TotalAmount:    0,
@@ -1141,7 +1253,7 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
         }
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "failed_to_create_bill",
+				"error":   "failed_to_create_bill",
 				"message": "Failed to create bill",
 			})
 			return
@@ -1188,7 +1300,7 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 			"paymentMethod":  newBill.PaymentMethod,
 			"paymentRef":     newBill.PaymentRef,
 			"memberId":       newBill.MemberID,
-			"customerName":  newBill.CustomerName,
+			"customerName":   newBill.CustomerName,
 			"purchaseAmount": newBill.PurchaseAmount,
 			"totalDiscount":  newBill.TotalDiscount,
 			"totalAmount":    newBill.TotalAmount,
@@ -1263,7 +1375,7 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 			"paymentMethod":  bill.PaymentMethod,
 			"paymentRef":     bill.PaymentRef,
 			"memberId":       bill.MemberID,
-			"customerName":  bill.CustomerName,
+			"customerName":   bill.CustomerName,
 			"purchaseAmount": bill.PurchaseAmount,
 			"totalDiscount":  bill.TotalDiscount,
 			"totalAmount":    bill.TotalAmount,
@@ -1281,8 +1393,8 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 
 	if targetBill.Status != "hold" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid_target_bill_status",
-			"message": "Target bill must have status 'hold' or 'new'",
+			"error":         "invalid_target_bill_status",
+			"message":       "Target bill must have status 'hold' or 'new'",
 			"currentStatus": targetBill.Status,
 		})
 		return
@@ -1298,7 +1410,7 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 	// If no "new" bill exists, return error
 	if repository.IsNotFoundError(err) || currentBill == nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "no_active_bill",
+			"error":   "no_active_bill",
 			"message": "No active bill found for this POS. Please create a new bill first.",
 		})
 		return
@@ -1365,7 +1477,7 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 		"paymentMethod":  resumedBill.PaymentMethod,
 		"paymentRef":     resumedBill.PaymentRef,
 		"memberId":       resumedBill.MemberID,
-		"customerName":  resumedBill.CustomerName,
+		"customerName":   resumedBill.CustomerName,
 		"purchaseAmount": resumedBill.PurchaseAmount,
 		"totalDiscount":  resumedBill.TotalDiscount,
 		"totalAmount":    resumedBill.TotalAmount,
@@ -1406,7 +1518,7 @@ func (h *BillsHandler) Cancel(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "bill_access_denied",
+			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
@@ -1435,6 +1547,21 @@ func (h *BillsHandler) Cancel(c *gin.Context) {
 	// Get user for updated_by
 	userVal, _ := c.Get("user")
 	user, _ := userVal.(*repository.User)
+
+	// Get all items before cancelling to return inventory
+	items, err := h.bills.GetAllItems(ctx, id)
+	if err != nil {
+		// Log error but continue with cancellation
+		log.Printf("Warning: failed to get items for inventory return: %v", err)
+	} else {
+		// Return inventory for each item
+		for _, item := range items {
+			if err := h.addresses.IncreaseInventory(ctx, item.AddressCode, item.Qty); err != nil {
+				// Log error but continue with other items
+				log.Printf("Warning: failed to return inventory for address %s: %v", item.AddressCode, err)
+			}
+		}
+	}
 
 	// Update status to "cancelled"
 	if err := h.bills.UpdateStatus(ctx, id, "cancelled", user.ID); err != nil {
@@ -1485,25 +1612,25 @@ func (h *BillsHandler) Cancel(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"billId":        updatedBill.ID,
-		"branchId":      updatedBill.BranchID,
-		"posId":         updatedBill.POSID,
-		"status":        updatedBill.Status,
-		"paymentMethod": updatedBill.PaymentMethod,
-		"paymentRef":    updatedBill.PaymentRef,
-		"memberId":      updatedBill.MemberID,
-		"customerName":  updatedBill.CustomerName,
+		"billId":         updatedBill.ID,
+		"branchId":       updatedBill.BranchID,
+		"posId":          updatedBill.POSID,
+		"status":         updatedBill.Status,
+		"paymentMethod":  updatedBill.PaymentMethod,
+		"paymentRef":     updatedBill.PaymentRef,
+		"memberId":       updatedBill.MemberID,
+		"customerName":   updatedBill.CustomerName,
 		"purchaseAmount": updatedBill.PurchaseAmount,
-		"totalDiscount": updatedBill.TotalDiscount,
-		"totalAmount":   updatedBill.TotalAmount,
-		"vatAmount":     updatedBill.VATAmount,
-		"xvatAmount":    updatedBill.XVATAmount,
-		"createdAt":     updatedBill.CreatedAt.Format(time.RFC3339),
-		"updatedAt":     updatedBill.UpdatedAt.Format(time.RFC3339),
-		"createdBy":     updatedBill.CreatedBy,
-		"updatedBy":     updatedBill.UpdatedBy,
-		"details":       detailOut,
-		"discounts":     discountOut,
+		"totalDiscount":  updatedBill.TotalDiscount,
+		"totalAmount":    updatedBill.TotalAmount,
+		"vatAmount":      updatedBill.VATAmount,
+		"xvatAmount":     updatedBill.XVATAmount,
+		"createdAt":      updatedBill.CreatedAt.Format(time.RFC3339),
+		"updatedAt":      updatedBill.UpdatedAt.Format(time.RFC3339),
+		"createdBy":      updatedBill.CreatedBy,
+		"updatedBy":      updatedBill.UpdatedBy,
+		"details":        detailOut,
+		"discounts":      discountOut,
 	})
 }
 
@@ -1529,10 +1656,45 @@ func (h *BillsHandler) Delete(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "bill_access_denied",
+			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
+	}
+
+	// Get bill to check status
+	bill, err := h.bills.GetByID(ctx, id)
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_bill"})
+		return
+	}
+
+	// Prevent deletion of completed bills
+	if bill.Status == "completed" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "cannot_delete_completed_bill",
+			"message": "Cannot delete bills with status 'completed'. Completed bills must be kept for records.",
+		})
+		return
+	}
+
+	// Get all items to return inventory before deletion
+	items, err := h.bills.GetAllItems(ctx, id)
+	if err != nil {
+		// Log error but continue with deletion
+		log.Printf("Warning: failed to get items for inventory return: %v", err)
+	} else {
+		// Return inventory for each item
+		for _, item := range items {
+			if err := h.addresses.IncreaseInventory(ctx, item.AddressCode, item.Qty); err != nil {
+				// Log error but continue with other items
+				log.Printf("Warning: failed to return inventory for address %s: %v", item.AddressCode, err)
+			}
+		}
 	}
 
 	// Delete bill (cascade deletes related records)
@@ -1573,7 +1735,7 @@ func (h *BillsHandler) Payment(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "bill_access_denied",
+			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
@@ -1651,26 +1813,24 @@ func (h *BillsHandler) Payment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"billId":        bill.ID,
-		"branchId":      bill.BranchID,
-		"posId":         bill.POSID,
-		"status":        bill.Status,
-		"paymentMethod": bill.PaymentMethod,
-		"paymentRef":    bill.PaymentRef,
-		"memberId":      bill.MemberID,
-		"customerName":  bill.CustomerName,
+		"billId":         bill.ID,
+		"branchId":       bill.BranchID,
+		"posId":          bill.POSID,
+		"status":         bill.Status,
+		"paymentMethod":  bill.PaymentMethod,
+		"paymentRef":     bill.PaymentRef,
+		"memberId":       bill.MemberID,
+		"customerName":   bill.CustomerName,
 		"purchaseAmount": bill.PurchaseAmount,
-		"totalDiscount": bill.TotalDiscount,
-		"totalAmount":   bill.TotalAmount,
-		"vatAmount":     bill.VATAmount,
-		"xvatAmount":    bill.XVATAmount,
-		"createdAt":     bill.CreatedAt.Format(time.RFC3339),
-		"updatedAt":     bill.UpdatedAt.Format(time.RFC3339),
-		"createdBy":     bill.CreatedBy,
-		"updatedBy":     bill.UpdatedBy,
-		"details":       detailOut,
-		"discounts":     discountOut,
+		"totalDiscount":  bill.TotalDiscount,
+		"totalAmount":    bill.TotalAmount,
+		"vatAmount":      bill.VATAmount,
+		"xvatAmount":     bill.XVATAmount,
+		"createdAt":      bill.CreatedAt.Format(time.RFC3339),
+		"updatedAt":      bill.UpdatedAt.Format(time.RFC3339),
+		"createdBy":      bill.CreatedBy,
+		"updatedBy":      bill.UpdatedBy,
+		"details":        detailOut,
+		"discounts":      discountOut,
 	})
 }
-
-

@@ -49,7 +49,7 @@ type BillRepository interface {
 	GenerateBillID(ctx context.Context) (string, error)
 	Create(ctx context.Context, bill *Bill) error
 	GetByID(ctx context.Context, id string) (*Bill, error)
-	List(ctx context.Context, limit, offset int) ([]Bill, error)
+	List(ctx context.Context, limit, offset int, dateFrom, dateTo *time.Time) ([]Bill, error)
 	GetFullByID(ctx context.Context, id string) (*Bill, []BillDetail, []BillDiscountDetail, error)
 	GetNewBillByPOS(ctx context.Context, posID string) (*Bill, error)
 	UpdateStatus(ctx context.Context, billID, status, updatedBy string) error

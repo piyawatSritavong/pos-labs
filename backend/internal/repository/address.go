@@ -22,5 +22,6 @@ type AddressRepository interface {
 	Create(ctx context.Context, address *Address) error
 	Update(ctx context.Context, address *Address) error
 	Delete(ctx context.Context, code string) error
+	DecreaseInventory(ctx context.Context, addressCode string, qty int) (bool, error)
+	IncreaseInventory(ctx context.Context, addressCode string, qty int) error
 }
-

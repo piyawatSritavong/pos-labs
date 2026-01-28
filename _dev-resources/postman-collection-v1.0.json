@@ -376,9 +376,25 @@
                   "key": "offset",
                   "value": "0",
                   "description": "Number of items to skip (default: 0)"
+                },
+                {
+                  "key": "date",
+                  "value": "",
+                  "description": "Filter by single date. Accepts ISO string (RFC3339) or yyyy-mm-dd format. If provided, filters bills for that specific day. Mutually exclusive with date_from/date_to. If no date parameters provided, defaults to current date in UTC+7 (00:00 to 23:59 UTC+7)."
+                },
+                {
+                  "key": "date_from",
+                  "value": "",
+                  "description": "Start date for date range filter. Accepts ISO string (RFC3339) or yyyy-mm-dd format. Filters bills from start of this date (00:00 UTC). Use with date_to for range filtering. If no date parameters provided, defaults to current date in UTC+7."
+                },
+                {
+                  "key": "date_to",
+                  "value": "",
+                  "description": "End date for date range filter. Accepts ISO string (RFC3339) or yyyy-mm-dd format. Filters bills until end of this date (23:59 UTC+7). Use with date_from for range filtering. If no date parameters provided, defaults to current date in UTC+7."
                 }
               ]
-            }
+            },
+            "description": "List bills with pagination and optional date filtering. Returns paginated list of bills ordered by created_at DESC. Supports date filtering: use 'date' for single day, or 'date_from'/'date_to' for date range. Date formats: ISO string (RFC3339) or yyyy-mm-dd. If no date parameters provided, defaults to current date in UTC+7 timezone (00:00 to 23:59 UTC+7). This allows frontend to query bills for dashboard display. Requires 'bills:read' permission."
           },
           "response": []
         },
@@ -454,7 +470,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "add-item"]
             },
-            "description": "Add item to bill by part code. Bill status must be 'new' to add items. Validates that part exists in the branch (from session). If item already exists in bill, increments quantity. Otherwise, inserts new bill item detail. Request body: { \"partCode\": \"P0001\", \"addressCode\": \"ADDR0001\", \"qty\": 1 }. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after adding item. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+            "description": "Add item to bill by part code. Bill status must be 'new' to add items. Validates that part exists in the branch (from session). Checks if sufficient inventory exists at the address master and atomically reduces it before adding to bill. Returns error 'not_enough_inventory' (400) if insufficient inventory. If item already exists in bill, increments quantity. Otherwise, inserts new bill item detail. Request body: { \"partCode\": \"P0001\", \"addressCode\": \"ADDR0001\", \"qty\": 1 }. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after adding item. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -482,7 +498,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251206000001", "add-item-by-barcode"]
             },
-            "description": "Add item to bill by barcode. Bill status must be 'new' to add items. Gets part by barcode, validates it exists in the branch (from session), and uses the default address (is_default=true). If item already exists in bill, increments quantity. Otherwise, inserts new bill item detail. Request body: { \"barcode\": \"1234567890123\", \"qty\": 1 }. Returns error 'no_default_store' if part exists in multiple stores but no default is configured. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after adding item. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+            "description": "Add item to bill by barcode. Bill status must be 'new' to add items. Gets part by barcode, validates it exists in the branch (from session), and uses the default address (is_default=true). Checks if sufficient inventory exists at the address master and atomically reduces it before adding to bill. Returns error 'not_enough_inventory' (400) if insufficient inventory. If item already exists in bill, increments quantity. Otherwise, inserts new bill item detail. Request body: { \"barcode\": \"1234567890123\", \"qty\": 1 }. Returns error 'no_default_store' if part exists in multiple stores but no default is configured. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after adding item. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -594,7 +610,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001", "remove-item"]
             },
-            "description": "Remove item from bill by part code. Bill status must be 'new' to remove items. Request body: { \"partCode\": \"P0001\", \"addressCode\": \"ADDR0001\", \"qty\": 1 (optional, default: 1), \"isRemoveAll\": false (optional) }. If isRemoveAll is true, deletes the item completely regardless of qty. If false: removes the specified qty (default 1). If qty to remove >= existing qty, deletes the item. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after removal. Returns 400 if item not found. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+            "description": "Remove item from bill by part code. Bill status must be 'new' to remove items. Request body: { \"partCode\": \"P0001\", \"addressCode\": \"ADDR0001\", \"qty\": 1 (optional, default: 1), \"isRemoveAll\": false (optional) }. If isRemoveAll is true, deletes the item completely regardless of qty. If false: removes the specified qty (default 1). If qty to remove >= existing qty, deletes the item. Automatically returns inventory to the address master after removing items. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after removal. Returns 400 if item not found. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
           },
           "response": []
         },
@@ -738,7 +754,7 @@
               "host": ["{{base_url}}"],
               "path": ["bills", "20251204000001"]
             },
-            "description": "Delete a bill permanently. Cascade deletes all related bill items and discounts. Cannot be undone. Uses branchId and posId from session (set at login). Requires 'bills:delete' permission (admin only)."
+            "description": "Delete a bill permanently. Cannot delete bills with status 'completed' - returns error 'cannot_delete_completed_bill' (400). For non-completed bills, automatically returns inventory to address master for all items before deletion. Cascade deletes all related bill items and discounts. Cannot be undone. Uses branchId and posId from session (set at login). Requires 'bills:delete' permission (admin only)."
           },
           "response": []
         },
