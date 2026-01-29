@@ -8,10 +8,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest # ใช้เครื่อง Server ของ GitHub (Ubuntu) เป็นตัวรัน Pipeline
     steps:
-      # ==========================================================
-      # START: Setup AWS Credentials and ECR Login
-      # ==========================================================
-
       - name: Checkout code
         uses: actions/checkout@v3 # ดึงโค้ดจาก Repository ลงมาที่เครื่องรันงาน
       
@@ -31,40 +27,34 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1 # ล็อกอินเข้า ECR เพื่อเตรียมสิทธิ์ในการ Push/Pull Image
 
-      # ==========================================================
-      # START: DevSecOps Tier 1 (Security Gates)
-      # ส่วนนี้คือ "ด่านตรวจ" ความปลอดภัยก่อนจะอนุญาตให้ Deploy
-      # ==========================================================
-
-      # 1. Secret Scanning (Gitleaks Tool)
+      # Secret Scanning (Gitleaks Tool)
       # ตรวจสอบสิ่งที่ไม่ควรอยู่ในโค้ด
       - name: Secret Scanning
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. SCA (Govulncheck Tool)
+      # SCA (Govulncheck Tool)
       # ตรวจช่องโหว่ใน Go Library ที่ใช้งาน
       - name: Run Govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           cd backend && $(go env GOPATH)/bin/govulncheck ./...
 
-      # 3. SAST (GoSec Tool) 
+      # SAST (GoSec Tool) 
       # ตรวจ Source Code Security
       - name: Run Gosec
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           cd backend && $(go env GOPATH)/bin/gosec ./...
 
-      # 4. Container Scanning (Trivy Tool)
-      # ตรวจสอบ "ความปลอดภัยของ Docker Image"
-      # เราจะรันหลังจาก Build Docker Image เสร็จแต่ "ก่อน" จะ Push ไป ECR
+      # Build Docker ก่อนเข้า Trivy
       - name: Build Docker Image
         run: |
           cd backend
           docker build -t pos-backend:test .
 
+      # Container Scanning (Trivy Tool)
       - name: Scan Docker Image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
@@ -72,10 +62,6 @@ jobs:
           format: "table"
           exit-code: "1" # ถ้าเจอช่องโหว่ร้ายแรง (High/Critical) ให้หยุด Pipeline ทันที
           severity: "CRITICAL,HIGH"
-
-      # ==========================================================
-      # START: Build Docker Image and Deploy to EC2
-      # ==========================================================
 
       # ขั้นตอนการส่งของขึ้นหิ้ง (ECR): ทำเฉพาะเมื่อด่านตรวจด้านบนผ่านหมดแล้ว
       - name: Build and push image to Amazon ECR
