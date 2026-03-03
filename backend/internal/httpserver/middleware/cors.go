@@ -27,6 +27,8 @@ func CORS(cfg config.Config) gin.HandlerFunc {
 				"http://127.0.0.1:3000",
 				"http://127.0.0.1:5173",
 				"http://127.0.0.1:8080",
+				"http://localhost:58509",
+				"http://127.0.0.1:58509",
 			}
 		} else {
 			// Production: Use environment variable for allowed origins
@@ -61,8 +63,8 @@ func CORS(cfg config.Config) gin.HandlerFunc {
 		} else if cfg.Env == "development" && origin != "" {
 			// In development, allow any localhost origin even if not in the list
 			// This provides flexibility during development
-			if strings.HasPrefix(origin, "http://localhost:") || 
-			   strings.HasPrefix(origin, "http://127.0.0.1:") {
+			if strings.HasPrefix(origin, "http://localhost:") ||
+				strings.HasPrefix(origin, "http://127.0.0.1:") {
 				c.Header("Access-Control-Allow-Origin", origin)
 				allowed = true
 			}
@@ -92,4 +94,3 @@ func getEnv(key, def string) string {
 	}
 	return def
 }
-

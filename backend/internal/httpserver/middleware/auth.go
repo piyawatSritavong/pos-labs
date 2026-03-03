@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"os"
 
 	"backend/internal/repository"
 
@@ -39,12 +40,43 @@ func extractBearerToken(c *gin.Context) string {
 	return strings.TrimSpace(parts[1])
 }
 
+func isDevelopmentEnv() bool {
+	// Support multiple common env keys
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+	if v == "" {
+		v = strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
+	}
+	if v == "" {
+		v = strings.ToLower(strings.TrimSpace(os.Getenv("GO_ENV")))
+	}
+	return v == "development" || v == "dev"
+}
+
 func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := extractBearerToken(c)
 		if token == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing_token"})
 			return
+		}
+
+		// DEV BYPASS: allow a fixed mock token for local development only.
+		if isDevelopmentEnv() && token == "mock-admin-token" {
+			// Prefer loading the seeded admin user.
+			user, err := m.users.GetByUsername(c.Request.Context(), "admin")
+			if err == nil && user != nil {
+				if !user.IsActive {
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user_inactive"})
+					return
+				}
+				c.Set("user", user)
+				// mimic session context keys expected by handlers
+				c.Set("session_id", token)
+				c.Set("branch_id", "00000")
+				c.Set("pos_id", "POS001")
+				c.Next()
+				return
+			}
 		}
 
 		ip := c.ClientIP()
@@ -82,6 +114,23 @@ func (m *AuthMiddleware) RequirePermission(resource, action string) gin.HandlerF
 		if token == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing_token"})
 			return
+		}
+
+		// DEV BYPASS: allow a fixed mock token for local development only.
+		if isDevelopmentEnv() && token == "mock-admin-token" {
+			user, err := m.users.GetByUsername(c.Request.Context(), "admin")
+			if err == nil && user != nil {
+				if !user.IsActive {
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user_inactive"})
+					return
+				}
+				c.Set("user", user)
+				c.Set("session_id", token)
+				c.Set("branch_id", "00000")
+				c.Set("pos_id", "POS001")
+				c.Next()
+				return
+			}
 		}
 
 		ip := c.ClientIP()

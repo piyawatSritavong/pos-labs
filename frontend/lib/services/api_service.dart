@@ -391,6 +391,12 @@ class ApiService {
       body: jsonEncode({'promotionCode': promotionCode}),
     );
 
+    // Backend ยังไม่มี endpoint นี้ (404) ให้ข้ามไปก่อนแบบชั่วคราว
+    // โดยคืนค่า bill ล่าสุด เพื่อไม่ให้ flow หน้าบ้านพัง
+    if (response.statusCode == 404) {
+      return getBill(token: token, billId: billId);
+    }
+
     if (response.statusCode != 200) {
       throw Exception(
         'Failed to add discount: ${response.statusCode} ${response.body}',

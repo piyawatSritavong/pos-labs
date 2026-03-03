@@ -4,7 +4,6 @@ import 'package:frontend/screens/backoffice_screen.dart';
 import 'package:frontend/services/api_bills.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/theme/app_theme.dart';
-import 'package:frontend/screens/office_screen.dart';
 import 'package:frontend/screens/login_screen.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/widgets/pos/stock_dialog.dart';
