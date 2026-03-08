@@ -30,6 +30,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  desktop_multi_window: ^0.3.0
+  
+  http: ^1.6.0 # For REST API calls
+  provider: ^6.1.5+1 # State management
+  shared_preferences: ^2.5.3 # For local storage sessions
+  window_manager: ^0.3.9 # Multi-window support for desktop
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

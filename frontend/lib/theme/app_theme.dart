@@ -1,0 +1,122 @@
+import 'package:flutter/material.dart';
+
+class AppColors {
+  static const bg = Color(0xFFF7F7FB);
+  static const surface = Color(0xFFFFFFFF);
+  static const border = Color(0xFFE6E6F0);
+
+  static const primary = Color(0xFF6D28D9);
+  static const primaryHover = Color(0xFF5B21B6);
+
+  static const accent = Color(0xFFFBBF24);
+  static const accentHover = Color(0xFFF59E0B);
+
+  static const text = Color(0xFF111827);
+  static const muted = Color(0xFF6B7280);
+  static const danger = Color(0xFFEF4444);
+}
+
+class AppSizes {
+  static const radius = 16.0;
+  static const gap = 12.0;
+  static const borderWidth = 1.2;
+}
+
+class AppShadows {
+  static const soft = [
+    BoxShadow(
+      color: Color(0x0F000000),
+      offset: Offset(0, 8),
+      blurRadius: 24,
+      spreadRadius: -8,
+    ),
+  ];
+}
+
+class AppTheme {
+  static ThemeData light() {
+    final base = ThemeData(
+      useMaterial3: true,
+      scaffoldBackgroundColor: AppColors.bg,
+      colorScheme: ColorScheme.light(
+        primary: AppColors.primary,
+        secondary: AppColors.accent,
+        surface: AppColors.surface,
+        error: AppColors.danger,
+        onPrimary: Colors.white,
+        onSecondary: AppColors.text,
+        onSurface: AppColors.text,
+        onError: Colors.white,
+      ),
+    );
+
+    return base.copyWith(
+      textTheme: base.textTheme.apply(
+        bodyColor: AppColors.text,
+        displayColor: AppColors.text,
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: AppColors.surface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        foregroundColor: AppColors.text,
+      ),
+      cardTheme: CardThemeData(
+        color: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSizes.radius),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        elevation: 0,
+        margin: const EdgeInsets.all(AppSizes.gap),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AppColors.surface,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(999),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(999),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(999),
+          borderSide: const BorderSide(color: AppColors.primary, width: 2),
+        ),
+        hintStyle: const TextStyle(color: AppColors.muted),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+          ),
+          textStyle:
+              const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.text,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+          ),
+          side: const BorderSide(color: AppColors.border),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.text,
+        contentTextStyle: TextStyle(color: Colors.white),
+      ),
+    );
+  }
+}
