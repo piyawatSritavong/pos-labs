@@ -10,8 +10,8 @@ import (
 	"backend/internal/httpserver/middleware"
 	"backend/internal/repository"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-    "github.com/gin-contrib/cors"
 )
 
 func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
@@ -74,7 +74,9 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 
 	// Protected resources examples
 	partRepo := repository.NewPartRepository(db)
+	memberRepo := repository.NewMemberRepository(db)
 	partsHandler := handlers.NewPartsHandler(partRepo)
+	memberHandler := handlers.NewMemberHandler(memberRepo)
 	parts := r.Group("/parts")
 	parts.Use(authMw.RequirePermission("parts", "read"))
 	{
@@ -82,12 +84,30 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		parts.GET("/search", partsHandler.Search)
 		parts.GET("/:code", partsHandler.Get)
 	}
+	members := r.Group("/members")
+	members.Use(authMw.RequirePermission("members", "read"))
+	{
+		members.GET("", memberHandler.List)
+		members.GET("/search", memberHandler.Search)
+		members.GET("/:id", memberHandler.Get)
+	}
+	membersWrite := r.Group("/members")
+	membersWrite.Use(authMw.RequirePermission("members", "write"))
+	{
+		membersWrite.POST("", memberHandler.Create)
+		membersWrite.PUT("/:id", memberHandler.Update)
+	}
+	membersDelete := r.Group("/members")
+	membersDelete.Use(authMw.RequirePermission("members", "delete"))
+	{
+		membersDelete.DELETE("/:id", memberHandler.Delete)
+	}
 
 	billRepo := repository.NewBillRepository(db)
 	companyRepo := repository.NewCompanyRepository(db)
 	promotionRepo := repository.NewPromotionRepository(db)
 	addressRepo := repository.NewAddressRepository(db)
-	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo, partRepo, companyRepo, promotionRepo, addressRepo)
+	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo, partRepo, memberRepo, companyRepo, promotionRepo, addressRepo)
 	bills := r.Group("/bills")
 	bills.Use(authMw.RequirePermission("bills", "read"))
 	// GET endpoints allow access without posId/branchId (for admin users)
@@ -106,6 +126,8 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		billsWrite.PUT("/:id/remove-item", billsHandler.RemoveItem)               // remove item from bill
 		billsWrite.PUT("/:id/add-discount", billsHandler.AddDiscount)             // apply discount to bill
 		billsWrite.PUT("/:id/remove-discount", billsHandler.RemoveDiscount)       // remove discount from bill
+		billsWrite.PUT("/:id/add-member-by-phone", billsHandler.AddMemberByPhone) // assign member to bill by phone number
+		billsWrite.PUT("/:id/remove-member", billsHandler.RemoveMember)           // remove member from bill
 		billsWrite.PUT("/:id/hold", billsHandler.Hold)                            // hold bill
 		billsWrite.PUT("/switch", billsHandler.SwitchBill)                        // switch bills: if currentBillId not provided, create new bill; otherwise hold current and resume target
 		billsWrite.PUT("/:id/payment", billsHandler.Payment)                      // process payment

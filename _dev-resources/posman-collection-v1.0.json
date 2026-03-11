@@ -242,6 +242,179 @@
       ]
     },
     {
+      "name": "Members",
+      "item": [
+        {
+          "name": "GET /members",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/members?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["members"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Optional search on id/code/name/phone/email."
+                }
+              ]
+            },
+            "description": "List members. Supports optional q search. Requires 'members:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /members/search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/members/search?q=0812345678&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["members", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "0812345678",
+                  "description": "Search keyword."
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Search members. Requires 'members:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /members/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/members/0812345678",
+              "host": ["{{base_url}}"],
+              "path": ["members", "0812345678"]
+            },
+            "description": "Get member by id. Requires 'members:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /members",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Member One\",\n  \"phone\": \"0812345678\",\n  \"email\": \"member1@example.com\",\n  \"points\": 0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/members",
+              "host": ["{{base_url}}"],
+              "path": ["members"]
+            },
+            "description": "Create member. Member id is derived from phone digits. Requires 'members:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /members/:id",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Member One Updated\",\n  \"phone\": \"0812345678\",\n  \"email\": \"member1.updated@example.com\",\n  \"points\": 10\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/members/0812345678",
+              "host": ["{{base_url}}"],
+              "path": ["members", "0812345678"]
+            },
+            "description": "Update member by id. Phone must match id digits. Requires 'members:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /members/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/members/0812345678",
+              "host": ["{{base_url}}"],
+              "path": ["members", "0812345678"]
+            },
+            "description": "Delete member by id. Requires 'members:delete' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Parts",
       "item": [
         {
@@ -391,10 +564,15 @@
                   "key": "date_to",
                   "value": "",
                   "description": "End date for date range filter. Accepts ISO string (RFC3339) or yyyy-mm-dd format. Filters bills until end of this date (23:59 UTC+7). Use with date_from for range filtering. If no date parameters provided, defaults to current date in UTC+7."
+                },
+                {
+                  "key": "memberId",
+                  "value": "",
+                  "description": "Optional filter by member id."
                 }
               ]
             },
-            "description": "List bills with pagination and optional date filtering. Returns paginated list of bills ordered by created_at DESC. Supports date filtering: use 'date' for single day, or 'date_from'/'date_to' for date range. Date formats: ISO string (RFC3339) or yyyy-mm-dd. If no date parameters provided, defaults to current date in UTC+7 timezone (00:00 to 23:59 UTC+7). This allows frontend to query bills for dashboard display. Requires 'bills:read' permission."
+            "description": "List bills with pagination and optional date/member filtering. Returns paginated list of bills ordered by created_at DESC. Each bill includes `member` object (`id`, `code`, `name`) when a member is assigned, otherwise `member` is null. Supports date filtering: use 'date' for single day, or 'date_from'/'date_to' for date range. Date formats: ISO string (RFC3339) or yyyy-mm-dd. If no date parameters provided, defaults to current date in UTC+7 timezone (00:00 to 23:59 UTC+7). Supports optional memberId filter. Requires 'bills:read' permission."
           },
           "response": []
         },
@@ -687,6 +865,54 @@
               "path": ["bills", "20251204000001", "hold"]
             },
             "description": "Hold bill. Changes status from 'new' to 'hold'. Only bills with status 'new' can be held. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-member-by-phone",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"0812345678\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/add-member-by-phone",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "add-member-by-phone"]
+            },
+            "description": "Assign member to bill by member phone number. Bill status must be 'new'. Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/remove-member",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/remove-member",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "remove-member"]
+            },
+            "description": "Remove member from bill. Bill status must be 'new'. Requires 'bills:write' permission."
           },
           "response": []
         },

@@ -71,17 +71,19 @@ type BillsHandler struct {
 	branches   repository.BranchRepository
 	pos        repository.POSRepository
 	parts      repository.PartRepository
+	members    repository.MemberRepository
 	company    repository.CompanyRepository
 	promotions repository.PromotionRepository
 	addresses  repository.AddressRepository
 }
 
-func NewBillsHandler(bills repository.BillRepository, branches repository.BranchRepository, pos repository.POSRepository, parts repository.PartRepository, company repository.CompanyRepository, promotions repository.PromotionRepository, addresses repository.AddressRepository) *BillsHandler {
+func NewBillsHandler(bills repository.BillRepository, branches repository.BranchRepository, pos repository.POSRepository, parts repository.PartRepository, members repository.MemberRepository, company repository.CompanyRepository, promotions repository.PromotionRepository, addresses repository.AddressRepository) *BillsHandler {
 	return &BillsHandler{
 		bills:      bills,
 		branches:   branches,
 		pos:        pos,
 		parts:      parts,
+		members:    members,
 		company:    company,
 		promotions: promotions,
 		addresses:  addresses,
@@ -272,7 +274,12 @@ func (h *BillsHandler) List(c *gin.Context) {
 		dateTo = &dateEndUTC
 	}
 
-	bills, err := h.bills.List(c.Request.Context(), limit, offset, dateFrom, dateTo)
+	var memberID *string
+	if memberIDStr := strings.TrimSpace(c.Query("memberId")); memberIDStr != "" {
+		memberID = &memberIDStr
+	}
+
+	bills, err := h.bills.List(c.Request.Context(), limit, offset, dateFrom, dateTo, memberID)
 	if err != nil {
 		log.Printf("Error listing bills: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -284,6 +291,18 @@ func (h *BillsHandler) List(c *gin.Context) {
 
 	out := make([]gin.H, 0, len(bills))
 	for _, b := range bills {
+		var memberObj interface{}
+		if b.MemberID != "" {
+			member, memberErr := h.members.GetByID(c.Request.Context(), b.MemberID)
+			if memberErr == nil {
+				memberObj = gin.H{
+					"id":   member.ID,
+					"code": member.Code,
+					"name": member.Name,
+				}
+			}
+		}
+
 		out = append(out, gin.H{
 			"id":             b.ID,
 			"branchId":       b.BranchID,
@@ -291,7 +310,7 @@ func (h *BillsHandler) List(c *gin.Context) {
 			"status":         b.Status,
 			"paymentMethod":  b.PaymentMethod,
 			"paymentRef":     b.PaymentRef,
-			"memberId":       b.MemberID,
+			"member":         memberObj,
 			"customerName":   b.CustomerName,
 			"purchaseAmount": b.PurchaseAmount,
 			"totalDiscount":  b.TotalDiscount,
@@ -1071,6 +1090,152 @@ func (h *BillsHandler) RemoveDiscount(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Discount removed successfully",
+		"billId":  id,
+	})
+}
+
+// AddMemberByPhone assigns a member to a bill by member phone number.
+func (h *BillsHandler) AddMemberByPhone(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_bill_id"})
+		return
+	}
+
+	branchID, posID, err := h.getBranchAndPOSFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userVal, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	user, ok := userVal.(*repository.User)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user_cast_error"})
+		return
+	}
+
+	if err := h.validateBillAccess(c.Request.Context(), id, branchID, posID); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "bill_access_denied",
+			"message": "Bill does not belong to your current branch and POS",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := h.validateBillStatusNew(ctx, id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_bill_status",
+			"message": fmt.Sprintf("Bill status must be 'new' to add member. %s", err.Error()),
+		})
+		return
+	}
+
+	var req struct {
+		Phone string `json:"phone" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+
+	member, err := h.members.GetByPhone(ctx, req.Phone)
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "member_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_member"})
+		return
+	}
+
+	if err := h.bills.UpdateMember(ctx, id, member.ID, user.ID); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_add_member"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Member added successfully",
+		"billId":  id,
+		"member": gin.H{
+			"id":    member.ID,
+			"code":  member.Code,
+			"name":  member.Name,
+			"phone": member.Phone,
+		},
+	})
+}
+
+// RemoveMember clears the member assignment from a bill.
+func (h *BillsHandler) RemoveMember(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_bill_id"})
+		return
+	}
+
+	branchID, posID, err := h.getBranchAndPOSFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userVal, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	user, ok := userVal.(*repository.User)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user_cast_error"})
+		return
+	}
+
+	if err := h.validateBillAccess(c.Request.Context(), id, branchID, posID); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "bill_access_denied",
+			"message": "Bill does not belong to your current branch and POS",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := h.validateBillStatusNew(ctx, id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_bill_status",
+			"message": fmt.Sprintf("Bill status must be 'new' to remove member. %s", err.Error()),
+		})
+		return
+	}
+
+	if err := h.bills.RemoveMember(ctx, id, user.ID); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_remove_member"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Member removed successfully",
 		"billId":  id,
 	})
 }
