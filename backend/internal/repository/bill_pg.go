@@ -231,7 +231,7 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 	return bill, details, discounts, nil
 }
 
-func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom, dateTo *time.Time) ([]Bill, error) {
+func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom, dateTo *time.Time, memberID *string) ([]Bill, error) {
 	if limit <= 0 {
 		limit = config.DefaultLimit
 	}
@@ -254,7 +254,7 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom
 
 	// Add date filtering if provided
 	// Note: dates are already normalized by the handler (start of day for dateFrom, end of day for dateTo)
-	if dateFrom != nil || dateTo != nil {
+	if dateFrom != nil || dateTo != nil || memberID != nil {
 		conditions := []string{}
 		if dateFrom != nil {
 			conditions = append(conditions, fmt.Sprintf(`"created_at" >= $%d`, argIndex))
@@ -264,6 +264,11 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom
 		if dateTo != nil {
 			conditions = append(conditions, fmt.Sprintf(`"created_at" < $%d`, argIndex))
 			args = append(args, *dateTo)
+			argIndex++
+		}
+		if memberID != nil && strings.TrimSpace(*memberID) != "" {
+			conditions = append(conditions, fmt.Sprintf(`"member_id" = $%d`, argIndex))
+			args = append(args, strings.TrimSpace(*memberID))
 			argIndex++
 		}
 		if len(conditions) > 0 {
@@ -410,6 +415,46 @@ func (r *billRepositoryPG) UpdateStatus(ctx context.Context, billID, status, upd
 		WHERE "id" = $3
 	`, status, updatedBy, billID)
 	return err
+}
+
+func (r *billRepositoryPG) UpdateMember(ctx context.Context, billID, memberID, updatedBy string) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE "bill_master"
+		SET "member_id" = $1, "updated_at" = now(), "updated_by" = $2
+		WHERE "id" = $3
+	`, memberID, updatedBy, billID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *billRepositoryPG) RemoveMember(ctx context.Context, billID, updatedBy string) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE "bill_master"
+		SET "member_id" = NULL, "updated_at" = now(), "updated_by" = $1
+		WHERE "id" = $2
+	`, updatedBy, billID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *billRepositoryPG) UpdateTimestamp(ctx context.Context, billID, updatedBy string) error {

@@ -88,6 +88,9 @@ func SeedCoreData(db *sql.DB) error {
 		{"perm.reports_bill.read", "Read bill reports", "read", "reports_bill", "Export bill reports as CSV"},
 		{"perm.reports_parts.read", "Read parts reports", "read", "reports_parts", "Export parts reports as CSV"},
 		{"perm.reports_inventory.read", "Read inventory reports", "read", "reports_inventory", "Export inventory reports as CSV"},
+		{"perm.members.read", "Read members", "read", "members", "Read member master data"},
+		{"perm.members.write", "Write members", "write", "members", "Create/update member master data"},
+		{"perm.members.delete", "Delete members", "delete", "members", "Delete member master data"},
 	}
 
 	for _, p := range permissions {
@@ -122,6 +125,7 @@ func SeedCoreData(db *sql.DB) error {
 		"perm.bills.write",
 		"perm.promotions.read",
 		"perm.qr_image.read",
+		"perm.members.read",
 	}
 	for _, pid := range cashierPerms {
 		if _, err := tx.Exec(`
