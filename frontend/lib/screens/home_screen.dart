@@ -12,6 +12,8 @@ import 'package:frontend/widgets/pos/hold_bill_dialog.dart';
 import 'package:frontend/widgets/pos/search_parts_dialog.dart';
 import 'package:frontend/widgets/pos/cart_summary_section.dart';
 import 'package:frontend/widgets/pos/search_barcode_section.dart';
+import 'package:frontend/widgets/pos/return_reference_dialog.dart';
+import 'package:frontend/providers/bill_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -107,9 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Expanded(
                       flex: 7,
-                      child: SearchBarcodeSection(
-                        key: _productListKey,
-                      ),
+                      child: SearchBarcodeSection(key: _productListKey),
                     ),
                     const SizedBox(width: 20),
                     const Expanded(flex: 3, child: CartSummarySection()),
@@ -134,6 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class HeaderBar extends StatelessWidget {
   const HeaderBar({
+    super.key,
     required this.authName,
     required this.searchController,
     required this.onSearchTap,
@@ -190,8 +191,9 @@ class HeaderBar extends StatelessWidget {
               valueListenable: searchController,
               builder: (context, value, _) {
                 final hasText = value.text.trim().isNotEmpty;
-                final displayText =
-                    hasText ? value.text.trim() : 'พิมค้นหาสินค้า';
+                final displayText = hasText
+                    ? value.text.trim()
+                    : 'พิมค้นหาสินค้า';
                 return Material(
                   color: Colors.transparent,
                   child: InkWell(
@@ -279,12 +281,13 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
 
     setState(() => _isLoading = true);
     try {
-      final bills =
-          await ApiBillsService.getBills(token: token, limit: 100, offset: 0);
+      final bills = await ApiBillsService.getBills(
+        token: token,
+        limit: 100,
+        offset: 0,
+      );
       final hold = bills
-          .where(
-            (b) => (b['status']?.toString().toLowerCase() ?? '') == 'hold',
-          )
+          .where((b) => (b['status']?.toString().toLowerCase() ?? '') == 'hold')
           .length;
       if (mounted) {
         setState(() {
@@ -303,8 +306,21 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final bill = context.watch<BillProvider>();
     return Row(
       children: [
+        const SizedBox(width: 12),
+        _HeaderIconButton(
+          icon: Icons.assignment_return_outlined,
+          iconColor: AppColors.danger,
+          badgeCount: bill.returnLineCount,
+          onTap: () {
+            showDialog(
+              context: context,
+              builder: (context) => const ReturnReferenceDialog(),
+            );
+          },
+        ),
         const SizedBox(width: 12),
         _HeaderIconButton(
           icon: Icons.pause_circle_outline,

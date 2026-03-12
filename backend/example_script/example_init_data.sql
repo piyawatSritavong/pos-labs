@@ -85,16 +85,32 @@ ON CONFLICT ("id") DO NOTHING;
 -- Note: Units are pre-seeded by the service (pcs, box, case, set, pair, roll, sheet)
 -- ============================================================================
 
--- Example products (customize with actual client products)
+-- Example products (20 items)
 INSERT INTO "part_master"(
     "code", "bar_code", "category_id", "unit_id",
     "name", "name_th", "details", "cost", "price", "image", "is_active"
 )
 VALUES 
-    ('P0001', '8850000001', 'CAT001', 'pcs', 
-     'Product 1', 'สินค้า 1', 'Product description', 10.00, 15.00, '', true),
-    ('P0002', '8850000002', 'CAT002', 'pcs', 
-     'Product 2', 'สินค้า 2', 'Product description', 20.00, 30.00, '', true)
+    ('P0001', '8851000001', 'CAT001', 'pcs', 'Mock Product 01', 'สินค้าทดสอบ 01', 'Mock data item 01', 10.00, 15.00, '', true),
+    ('P0002', '8851000002', 'CAT002', 'pcs', 'Mock Product 02', 'สินค้าทดสอบ 02', 'Mock data item 02', 12.00, 18.00, '', true),
+    ('P0003', '8851000003', 'CAT003', 'pcs', 'Mock Product 03', 'สินค้าทดสอบ 03', 'Mock data item 03', 14.00, 21.00, '', true),
+    ('P0004', '8851000004', 'CAT001', 'pcs', 'Mock Product 04', 'สินค้าทดสอบ 04', 'Mock data item 04', 16.00, 24.00, '', true),
+    ('P0005', '8851000005', 'CAT002', 'pcs', 'Mock Product 05', 'สินค้าทดสอบ 05', 'Mock data item 05', 18.00, 27.00, '', true),
+    ('P0006', '8851000006', 'CAT003', 'pcs', 'Mock Product 06', 'สินค้าทดสอบ 06', 'Mock data item 06', 20.00, 30.00, '', true),
+    ('P0007', '8851000007', 'CAT001', 'pcs', 'Mock Product 07', 'สินค้าทดสอบ 07', 'Mock data item 07', 22.00, 33.00, '', true),
+    ('P0008', '8851000008', 'CAT002', 'pcs', 'Mock Product 08', 'สินค้าทดสอบ 08', 'Mock data item 08', 24.00, 36.00, '', true),
+    ('P0009', '8851000009', 'CAT003', 'pcs', 'Mock Product 09', 'สินค้าทดสอบ 09', 'Mock data item 09', 26.00, 39.00, '', true),
+    ('P0010', '8851000010', 'CAT001', 'pcs', 'Mock Product 10', 'สินค้าทดสอบ 10', 'Mock data item 10', 28.00, 42.00, '', true),
+    ('P0011', '8851000011', 'CAT002', 'pcs', 'Mock Product 11', 'สินค้าทดสอบ 11', 'Mock data item 11', 30.00, 45.00, '', true),
+    ('P0012', '8851000012', 'CAT003', 'pcs', 'Mock Product 12', 'สินค้าทดสอบ 12', 'Mock data item 12', 32.00, 48.00, '', true),
+    ('P0013', '8851000013', 'CAT001', 'pcs', 'Mock Product 13', 'สินค้าทดสอบ 13', 'Mock data item 13', 34.00, 51.00, '', true),
+    ('P0014', '8851000014', 'CAT002', 'pcs', 'Mock Product 14', 'สินค้าทดสอบ 14', 'Mock data item 14', 36.00, 54.00, '', true),
+    ('P0015', '8851000015', 'CAT003', 'pcs', 'Mock Product 15', 'สินค้าทดสอบ 15', 'Mock data item 15', 38.00, 57.00, '', true),
+    ('P0016', '8851000016', 'CAT001', 'pcs', 'Mock Product 16', 'สินค้าทดสอบ 16', 'Mock data item 16', 40.00, 60.00, '', true),
+    ('P0017', '8851000017', 'CAT002', 'pcs', 'Mock Product 17', 'สินค้าทดสอบ 17', 'Mock data item 17', 42.00, 63.00, '', true),
+    ('P0018', '8851000018', 'CAT003', 'pcs', 'Mock Product 18', 'สินค้าทดสอบ 18', 'Mock data item 18', 44.00, 66.00, '', true),
+    ('P0019', '8851000019', 'CAT001', 'pcs', 'Mock Product 19', 'สินค้าทดสอบ 19', 'Mock data item 19', 46.00, 69.00, '', true),
+    ('P0020', '8851000020', 'CAT002', 'pcs', 'Mock Product 20', 'สินค้าทดสอบ 20', 'Mock data item 20', 48.00, 72.00, '', true)
 ON CONFLICT ("code") DO NOTHING;
 
 -- Add more products as needed following the same pattern:
@@ -115,14 +131,32 @@ ON CONFLICT ("code") DO NOTHING;
 -- Note: The 'main' store for branch '00000' is pre-created by the service.
 -- ============================================================================
 
--- Example addresses (customize with actual inventory locations)
+-- Example addresses (20 items)
 INSERT INTO "address_master"(
     "code", "part_code", "store_id", "shelf",
     "qty", "min", "max", "rop", "remarks"
 )
 VALUES 
-    ('ADDR0001', 'P0001', 'main', 'A-01', 100, 10, 200, 20, 'Main store location'),
-    ('ADDR0002', 'P0002', 'main', 'A-02', 150, 15, 250, 25, 'Main store location')
+    ('ADDR0001', 'P0001', 'main', 'A-01', 100, 10, 200, 20, 'Mock stock location'),
+    ('ADDR0002', 'P0002', 'main', 'A-02', 110, 10, 210, 20, 'Mock stock location'),
+    ('ADDR0003', 'P0003', 'main', 'A-03', 120, 12, 220, 24, 'Mock stock location'),
+    ('ADDR0004', 'P0004', 'main', 'A-04', 130, 13, 230, 26, 'Mock stock location'),
+    ('ADDR0005', 'P0005', 'main', 'A-05', 140, 14, 240, 28, 'Mock stock location'),
+    ('ADDR0006', 'P0006', 'main', 'A-06', 150, 15, 250, 30, 'Mock stock location'),
+    ('ADDR0007', 'P0007', 'main', 'A-07', 160, 16, 260, 32, 'Mock stock location'),
+    ('ADDR0008', 'P0008', 'main', 'A-08', 170, 17, 270, 34, 'Mock stock location'),
+    ('ADDR0009', 'P0009', 'main', 'A-09', 180, 18, 280, 36, 'Mock stock location'),
+    ('ADDR0010', 'P0010', 'main', 'A-10', 190, 19, 290, 38, 'Mock stock location'),
+    ('ADDR0011', 'P0011', 'main', 'A-11', 200, 20, 300, 40, 'Mock stock location'),
+    ('ADDR0012', 'P0012', 'main', 'A-12', 210, 21, 310, 42, 'Mock stock location'),
+    ('ADDR0013', 'P0013', 'main', 'A-13', 220, 22, 320, 44, 'Mock stock location'),
+    ('ADDR0014', 'P0014', 'main', 'A-14', 230, 23, 330, 46, 'Mock stock location'),
+    ('ADDR0015', 'P0015', 'main', 'A-15', 240, 24, 340, 48, 'Mock stock location'),
+    ('ADDR0016', 'P0016', 'main', 'A-16', 250, 25, 350, 50, 'Mock stock location'),
+    ('ADDR0017', 'P0017', 'main', 'A-17', 260, 26, 360, 52, 'Mock stock location'),
+    ('ADDR0018', 'P0018', 'main', 'A-18', 270, 27, 370, 54, 'Mock stock location'),
+    ('ADDR0019', 'P0019', 'main', 'A-19', 280, 28, 380, 56, 'Mock stock location'),
+    ('ADDR0020', 'P0020', 'main', 'A-20', 290, 29, 390, 58, 'Mock stock location')
 ON CONFLICT ("code") DO NOTHING;
 
 -- Add more addresses as needed. Each product can have multiple addresses

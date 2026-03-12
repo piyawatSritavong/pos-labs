@@ -9,6 +9,7 @@ import 'package:frontend/widgets/backoffice/parts_page.dart';
 import 'package:frontend/widgets/backoffice/payment_page.dart';
 import 'package:frontend/widgets/backoffice/pos_devices_page.dart';
 import 'package:frontend/widgets/backoffice/promotions_page.dart';
+import 'package:frontend/widgets/backoffice/returns_history_page.dart';
 import 'package:frontend/widgets/backoffice/user_branches_page.dart';
 import 'package:frontend/widgets/backoffice/user_page.dart';
 import 'package:provider/provider.dart';
@@ -364,10 +365,17 @@ class _BackofficeShellState extends State<_BackofficeShell> {
       subtitle: 'Sales history and bill details',
     ),
     _SidebarItem(
+      label: 'Returns',
+      page: 'Returns / Credit Notes',
+      icon: Icons.assignment_return_outlined,
+      pageIndex: 9,
+      subtitle: 'Track refund flow and reference invoices',
+    ),
+    _SidebarItem(
       label: 'Payment',
       page: 'Payment Settings',
       icon: Icons.qr_code_2_outlined,
-      pageIndex: 9,
+      pageIndex: 10,
       subtitle: 'QR payment settings',
     ),
   ];
@@ -383,6 +391,7 @@ class _BackofficeShellState extends State<_BackofficeShell> {
     AddressesManagementSection(),
     PromotionsManagementSection(),
     BillsHistorySection(),
+    ReturnsHistorySection(),
     QrPaymentSettingsSection(),
   ];
 

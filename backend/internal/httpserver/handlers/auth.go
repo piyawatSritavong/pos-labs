@@ -1,10 +1,10 @@
 package handlers
 
 import (
-	"os"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"os"
 	"time"
 
 	"backend/internal/repository"
@@ -131,11 +131,19 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			return
 		}
 
-		// TEMP: allow fixed mock POS secret for development
+		// Allow overriding POS secret via environment variable.
+		// Support both names to reduce config mismatch between frontend/backend.
 		posSecretEnv := os.Getenv("POS_TERMINAL_SECRET")
+		if posSecretEnv == "" {
+			posSecretEnv = os.Getenv("POS_SECRET")
+		}
+
+		// Development fallback:
+		// frontend default sends "default_if_needed" when POS_SECRET is not set.
+		allowDevDefaultSecret := (os.Getenv("ENV") != "production") && req.POSSecret == "default_if_needed"
 
 		// Validate posSecret matches
-		if pos.POSSecret != req.POSSecret && req.POSSecret != posSecretEnv {
+		if pos.POSSecret != req.POSSecret && req.POSSecret != posSecretEnv && !allowDevDefaultSecret {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error":   "invalid_pos_secret",
 				"message": "Invalid POS secret",

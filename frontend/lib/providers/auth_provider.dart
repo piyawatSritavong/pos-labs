@@ -24,7 +24,8 @@ class AuthProvider extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString('auth_token');
-    final savedIsCustomerDisplay = prefs.getBool('auth_is_customer_display') ?? false;
+    final savedIsCustomerDisplay =
+        prefs.getBool('auth_is_customer_display') ?? false;
 
     if (savedToken != null && savedToken.isNotEmpty) {
       if (savedIsCustomerDisplay) {
@@ -78,22 +79,6 @@ class AuthProvider extends ChangeNotifier {
       return true;
     }
 
-    // Mock admin account for POS / Backoffice
-    if (username == 'admin' && password == 'admin123') {
-      _token = 'mock-admin-token';
-      _name = 'Administrator';
-      _roleId = 'role.admin';
-      _isCustomerDisplay = false;
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('auth_token', _token!);
-      await prefs.setBool('auth_is_customer_display', false);
-
-      _isLoading = false;
-      notifyListeners();
-      return true;
-    }
-
     try {
       final token = await ApiService.login(username, password);
       _token = token;
@@ -122,8 +107,12 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
+      _token = null;
+      _name = null;
+      _roleId = null;
       _isCustomerDisplay = false;
       final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('auth_token');
       await prefs.remove('auth_is_customer_display');
       _isLoading = false;
       notifyListeners();

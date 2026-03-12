@@ -39,6 +39,8 @@ class BillProvider extends ChangeNotifier {
   bool get showThankYouOverlay => _showThankYouOverlay;
 
   bool isLoading = false;
+  Map<String, dynamic>? _returnReferenceBill;
+  final List<Map<String, dynamic>> _returnLines = [];
 
   String? get billId => _billId;
   double get subtotal => _purchaseAmount;
@@ -46,6 +48,30 @@ class BillProvider extends ChangeNotifier {
   double get tax => _vatAmount;
   double get total => _totalAmount;
   List<Map<String, dynamic>> get items => List.unmodifiable(_items);
+  Map<String, dynamic>? get returnReferenceBill => _returnReferenceBill == null
+      ? null
+      : Map<String, dynamic>.from(_returnReferenceBill!);
+  List<Map<String, dynamic>> get returnLines => List.unmodifiable(_returnLines);
+  bool get hasReturnItems => _returnLines.isNotEmpty;
+  String? get returnReferenceBillId => _returnReferenceBill == null
+      ? null
+      : _returnReferenceBill!['id']?.toString();
+  int get returnLineCount => _returnLines.fold<int>(
+    0,
+    (sum, line) =>
+        sum +
+        (_toDouble(line['qty']) <= 0 ? 1 : _toDouble(line['qty']).toInt()),
+  );
+  double get returnCreditAmount {
+    double sum = 0;
+    for (final line in _returnLines) {
+      final amount = _toDouble(line['lineTotal'] ?? line['amount']);
+      sum += amount.abs();
+    }
+    return sum;
+  }
+
+  double get netSettlementAmount => _totalAmount - returnCreditAmount;
 
   // taxRate เอาไว้ให้ UI เดิมใช้ต่อ
   double get taxRate {
@@ -275,6 +301,76 @@ class BillProvider extends ChangeNotifier {
     return sum;
   }
 
+  void startReturnSession({required Map<String, dynamic> referenceBill}) {
+    final refId =
+        referenceBill['id']?.toString() ??
+        referenceBill['billId']?.toString() ??
+        '';
+    if (refId.isEmpty) {
+      throw Exception('ไม่พบบิลอ้างอิง');
+    }
+    _returnReferenceBill = {
+      'id': refId,
+      'createdAt': referenceBill['createdAt']?.toString(),
+      'customerName': referenceBill['customerName']?.toString(),
+      'status': referenceBill['status']?.toString(),
+    };
+    _returnLines.clear();
+    notifyListeners();
+  }
+
+  void setReturnLineFromDetail({
+    required Map<String, dynamic> detail,
+    required int qty,
+  }) {
+    if (_returnReferenceBill == null) {
+      throw Exception('ยังไม่ได้เลือกบิลอ้างอิง');
+    }
+
+    final partCode = detail['partCode']?.toString() ?? '';
+    final addressCode = detail['addressCode']?.toString() ?? '';
+    final codeKey = '$partCode|$addressCode';
+    if (partCode.isEmpty) {
+      throw Exception('รายการสินค้าไม่มี partCode');
+    }
+
+    final originalQty = _toDouble(detail['qty'] ?? detail['quantity']).toInt();
+    final unitPrice = _toDouble(
+      detail['price'] ?? detail['unitPrice'] ?? detail['unit_price'],
+    );
+    final safeQty = qty.clamp(0, originalQty <= 0 ? 0 : originalQty);
+
+    _returnLines.removeWhere(
+      (line) =>
+          '${line['partCode'] ?? ''}|${line['addressCode'] ?? ''}' == codeKey,
+    );
+
+    if (safeQty > 0) {
+      _returnLines.add({
+        'type': 'return',
+        'referenceBillId': _returnReferenceBill!['id'],
+        'partCode': partCode,
+        'addressCode': addressCode,
+        'name':
+            detail['nameTh']?.toString() ??
+            detail['name']?.toString() ??
+            'สินค้า',
+        'qty': safeQty,
+        'price': unitPrice,
+        'lineTotal': -(unitPrice * safeQty),
+        'originalQty': originalQty,
+      });
+    }
+
+    notifyListeners();
+  }
+
+  void clearReturnSession() {
+    _returnReferenceBill = null;
+    _returnLines.clear();
+    notifyListeners();
+  }
+
   Future<void> switchBill({required String token, String? targetBillId}) async {
     isLoading = true;
     notifyListeners();
@@ -501,10 +597,7 @@ class BillProvider extends ChangeNotifier {
   Future<void> _reloadBill({required String token}) async {
     if (_billId == null) return;
     try {
-      final latest = await ApiService.getBill(
-        token: token,
-        billId: _billId!,
-      );
+      final latest = await ApiService.getBill(token: token, billId: _billId!);
       _applyBill(latest);
     } catch (_) {
       // ignore sync errors

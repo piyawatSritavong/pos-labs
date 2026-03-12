@@ -30,10 +30,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await auth.login(_username, _password);
-      
+
       // Navigate based on account type
       if (!mounted) return;
-      
+
       if (auth.isCustomerDisplay) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const CustomerScreen()),
@@ -46,9 +46,9 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -135,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 8),
                   const Text(
-                    'ทดสอบ: email = test@test.com, password = 123456',
+                    'ทดสอบ POS: username = admin, password = admin123',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ],
