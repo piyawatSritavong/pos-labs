@@ -1,0 +1,26 @@
+Updates: 20260311
+
+Members:
+- Added Members CRUD APIs with auth/RBAC (`members:read`, `members:write`, `members:delete`)
+- Member ID is derived from phone digits
+- Added member search/list support with pagination
+
+Bills:
+- Added `PUT /bills/:id/add-member-by-phone` to assign member to bill
+- Added `PUT /bills/:id/remove-member` to remove member from bill
+- `GET /bills` now supports `memberId` filter
+- `GET /bills` response now returns member as object `{id, code, name}` when available
+
+Router & Permissions:
+- Wired `/members` routes in router with read/write/delete permission groups
+- Seed permissions for members integrated with existing RBAC model
+
+Database & Migration:
+- Added migration `0002_member.up.sql` / `0002_member.down.sql`
+- Ensured member indexes/constraints and bill-member FK behavior (`ON DELETE SET NULL`)
+- Auto migration remains executed at server startup
+
+Postman:
+- Added Members folder (CRUD + search/list)
+- Added bill member endpoints
+- Updated bills list docs/query for `memberId` and member response object
