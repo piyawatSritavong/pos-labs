@@ -4,7 +4,80 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
+
+// seedMockStockCounts inserts submitted stock count test data if none exist.
+// This runs independently of the main mock data check so existing DBs get the data.
+func seedMockStockCounts(db *sql.DB) error {
+	var exists bool
+	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM "stock_count" LIMIT 1)`).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	// Resolve a user ID to use as counted_by (prefer van staff, fall back to any user)
+	var countedByID string
+	err := db.QueryRow(`
+		SELECT "id" FROM "user" WHERE "role_id" = 'role.van_staff' AND "is_active" = true LIMIT 1
+	`).Scan(&countedByID)
+	if err != nil {
+		// Fall back to any active user
+		if err2 := db.QueryRow(`SELECT "id" FROM "user" WHERE "is_active" = true LIMIT 1`).Scan(&countedByID); err2 != nil {
+			log.Printf("Skipping mock stock count seed: no users found")
+			return nil
+		}
+	}
+
+	log.Printf("Seeding mock stock count data")
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	counts := []struct {
+		BranchID string
+		StoreID  string
+	}{
+		{"00000", "main"},
+		{"00001", "store_00001"},
+	}
+
+	for _, c := range counts {
+		countID := strings.ReplaceAll(uuid.New().String(), "-", "")
+		if _, err := tx.Exec(`
+			INSERT INTO "stock_count"("id", "branch_id", "store_id", "counted_by", "status", "notes", "created_at", "submitted_at")
+			VALUES ($1, $2, $3, $4, 'submitted', 'Mock stock count', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 hour')
+			ON CONFLICT ("id") DO NOTHING
+		`, countID, c.BranchID, c.StoreID, countedByID); err != nil {
+			return err
+		}
+
+		// Add a few count items per stock count (composite PK: count_id + part_code)
+		for i := 1; i <= 3; i++ {
+			partCode := fmt.Sprintf("P%04d", i)
+			if _, err := tx.Exec(`
+				INSERT INTO "stock_count_item"("count_id", "part_code", "system_qty", "counted_qty")
+				VALUES ($1, $2, 100, $3)
+				ON CONFLICT ("count_id", "part_code") DO NOTHING
+			`, countID, partCode, 95+i); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	log.Printf("Mock stock count data seeded")
+	return nil
+}
 
 // SeedMockData inserts development-only mock data for categories, parts, and addresses.
 // If any of these tables already have data, seeding is skipped entirely (all-or-nothing).
@@ -20,8 +93,8 @@ func SeedMockData(db *sql.DB) error {
 		return err
 	}
 	if exists {
-		log.Printf("Mock data already exists, skipping seeding")
-		return nil
+		log.Printf("Mock data already exists, skipping main seeding")
+		return seedMockStockCounts(db)
 	}
 
 	log.Printf("Seeding mock data for development (categories, parts, addresses)")
@@ -99,6 +172,46 @@ func SeedMockData(db *sql.DB) error {
 		ON CONFLICT ("branch_id", "store_id") DO NOTHING
 	`); err != nil {
 		return err
+	}
+
+	// Test users for development
+	testUsers := []struct {
+		Username string
+		Password string
+		RoleID   string
+		Name     string
+		BranchID string
+	}{
+		{"hqmanager", "hq123456", "role.hq_manager", "HQ Manager", "00000"},
+		{"vanstaff1", "van123456", "role.van_staff", "Van Staff 1", "00000"},
+	}
+	for _, u := range testUsers {
+		hash, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		userID := strings.ReplaceAll(uuid.New().String(), "-", "")
+		var insertedID string
+		err = tx.QueryRow(`
+			INSERT INTO "user"("id", "username", "role_id", "name", "password", "is_active", "is_superuser")
+			VALUES ($1, $2, $3, $4, $5, true, false)
+			ON CONFLICT ("username") DO NOTHING
+			RETURNING "id"
+		`, userID, u.Username, u.RoleID, u.Name, string(hash)).Scan(&insertedID)
+		if err == sql.ErrNoRows {
+			// User already exists, skip user_branch insert
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO "user_branch"("user_id", "branch_id")
+			VALUES ($1, $2)
+			ON CONFLICT DO NOTHING
+		`, insertedID, u.BranchID); err != nil {
+			return err
+		}
 	}
 
 	// Categories
@@ -256,6 +369,12 @@ func SeedMockData(db *sql.DB) error {
 	}
 
 	log.Printf("Mock data seeding completed")
+
+	// Seed stock count test data separately (runs even when main mock data already exists)
+	if err := seedMockStockCounts(db); err != nil {
+		log.Printf("Warning: failed to seed mock stock counts: %v", err)
+	}
+
 	return nil
 }
 

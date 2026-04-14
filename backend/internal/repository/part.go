@@ -56,7 +56,7 @@ type PartAddress struct {
 
 type PartRepository interface {
 	GetPartDetail(ctx context.Context, code string, branchID *string) (*PartDetail, []PartAddress, error)
-	ListParts(ctx context.Context, limit, offset int) ([]PartSummary, error)
+	ListParts(ctx context.Context, limit, offset int, branchID *string) ([]PartSummary, error)
 	GetPartByBarcode(ctx context.Context, barcode string, branchID string) (*PartDetail, []PartAddress, error)
 	CheckPartExistsInBranch(ctx context.Context, partCode, branchID string) (bool, error)
 	SearchParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID *string, limit, offset int) ([]PartDetail, error)

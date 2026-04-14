@@ -160,15 +160,22 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 		return nil, nil, nil, err
 	}
 
-	// Load bill details
+	// Load bill details (with total stock per part across all addresses in the bill's branch)
 	detailRows, err := r.db.QueryContext(ctx, `
 		SELECT
-			"bill_id", "part_code", "address_code",
-			"unit_id", "uni_label", "unit_label_th",
-			"name", "cost", "price", "qty"
-		FROM "bill_item_detail"
-		WHERE "bill_id" = $1
-		ORDER BY "part_code", "address_code"
+			bid."bill_id", bid."part_code", bid."address_code",
+			bid."unit_id", bid."uni_label", bid."unit_label_th",
+			bid."name", bid."cost", bid."price", bid."qty",
+			COALESCE((
+				SELECT SUM(am."qty")
+				FROM "address_master" am
+				WHERE am."part_code" = bid."part_code"
+				  AND am."store_id" = b."branch_id"
+			), 0) AS "total_stock"
+		FROM "bill_item_detail" bid
+		JOIN "bill_master" b ON b."id" = bid."bill_id"
+		WHERE bid."bill_id" = $1
+		ORDER BY bid."part_code", bid."address_code"
 	`, id)
 	if err != nil {
 		return nil, nil, nil, err
@@ -189,6 +196,7 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 			&d.Cost,
 			&d.Price,
 			&d.Qty,
+			&d.TotalStock,
 		); err != nil {
 			return nil, nil, nil, err
 		}
@@ -231,7 +239,7 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 	return bill, details, discounts, nil
 }
 
-func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom, dateTo *time.Time, memberID *string) ([]Bill, error) {
+func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom, dateTo *time.Time, memberID, branchID, posID *string, statuses []string) ([]Bill, error) {
 	if limit <= 0 {
 		limit = config.DefaultLimit
 	}
@@ -254,7 +262,7 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom
 
 	// Add date filtering if provided
 	// Note: dates are already normalized by the handler (start of day for dateFrom, end of day for dateTo)
-	if dateFrom != nil || dateTo != nil || memberID != nil {
+	if dateFrom != nil || dateTo != nil || memberID != nil || branchID != nil || posID != nil || len(statuses) > 0 {
 		conditions := []string{}
 		if dateFrom != nil {
 			conditions = append(conditions, fmt.Sprintf(`"created_at" >= $%d`, argIndex))
@@ -270,6 +278,31 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom
 			conditions = append(conditions, fmt.Sprintf(`"member_id" = $%d`, argIndex))
 			args = append(args, strings.TrimSpace(*memberID))
 			argIndex++
+		}
+		if branchID != nil && strings.TrimSpace(*branchID) != "" {
+			conditions = append(conditions, fmt.Sprintf(`"branch_id" = $%d`, argIndex))
+			args = append(args, strings.TrimSpace(*branchID))
+			argIndex++
+		}
+		if posID != nil && strings.TrimSpace(*posID) != "" {
+			conditions = append(conditions, fmt.Sprintf(`"pos_id" = $%d`, argIndex))
+			args = append(args, strings.TrimSpace(*posID))
+			argIndex++
+		}
+		if len(statuses) > 0 {
+			placeholders := make([]string, 0, len(statuses))
+			for _, status := range statuses {
+				status = strings.TrimSpace(strings.ToLower(status))
+				if status == "" {
+					continue
+				}
+				placeholders = append(placeholders, fmt.Sprintf(`$%d`, argIndex))
+				args = append(args, status)
+				argIndex++
+			}
+			if len(placeholders) > 0 {
+				conditions = append(conditions, fmt.Sprintf(`"status" IN (%s)`, strings.Join(placeholders, ", ")))
+			}
 		}
 		if len(conditions) > 0 {
 			query += " WHERE " + strings.Join(conditions, " AND ")
@@ -520,6 +553,15 @@ func (r *billRepositoryPG) UpdateItemQty(ctx context.Context, billID, partCode, 
 		SET "qty" = $1
 		WHERE "bill_id" = $2 AND "part_code" = $3 AND "address_code" = $4
 	`, qty, billID, partCode, addressCode)
+	return err
+}
+
+func (r *billRepositoryPG) UpdateItemPrice(ctx context.Context, billID, partCode, addressCode string, price float64) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE "bill_item_detail"
+		SET "price" = $1
+		WHERE "bill_id" = $2 AND "part_code" = $3 AND "address_code" = $4
+	`, price, billID, partCode, addressCode)
 	return err
 }
 

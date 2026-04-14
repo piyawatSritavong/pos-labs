@@ -5,13 +5,15 @@ import (
 )
 
 type User struct {
-	ID           string
-	Username     string
-	RoleID       string
-	Name         string
-	PasswordHash string
-	IsActive     bool
-	IsSuperuser  bool
+	ID                string
+	Username          string
+	RoleID            string
+	Name              string
+	PasswordHash      string
+	IsActive          bool
+	IsSuperuser       bool
+	CustomPermissions []string // nil = use role defaults; non-nil = per-user override
+	BranchID          string   // default branch from user_branch join (read-only, not persisted here)
 }
 
 type UserRepository interface {

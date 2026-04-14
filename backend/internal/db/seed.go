@@ -91,6 +91,16 @@ func SeedCoreData(db *sql.DB) error {
 		{"perm.members.read", "Read members", "read", "members", "Read member master data"},
 		{"perm.members.write", "Write members", "write", "members", "Create/update member master data"},
 		{"perm.members.delete", "Delete members", "delete", "members", "Delete member master data"},
+		{"perm.transfers.read", "Read transfers", "read", "transfers", "Read inventory transfers"},
+		{"perm.transfers.write", "Write transfers", "write", "transfers", "Create/update inventory transfers"},
+		{"perm.transfers.approve", "Approve transfers", "approve", "transfers", "Approve/dispatch/cancel inventory transfers"},
+		{"perm.stock_count.read", "Read stock counts", "read", "stock_count", "Read stock count records"},
+		{"perm.stock_count.write", "Write stock counts", "write", "stock_count", "Create/submit stock count records"},
+		{"perm.daily_close.read", "Read daily closes", "read", "daily_close", "Read daily close records"},
+		{"perm.daily_close.write", "Write daily closes", "write", "daily_close", "Create daily close records"},
+		{"perm.cash_reconciliation.read", "Read cash reconciliations", "read", "cash_reconciliation", "Read cash reconciliation records"},
+		{"perm.cash_reconciliation.write", "Write cash reconciliations", "write", "cash_reconciliation", "Create cash reconciliation records"},
+		{"perm.reports_variance.read", "Read variance reports", "read", "reports_variance", "View stock variance reports"},
 	}
 
 	for _, p := range permissions {
@@ -106,7 +116,9 @@ func SeedCoreData(db *sql.DB) error {
 	if _, err := tx.Exec(`
 		INSERT INTO "role"("id", "name", "detail")
 		VALUES ('role.admin', 'Admin', 'System administrator'),
-		       ('role.cashier', 'Cashier', 'Point of sale cashier')
+		       ('role.cashier', 'Cashier', 'Point of sale cashier'),
+		       ('role.hq_manager', 'HQ Manager', 'Headquarter manager'),
+		       ('role.van_staff', 'Van Staff', 'Van sales staff')
 	`); err != nil {
 		return err
 	}
@@ -131,6 +143,76 @@ func SeedCoreData(db *sql.DB) error {
 		if _, err := tx.Exec(`
 			INSERT INTO "role_permission"("role_id", "permission_id")
 			VALUES ('role.cashier', $1)
+		`, pid); err != nil {
+			return err
+		}
+	}
+
+	hqManagerPerms := []string{
+		"perm.branch.read",
+		"perm.users.read",
+		"perm.users.write",
+		"perm.users.delete",
+		"perm.user_branch.read",
+		"perm.user_branch.write",
+		"perm.parts.read",
+		"perm.parts.write",
+		"perm.parts.delete",
+		"perm.addresses.read",
+		"perm.addresses.write",
+		"perm.addresses.delete",
+		"perm.promotions.read",
+		"perm.promotions.write",
+		"perm.promotions.delete",
+		"perm.members.read",
+		"perm.members.write",
+		"perm.members.delete",
+		"perm.bills.read",
+		"perm.bills.write",
+		"perm.qr_image.read",
+		"perm.qr_image.write",
+		"perm.reports_bill.read",
+		"perm.reports_parts.read",
+		"perm.reports_inventory.read",
+		"perm.transfers.read",
+		"perm.transfers.write",
+		"perm.transfers.approve",
+		"perm.stock_count.read",
+		"perm.daily_close.read",
+		"perm.cash_reconciliation.read",
+		"perm.cash_reconciliation.write",
+		"perm.reports_variance.read",
+	}
+	for _, pid := range hqManagerPerms {
+		if _, err := tx.Exec(`
+			INSERT INTO "role_permission"("role_id", "permission_id")
+			VALUES ('role.hq_manager', $1)
+		`, pid); err != nil {
+			return err
+		}
+	}
+
+	vanStaffPerms := []string{
+		"perm.branch.read",
+		"perm.parts.read",
+		"perm.bills.read",
+		"perm.bills.write",
+		"perm.promotions.read",
+		"perm.qr_image.read",
+		"perm.members.read",
+		"perm.members.write",
+		"perm.transfers.read",
+		"perm.transfers.write",
+		"perm.stock_count.read",
+		"perm.stock_count.write",
+		"perm.daily_close.read",
+		"perm.daily_close.write",
+		"perm.reports_variance.read",
+	}
+	for _, pid := range vanStaffPerms {
+		if _, err := tx.Exec(`
+			INSERT INTO "role_permission"("role_id", "permission_id")
+			VALUES ('role.van_staff', $1)
 		`, pid); err != nil {
 			return err
 		}

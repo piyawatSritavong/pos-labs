@@ -7,6 +7,7 @@ require (
 	github.com/gin-gonic/gin v1.10.1
 	github.com/golang-migrate/migrate/v4 v4.17.0
 	github.com/google/uuid v1.4.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.10.9
 	golang.org/x/crypto v0.39.0
 )

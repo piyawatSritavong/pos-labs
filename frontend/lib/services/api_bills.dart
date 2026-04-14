@@ -19,7 +19,7 @@ class ApiBillsService {
 
     if (decoded is Map<String, dynamic>) {
       // ลองดู key มาตรฐานก่อน
-      final listKeys = ['items', 'data', 'users', 'parts', 'results'];
+      final listKeys = ['items', 'data', 'users', 'parts', 'results', 'bills'];
       for (final key in listKeys) {
         if (decoded[key] is List) {
           return (decoded[key] as List)
@@ -73,15 +73,38 @@ class ApiBillsService {
     throw Exception('Unexpected $endpointName response format: $decoded');
   }
 
+  static bool _looksLikeBillObject(Map<String, dynamic> payload) {
+    return payload.containsKey('purchaseAmount') ||
+        payload.containsKey('totalAmount') ||
+        payload.containsKey('status') ||
+        payload.containsKey('details') ||
+        payload.containsKey('discounts');
+  }
+
   // GET /bills?limit=&offset=
   static Future<List<Map<String, dynamic>>> getBills({
     required String token,
     int limit = 20,
     int offset = 0,
+    List<String>? statuses,
+    bool includeDetails = false,
+    String scope = 'pos',
   }) async {
+    final queryParams = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      'scope': scope,
+    };
+    if (statuses != null && statuses.isNotEmpty) {
+      queryParams['statuses'] = statuses.join(',');
+    }
+    if (includeDetails) {
+      queryParams['includeDetails'] = 'true';
+    }
+
     final uri = Uri.parse(
       '$baseUrl/bills',
-    ).replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
+    ).replace(queryParameters: queryParams);
 
     final response = await http.get(
       uri,
@@ -228,13 +251,15 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id/remove-item');
   }
 
-  // PUT /bills/:id/add-discount — ใช้ promotionCode
-  static Future<Map<String, dynamic>> addBillDiscount({
+  // PUT /bills/:id/update-item-price — แก้ยอดราคาของรายการสินค้าในบิล
+  static Future<Map<String, dynamic>> updateItemPriceInBill({
     required String token,
     required String billId,
-    required String promotionCode,
+    required String partCode,
+    required String addressCode,
+    required double lineTotal,
   }) async {
-    final uri = Uri.parse('$baseUrl/bills/$billId/add-discount');
+    final uri = Uri.parse('$baseUrl/bills/$billId/update-item-price');
 
     final response = await http.put(
       uri,
@@ -242,7 +267,58 @@ class ApiBillsService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-      body: jsonEncode({'promotionCode': promotionCode}),
+      body: jsonEncode({
+        'partCode': partCode,
+        'addressCode': addressCode,
+        'lineTotal': lineTotal,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to update item price: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    final payload = _extractObjectFromResponse(
+      decoded,
+      '/bills/:id/update-item-price',
+    );
+    if (_looksLikeBillObject(payload)) {
+      return payload;
+    }
+    return getBill(token: token, billId: billId);
+  }
+
+  // PUT /bills/:id/add-discount — ใช้ promotionCode หรือ manual unit+amount
+  static Future<Map<String, dynamic>> addBillDiscount({
+    required String token,
+    required String billId,
+    String? promotionCode,
+    String? unit,
+    double? amount,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/$billId/add-discount');
+
+    final body = <String, dynamic>{};
+    if (promotionCode != null && promotionCode.isNotEmpty) {
+      body['promotionCode'] = promotionCode;
+    }
+    if (unit != null && unit.isNotEmpty) {
+      body['unit'] = unit;
+    }
+    if (amount != null) {
+      body['amount'] = amount;
+    }
+
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(body),
     );
 
     if (response.statusCode != 200) {
@@ -252,7 +328,14 @@ class ApiBillsService {
     }
 
     final decoded = jsonDecode(response.body);
-    return _extractObjectFromResponse(decoded, '/bills/:id/add-discount');
+    final payload = _extractObjectFromResponse(
+      decoded,
+      '/bills/:id/add-discount',
+    );
+    if (_looksLikeBillObject(payload)) {
+      return payload;
+    }
+    return getBill(token: token, billId: billId);
   }
 
   // PUT /bills/:id/remove-discount — ลบส่วนลด
@@ -279,7 +362,14 @@ class ApiBillsService {
     }
 
     final decoded = jsonDecode(response.body);
-    return _extractObjectFromResponse(decoded, '/bills/:id/remove-discount');
+    final payload = _extractObjectFromResponse(
+      decoded,
+      '/bills/:id/remove-discount',
+    );
+    if (_looksLikeBillObject(payload)) {
+      return payload;
+    }
+    return getBill(token: token, billId: billId);
   }
 
   // PUT /bills/:id/payment — ชำระเงิน
@@ -291,9 +381,7 @@ class ApiBillsService {
   }) async {
     final uri = Uri.parse('$baseUrl/bills/$billId/payment');
 
-    final body = <String, dynamic>{
-      'paymentMethod': paymentMethod,
-    };
+    final body = <String, dynamic>{'paymentMethod': paymentMethod};
     if (paymentRef != null && paymentRef.isNotEmpty) {
       body['paymentRef'] = paymentRef;
     }

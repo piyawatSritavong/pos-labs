@@ -33,6 +33,7 @@ dependencies:
   desktop_multi_window: ^0.3.0
   
   http: ^1.6.0 # For REST API calls
+  web_socket_channel: ^3.0.1 # For WebSocket (POS mirror)
   provider: ^6.1.5+1 # State management
   shared_preferences: ^2.5.3 # For local storage sessions
   window_manager: ^0.3.9 # Multi-window support for desktop

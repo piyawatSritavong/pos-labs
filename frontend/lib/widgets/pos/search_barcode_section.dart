@@ -182,9 +182,9 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colorSurface,
         borderRadius: BorderRadius.circular(AppSizes.radius),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: context.colorBorder),
         boxShadow: AppShadows.soft,
       ),
       padding: const EdgeInsets.all(24),
@@ -200,7 +200,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
               const Spacer(),
               Text(
                 '$currentPageCount รายการ',
-                style: const TextStyle(color: AppColors.muted),
+                style: TextStyle(color: context.colorMuted),
               ),
             ],
           ),
@@ -262,13 +262,12 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
                               child: Container(
                                 width: 12,
                                 height: 12,
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 5),
+                                margin: const EdgeInsets.symmetric(horizontal: 5),
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: index == _currentPage
-                                      ? AppColors.primary
-                                      : AppColors.border,
+                                      ? context.colorPrimary
+                                      : context.colorBorder,
                                 ),
                               ),
                             ),
@@ -291,10 +290,10 @@ class _EmptyProductsState extends StatelessWidget {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.inventory_2_outlined, size: 48, color: AppColors.muted),
-          SizedBox(height: 8),
-          Text('ยิงบาร์โค้ด/พิมค้นหา', style: TextStyle(color: AppColors.muted)),
+        children: [
+          Icon(Icons.inventory_2_outlined, size: 48, color: context.colorMuted),
+          const SizedBox(height: 8),
+          Text('ยิงบาร์โค้ด/พิมค้นหา', style: TextStyle(color: context.colorMuted)),
         ],
       ),
     );
@@ -312,9 +311,9 @@ class _ProductCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colorSurface,
         borderRadius: BorderRadius.circular(AppSizes.radius),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: context.colorBorder),
         boxShadow: AppShadows.soft,
       ),
       child: Row(
@@ -323,10 +322,10 @@ class _ProductCard extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
+              color: context.colorPrimary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.build, color: AppColors.primary),
+            child: Icon(Icons.build, color: context.colorPrimary),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -346,13 +345,13 @@ class _ProductCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   'รหัส ${product.code}',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                  style: TextStyle(color: context.colorMuted, fontSize: 13),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   '฿${product.price.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: AppColors.primary,
+                  style: TextStyle(
+                    color: context.colorPrimary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -364,8 +363,8 @@ class _ProductCard extends StatelessWidget {
             height: 40,
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: const BorderSide(color: AppColors.primary),
+                foregroundColor: context.colorPrimary,
+                side: BorderSide(color: context.colorPrimary),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 shape: RoundedRectangleBorder(

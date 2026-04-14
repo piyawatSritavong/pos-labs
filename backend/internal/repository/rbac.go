@@ -18,16 +18,27 @@ func NewRBACRepository(db *sql.DB) RBACRepository {
 }
 
 func (r *rbacRepositoryPG) UserHasPermission(ctx context.Context, userID, resource, action string) (bool, error) {
+	// When custom_permissions is set, check only against those permissions.
+	// When NULL, fall back to role-based permissions.
 	row := r.db.QueryRowContext(ctx, `
 		SELECT 1
 		FROM "user" u
-		JOIN "role" r2 ON r2.id = u.role_id
-		JOIN "role_permission" rp ON rp.role_id = r2.id
-		JOIN "permission" p ON p.id = rp.permission_id
-		WHERE u.id = $1
-		  AND u.is_active = true
-		  AND p.resource = $2
-		  AND p.action = $3
+		WHERE u.id = $1 AND u.is_active = true
+		AND (
+		  (u.custom_permissions IS NOT NULL AND EXISTS (
+		    SELECT 1 FROM "permission" p
+		    WHERE p.id = ANY(u.custom_permissions)
+		      AND p.resource = $2 AND p.action = $3
+		  ))
+		  OR
+		  (u.custom_permissions IS NULL AND EXISTS (
+		    SELECT 1
+		    FROM "role" r2
+		    JOIN "role_permission" rp ON rp.role_id = r2.id
+		    JOIN "permission" p ON p.id = rp.permission_id
+		    WHERE r2.id = u.role_id AND p.resource = $2 AND p.action = $3
+		  ))
+		)
 		LIMIT 1
 	`, userID, resource, action)
 
@@ -40,5 +51,3 @@ func (r *rbacRepositoryPG) UserHasPermission(ctx context.Context, userID, resour
 	}
 	return true, nil
 }
-
-

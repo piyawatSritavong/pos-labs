@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/services/return_note_storage.dart';
+import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/services/api_service.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:provider/provider.dart';
 
 class ReturnsHistorySection extends StatefulWidget {
   const ReturnsHistorySection({super.key});
@@ -12,11 +14,13 @@ class ReturnsHistorySection extends StatefulWidget {
 class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _notes = [];
+  bool _isLoading = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _reload();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
   }
 
   @override
@@ -25,10 +29,46 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
     super.dispose();
   }
 
-  void _reload() {
+  Future<void> _reload() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _notes = [];
+        _error = 'token หาย กรุณา login ใหม่';
+      });
+      return;
+    }
+
     setState(() {
-      _notes = ReturnNoteStorage.loadNotes();
+      _isLoading = true;
+      _error = null;
     });
+
+    try {
+      final notes = await ApiService.getReturnNotes(
+        token: token,
+        limit: 200,
+        offset: 0,
+        scope: 'branch',
+        includeDetails: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        _notes = notes;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'โหลดประวัติคืนของไม่สำเร็จ: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   double _toDouble(dynamic v) {
@@ -49,6 +89,19 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
       return '$y-$m-$d $hh:$mm';
     } catch (_) {
       return raw;
+    }
+  }
+
+  String _settlementLabel(String raw) {
+    switch (raw) {
+      case 'cash_refund':
+        return 'คืนเงินสด';
+      case 'customer_credit':
+        return 'เก็บเป็นเครดิตลูกค้า';
+      case 'exchange':
+        return 'แลกเปลี่ยนสินค้า';
+      default:
+        return raw.isEmpty ? '-' : raw;
     }
   }
 
@@ -84,7 +137,7 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
-                  onPressed: _reload,
+                  onPressed: _isLoading ? null : _reload,
                   icon: const Icon(Icons.refresh),
                   label: const Text('โหลดข้อมูล'),
                 ),
@@ -93,7 +146,20 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
             const SizedBox(height: 16),
             Expanded(
               child: Card(
-                child: filtered.isEmpty
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: AppColors.danger),
+                          ),
+                        ),
+                      )
+                    : filtered.isEmpty
                     ? const Center(child: Text('ยังไม่มีประวัติคืนของ'))
                     : ListView.separated(
                         padding: const EdgeInsets.all(12),
@@ -109,17 +175,16 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
                             note['createdAt']?.toString(),
                           );
                           final purchaseTotal = _toDouble(
-                            note['purchaseTotal'],
+                            note['purchaseAmount'],
                           );
-                          final returnTotal = _toDouble(
-                            note['returnCreditTotal'],
-                          );
-                          final netTotal = _toDouble(note['netTotal']);
-                          final mode =
-                              note['settlementMode']?.toString() ?? 'none';
-                          final lines = (note['lines'] is List)
-                              ? (note['lines'] as List).length
-                              : 0;
+                          final returnTotal = _toDouble(note['refundAmount']);
+                          final netTotal = _toDouble(note['netAmount']);
+                          final mode = note['settlementMode']?.toString() ?? '';
+                          final lines = (note['details'] is List)
+                              ? (note['details'] as List)
+                                    .whereType<Map<String, dynamic>>()
+                                    .toList()
+                              : const <Map<String, dynamic>>[];
 
                           return Container(
                             padding: const EdgeInsets.all(14),
@@ -186,10 +251,63 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
                                     Text(
                                       'สุทธิ: ${netTotal < 0 ? '-฿' : '฿'}${netTotal.abs().toStringAsFixed(2)}',
                                     ),
-                                    Text('วิธีปิดรายการ: $mode'),
-                                    Text('รายการคืน: $lines รายการ'),
+                                    Text(
+                                      'วิธีปิดรายการ: ${_settlementLabel(mode)}',
+                                    ),
+                                    Text('รายการคืน: ${lines.length} รายการ'),
                                   ],
                                 ),
+                                if (lines.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surface,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: AppColors.border,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      children: lines.map((line) {
+                                        final name =
+                                            line['name']?.toString() ??
+                                            line['partCode']?.toString() ??
+                                            'สินค้า';
+                                        final qty = _toDouble(
+                                          line['qty'],
+                                        ).toInt();
+                                        final lineTotal = _toDouble(
+                                          line['lineTotal'],
+                                        );
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 4,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Expanded(child: Text(name)),
+                                              SizedBox(
+                                                width: 60,
+                                                child: Text(
+                                                  'x$qty',
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ),
+                                              SizedBox(
+                                                width: 120,
+                                                child: Text(
+                                                  '฿${lineTotal.toStringAsFixed(2)}',
+                                                  textAlign: TextAlign.right,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           );

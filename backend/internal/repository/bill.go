@@ -6,14 +6,14 @@ import (
 )
 
 type Bill struct {
-	ID            string
-	BranchID      string
-	POSID         string
-	Status        string // new, hold, completed, cancelled
-	PaymentMethod string // cash, bank, credit, debit, other
-	PaymentRef    string
-	MemberID      string
-	CustomerName  string
+	ID             string
+	BranchID       string
+	POSID          string
+	Status         string // new, hold, completed, cancelled
+	PaymentMethod  string // cash, bank, credit, debit, other
+	PaymentRef     string
+	MemberID       string
+	CustomerName   string
 	PurchaseAmount float64
 	TotalDiscount  float64
 	TotalAmount    float64
@@ -36,6 +36,7 @@ type BillDetail struct {
 	Cost        float64
 	Price       float64
 	Qty         int
+	TotalStock  int
 }
 
 type BillDiscountDetail struct {
@@ -49,7 +50,7 @@ type BillRepository interface {
 	GenerateBillID(ctx context.Context) (string, error)
 	Create(ctx context.Context, bill *Bill) error
 	GetByID(ctx context.Context, id string) (*Bill, error)
-	List(ctx context.Context, limit, offset int, dateFrom, dateTo *time.Time, memberID *string) ([]Bill, error)
+	List(ctx context.Context, limit, offset int, dateFrom, dateTo *time.Time, memberID, branchID, posID *string, statuses []string) ([]Bill, error)
 	GetFullByID(ctx context.Context, id string) (*Bill, []BillDetail, []BillDiscountDetail, error)
 	GetNewBillByPOS(ctx context.Context, posID string) (*Bill, error)
 	UpdateStatus(ctx context.Context, billID, status, updatedBy string) error
@@ -59,6 +60,7 @@ type BillRepository interface {
 	GetItemByPartCode(ctx context.Context, billID, partCode, addressCode string) (*BillDetail, error)
 	AddItem(ctx context.Context, detail *BillDetail) error
 	UpdateItemQty(ctx context.Context, billID, partCode, addressCode string, qty int) error
+	UpdateItemPrice(ctx context.Context, billID, partCode, addressCode string, price float64) error
 	RemoveItem(ctx context.Context, billID, partCode, addressCode string) error
 	AddDiscount(ctx context.Context, discount *BillDiscountDetail) error
 	RemoveDiscount(ctx context.Context, billID, promotionCode string) error
@@ -69,4 +71,3 @@ type BillRepository interface {
 	UpdatePayment(ctx context.Context, billID, paymentMethod, paymentRef, updatedBy string) error
 	Delete(ctx context.Context, billID string) error
 }
-

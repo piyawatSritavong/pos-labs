@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -23,7 +24,32 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
   @override
   void dispose() {
     _invoiceController.dispose();
+    PosMirrorService.current?.notifyDialogState(null);
     super.dispose();
+  }
+
+  void _broadcastState() {
+    final bill = _referenceBill;
+    PosMirrorService.current?.notifyDialogState({
+      'type': 'return',
+      'stage': bill == null ? 'search' : 'selecting',
+      'invoiceId': _invoiceController.text.trim(),
+      if (bill != null) 'bill': {
+        'id': bill['id']?.toString() ?? '',
+        'total': bill['totalAmount'] ?? 0,
+      },
+      'items': _details.map((detail) {
+        final key = _rowKey(detail);
+        return {
+          'partCode': detail['partCode']?.toString() ?? '',
+          'partName': detail['name']?.toString() ?? detail['partCode']?.toString() ?? '',
+          'originalQty': _toDouble(detail['originalQty'] ?? detail['qty']).toInt(),
+          'alreadyReturned': _toDouble(detail['returnedQty']).toInt(),
+          'maxReturnable': _toDouble(detail['remainingQty'] ?? detail['returnableQty'] ?? detail['qty']).toInt(),
+          'selectedQty': _selectedQtyByKey[key] ?? 0,
+        };
+      }).toList(),
+    });
   }
 
   double _toDouble(dynamic v) {
@@ -65,7 +91,10 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
     });
 
     try {
-      final bill = await ApiService.getBill(token: token, billId: billId);
+      final bill = await ApiService.getReturnReferenceBill(
+        token: token,
+        billId: billId,
+      );
       final status = (bill['status']?.toString() ?? '').toLowerCase();
       if (status != 'completed') {
         setState(() {
@@ -90,10 +119,27 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
         return;
       }
 
+      final returnable = mapped
+          .where(
+            (detail) =>
+                _toDouble(
+                  detail['remainingQty'] ?? detail['returnableQty'] ?? 0,
+                ).toInt() >
+                0,
+          )
+          .toList();
+      if (returnable.isEmpty) {
+        setState(() {
+          _error = 'บิลนี้ถูกคืนครบแล้ว หรือไม่มีรายการที่ยังคืนได้';
+        });
+        return;
+      }
+
       setState(() {
         _referenceBill = bill;
-        _details = mapped;
+        _details = returnable;
       });
+      _broadcastState();
     } catch (e) {
       setState(() {
         _error = 'ไม่พบบิลหรือดึงข้อมูลไม่สำเร็จ: $e';
@@ -233,7 +279,17 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
                                 detail['partCode']?.toString() ??
                                 'สินค้า';
                             final code = detail['partCode']?.toString() ?? '-';
-                            final maxQty = _toDouble(detail['qty']).toInt();
+                            final originalQty = _toDouble(
+                              detail['originalQty'] ?? detail['qty'],
+                            ).toInt();
+                            final returnedQty = _toDouble(
+                              detail['returnedQty'],
+                            ).toInt();
+                            final maxQty = _toDouble(
+                              detail['remainingQty'] ??
+                                  detail['returnableQty'] ??
+                                  detail['qty'],
+                            ).toInt();
                             final key = _rowKey(detail);
                             final selectedQty = _selectedQtyByKey[key] ?? 0;
                             final unitPrice = _toDouble(detail['price']);
@@ -261,7 +317,7 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          '$code • ซื้อแล้ว $maxQty ชิ้น • ฿${unitPrice.toStringAsFixed(2)}',
+                                          '$code • ซื้อ $originalQty ชิ้น • คืนแล้ว $returnedQty • เหลือคืนได้ $maxQty • ฿${unitPrice.toStringAsFixed(2)}',
                                           style: const TextStyle(
                                             color: AppColors.muted,
                                             fontSize: 12,
@@ -278,6 +334,7 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
                                               _selectedQtyByKey[key] =
                                                   selectedQty - 1;
                                             });
+                                            _broadcastState();
                                           },
                                     icon: const Icon(
                                       Icons.remove_circle_outline,
@@ -301,6 +358,7 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
                                               _selectedQtyByKey[key] =
                                                   selectedQty + 1;
                                             });
+                                            _broadcastState();
                                           },
                                     icon: const Icon(Icons.add_circle_outline),
                                   ),

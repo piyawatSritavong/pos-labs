@@ -211,6 +211,27 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
+func (h *AuthHandler) VerifyPassword(c *gin.Context) {
+	var req struct {
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	user, err := h.users.GetByUsername(c.Request.Context(), req.Username)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials"})
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (h *AuthHandler) Logout(c *gin.Context) {
 	token := c.GetHeader("Authorization")
 	if token == "" {
@@ -245,9 +266,10 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	posIDVal, posExists := c.Get("pos_id")
 
 	response := gin.H{
-		"name":   user.Name,
-		"roleId": user.RoleID,
-		"active": user.IsActive,
+		"username": user.Username,
+		"name":     user.Name,
+		"roleId":   user.RoleID,
+		"active":   user.IsActive,
 	}
 
 	// Include branchId if it exists in session (non-empty string)

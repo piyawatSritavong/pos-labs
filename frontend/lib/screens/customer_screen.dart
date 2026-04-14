@@ -1,3 +1,7 @@
+import 'dart:convert';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/providers/bill_provider.dart';
@@ -11,6 +15,32 @@ class CustomerScreen extends StatefulWidget {
 }
 
 class _CustomerScreenState extends State<CustomerScreen> {
+  html.BroadcastChannel? _bc;
+
+  @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) {
+      _bc = html.BroadcastChannel('pos_mirror');
+      _bc!.addEventListener('message', _onMirrorMessage);
+    }
+  }
+
+  void _onMirrorMessage(html.Event event) {
+    final me = event as html.MessageEvent;
+    try {
+      final data = jsonDecode(me.data as String) as Map<String, dynamic>;
+      if (mounted) context.read<BillProvider>().updateFromMirrorState(data);
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _bc?.close();
+    _bc = null;
+    super.dispose();
+  }
+
   double _toDouble(dynamic v) {
     if (v == null) return 0.0;
     if (v is num) return v.toDouble();
@@ -49,6 +79,7 @@ class _CustomerScreenState extends State<CustomerScreen> {
     final items = _mapItems(bill.items);
     final subtotal = bill.subtotal;
     final discount = bill.discount;
+    final amountAfterDiscount = bill.amountAfterDiscount;
     final taxRate = bill.taxRate;
     final tax = bill.tax;
     final total = bill.total;
@@ -193,13 +224,18 @@ class _CustomerScreenState extends State<CustomerScreen> {
                                         const SizedBox(height: 12),
                                         // สรุปยอดเหมือนเดิม
                                         _buildSummaryRow(
-                                          'Subtotal',
+                                          'ก่อนลด',
                                           '฿${subtotal.toStringAsFixed(2)}',
                                         ),
                                         const SizedBox(height: 8),
                                         _buildSummaryRow(
                                           'ส่วนลด',
                                           '- ฿${discount.toStringAsFixed(2)}',
+                                        ),
+                                        const SizedBox(height: 8),
+                                        _buildSummaryRow(
+                                          'หลังหักส่วนลด',
+                                          '฿${amountAfterDiscount.toStringAsFixed(2)}',
                                         ),
                                         const SizedBox(height: 8),
                                         _buildSummaryRow(
@@ -265,8 +301,7 @@ class _CustomerScreenState extends State<CustomerScreen> {
           ),
           if (bill.isAwaitingCashPayment)
             _CashPaymentOverlay(amount: bill.awaitingCashAmount),
-          if (bill.isAwaitingQrPayment)
-            _QrScanOverlay(amount: total),
+          if (bill.isAwaitingQrPayment) _QrScanOverlay(amount: total),
           if (bill.showThankYouOverlay) const _ThankYouOverlay(),
         ],
       ),
@@ -463,10 +498,7 @@ class _QrScanOverlay extends StatelessWidget {
               children: [
                 const Text(
                   'สแกนเพื่อชำระเงิน',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),

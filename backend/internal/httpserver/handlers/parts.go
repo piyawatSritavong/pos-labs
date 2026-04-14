@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"backend/internal/config"
 	"backend/internal/repository"
@@ -33,7 +34,12 @@ func (h *PartsHandler) List(c *gin.Context) {
 		}
 	}
 
-	items, err := h.parts.ListParts(c.Request.Context(), limit, offset)
+	var branchIDPtr *string
+	if b := strings.TrimSpace(c.Query("branchId")); b != "" {
+		branchIDPtr = &b
+	}
+
+	items, err := h.parts.ListParts(c.Request.Context(), limit, offset, branchIDPtr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_list_parts"})
 		return

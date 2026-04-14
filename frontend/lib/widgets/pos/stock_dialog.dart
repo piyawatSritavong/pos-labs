@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_parts.dart';
+import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -21,6 +22,24 @@ class _StockDialogState extends State<StockDialog> {
   void initState() {
     super.initState();
     _loadLowStock();
+  }
+
+  @override
+  void dispose() {
+    PosMirrorService.current?.notifyDialogState(null);
+    super.dispose();
+  }
+
+  void _broadcastState() {
+    PosMirrorService.current?.notifyDialogState({
+      'type': 'stock',
+      'items': _lowStock.map((p) => {
+        'partCode': p.code,
+        'partName': p.name,
+        'totalQty': p.totalQty,
+        'addresses': p.addresses.map((a) => {'label': a.label, 'qty': a.qty}).toList(),
+      }).toList(),
+    });
   }
 
   double _toDouble(dynamic value) {
@@ -99,6 +118,7 @@ class _StockDialogState extends State<StockDialog> {
       setState(() {
         _lowStock = filtered;
       });
+      _broadcastState();
     } catch (e) {
       setState(() {
         _error = e.toString();

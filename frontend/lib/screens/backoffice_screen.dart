@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/widgets/backoffice/addresses_page.dart';
 import 'package:frontend/widgets/backoffice/bills_history_page.dart';
 import 'package:frontend/widgets/backoffice/branches_page.dart';
@@ -9,13 +8,20 @@ import 'package:frontend/widgets/backoffice/parts_page.dart';
 import 'package:frontend/widgets/backoffice/payment_page.dart';
 import 'package:frontend/widgets/backoffice/pos_devices_page.dart';
 import 'package:frontend/widgets/backoffice/promotions_page.dart';
+import 'package:frontend/widgets/backoffice/reports_page.dart';
 import 'package:frontend/widgets/backoffice/returns_history_page.dart';
+import 'package:frontend/widgets/backoffice/members_page.dart';
 import 'package:frontend/widgets/backoffice/user_branches_page.dart';
 import 'package:frontend/widgets/backoffice/user_page.dart';
+import 'package:frontend/widgets/backoffice/inventory_transfer_page.dart';
+import 'package:frontend/widgets/backoffice/cash_reconciliation_page.dart';
+import 'package:frontend/widgets/backoffice/stock_variance_page.dart';
+import 'package:frontend/widgets/backoffice/support_pos_page.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/providers/theme_provider.dart';
 import 'package:frontend/screens/login_screen.dart';
-import 'package:frontend/screens/home_screen.dart';
+
 import 'package:frontend/services/api_service.dart';
 
 // 1) Company settings (/company)
@@ -218,6 +224,10 @@ class BillsProvider extends ChangeNotifier {
     String? date,
     String? dateFrom,
     String? dateTo,
+    String? memberId,
+    List<String>? statuses,
+    bool includeDetails = false,
+    String scope = 'branch',
   }) async {
     isLoading = true;
     error = null;
@@ -230,6 +240,10 @@ class BillsProvider extends ChangeNotifier {
         date: date,
         dateFrom: dateFrom,
         dateTo: dateTo,
+        memberId: memberId,
+        statuses: statuses,
+        includeDetails: includeDetails,
+        scope: scope,
       );
     } catch (e) {
       error = e.toString();
@@ -355,28 +369,71 @@ class _BackofficeShellState extends State<_BackofficeShell> {
       pageIndex: 7,
       subtitle: 'Discount and promotion rules',
     ),
+    _SidebarItem(
+      label: 'Members',
+      page: 'Members Management',
+      icon: Icons.badge_outlined,
+      pageIndex: 8,
+      subtitle: 'Manage member profiles and points',
+    ),
 
     _SidebarItem(label: 'OPERATIONS / REPORTS', isHeader: true),
     _SidebarItem(
       label: 'Bills',
       page: 'Bills History',
       icon: Icons.receipt_long_outlined,
-      pageIndex: 8,
+      pageIndex: 9,
       subtitle: 'Sales history and bill details',
     ),
     _SidebarItem(
       label: 'Returns',
       page: 'Returns / Credit Notes',
       icon: Icons.assignment_return_outlined,
-      pageIndex: 9,
+      pageIndex: 10,
       subtitle: 'Track refund flow and reference invoices',
+    ),
+    _SidebarItem(
+      label: 'Reports',
+      page: 'Report Exports',
+      icon: Icons.download_outlined,
+      pageIndex: 11,
+      subtitle: 'Export CSV reports from backend',
     ),
     _SidebarItem(
       label: 'Payment',
       page: 'Payment Settings',
       icon: Icons.qr_code_2_outlined,
-      pageIndex: 10,
+      pageIndex: 12,
       subtitle: 'QR payment settings',
+    ),
+    _SidebarItem(
+      label: 'Transfers',
+      page: 'Inventory Transfer',
+      icon: Icons.local_shipping_outlined,
+      pageIndex: 13,
+      subtitle: 'โอนย้ายสินค้า HQ → รถ',
+    ),
+    _SidebarItem(
+      label: 'Cash Recon',
+      page: 'Cash Reconciliation',
+      icon: Icons.account_balance_wallet_outlined,
+      pageIndex: 14,
+      subtitle: 'ยืนยันรับเงินจากรถ',
+    ),
+    _SidebarItem(
+      label: 'Variance',
+      page: 'Stock Variance',
+      icon: Icons.compare_arrows_outlined,
+      pageIndex: 15,
+      subtitle: 'รายงานส่วนต่างสต๊อก',
+    ),
+    _SidebarItem(label: 'SUPPORT', isHeader: true),
+    _SidebarItem(
+      label: 'Support POS',
+      page: 'Support POS',
+      icon: Icons.support_agent_outlined,
+      pageIndex: 16,
+      subtitle: 'Monitor หน้าจอ Van Staff แบบ Real-time',
     ),
   ];
 
@@ -390,12 +447,47 @@ class _BackofficeShellState extends State<_BackofficeShell> {
     PartsManagementSection(),
     AddressesManagementSection(),
     PromotionsManagementSection(),
+    MembersManagementSection(),
     BillsHistorySection(),
     ReturnsHistorySection(),
+    ReportsExportSection(),
     QrPaymentSettingsSection(),
+    InventoryTransferPage(),
+    CashReconciliationPage(),
+    StockVariancePage(),
+    SupportPosPage(),
   ];
 
-  int _currentPageIndex = 0; // default to Users page
+  int _currentPageIndex = 0; // default to Users page (adjusted by role in didChangeDependencies)
+  bool _pageInitialized = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_pageInitialized) {
+      _pageInitialized = true;
+      final auth = context.read<AuthProvider>();
+      if (!auth.isSuperAdmin) {
+        // HQ Manager starts at Users (index 0) — now visible
+        _currentPageIndex = 0;
+      }
+    }
+  }
+
+  List<_SidebarItem> _getVisibleItems(AuthProvider auth) {
+    if (auth.isSuperAdmin) return _sidebarItems;
+    // HQ Manager: hide User-Branches/Company/Branches/POS (1-4), Payment (12), SUPPORT (16)
+    // Users (0) stays visible so HQ Manager can manage Van Staff accounts
+    const hiddenPageIndices = {1, 2, 3, 4, 12, 16};
+    return _sidebarItems.where((item) {
+      if (item.isHeader) {
+        if (item.label == 'SUPPORT') return false;
+        return true; // show ORGANIZATION (Users page still visible under it)
+      }
+      if (item.pageIndex == null) return true;
+      return !hiddenPageIndices.contains(item.pageIndex);
+    }).toList();
+  }
 
   String get _currentPageTitle {
     final item = _sidebarItems.firstWhere(
@@ -415,13 +507,14 @@ class _BackofficeShellState extends State<_BackofficeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.read<AuthProvider>();
+    final visibleItems = _getVisibleItems(auth);
     return Scaffold(
-      backgroundColor: AppColors.bg,
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _BackofficeSidebar(
-            items: _sidebarItems,
+            items: visibleItems,
             selectedPageIndex: _currentPageIndex,
             onSelectPage: (pageIndex) {
               setState(() {
@@ -482,12 +575,13 @@ class _BackofficeSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       width: 260,
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border(right: BorderSide(color: AppColors.border)),
+        color: cs.surface,
+        border: Border(right: BorderSide(color: cs.outlineVariant)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -498,12 +592,12 @@ class _BackofficeSidebar extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.12),
+                  color: cs.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.dashboard_customize,
-                  color: AppColors.primary,
+                  color: cs.primary,
                 ),
               ),
               const SizedBox(width: 12),
@@ -525,10 +619,10 @@ class _BackofficeSidebar extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
                     child: Text(
                       item.label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.muted,
+                        color: cs.onSurfaceVariant,
                         letterSpacing: 1.2,
                       ),
                     ),
@@ -553,7 +647,7 @@ class _BackofficeSidebar extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: isActive
-                            ? AppColors.primary.withValues(alpha: 0.12)
+                            ? cs.primary.withValues(alpha: 0.12)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -562,17 +656,13 @@ class _BackofficeSidebar extends StatelessWidget {
                           if (item.icon != null)
                             Icon(
                               item.icon,
-                              color: isActive
-                                  ? AppColors.primary
-                                  : AppColors.muted,
+                              color: isActive ? cs.primary : cs.onSurfaceVariant,
                             ),
                           if (item.icon != null) const SizedBox(width: 12),
                           Text(
                             item.label,
                             style: TextStyle(
-                              color: isActive
-                                  ? AppColors.primary
-                                  : AppColors.muted,
+                              color: isActive ? cs.primary : cs.onSurfaceVariant,
                               fontWeight: isActive
                                   ? FontWeight.bold
                                   : FontWeight.w500,
@@ -600,12 +690,13 @@ class _BackofficeTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
+    final cs = Theme.of(context).colorScheme;
+    final themeProvider = context.watch<ThemeProvider>();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(bottom: BorderSide(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        border: Border(bottom: BorderSide(color: cs.outlineVariant)),
       ),
       child: Row(
         children: [
@@ -624,9 +715,9 @@ class _BackofficeTopBar extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 4.0),
                   child: Text(
                     subtitle!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
-                      color: AppColors.muted,
+                      color: cs.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -640,24 +731,33 @@ class _BackofficeTopBar extends StatelessWidget {
             ),
             child: CircleAvatar(
               radius: 22,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-              child: const Icon(Icons.person, color: AppColors.primary),
+              backgroundColor: cs.primary.withValues(alpha: 0.12),
+              child: Icon(Icons.person, color: cs.primary),
             ),
             itemBuilder: (context) => [
-              if (auth.isAdmin)
-                const PopupMenuItem(value: 'pos', child: Text('POS')),
+              PopupMenuItem(
+                value: 'theme',
+                child: Row(
+                  children: [
+                    Icon(
+                      themeProvider.isDark ? Icons.dark_mode : Icons.light_mode,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(themeProvider.isDark ? 'Dark Mode' : 'Light Mode'),
+                  ],
+                ),
+              ),
               const PopupMenuItem(value: 'logout', child: Text('ออกจากระบบ')),
             ],
             onSelected: (value) async {
-              if (value == 'logout') {
+              if (value == 'theme') {
+                context.read<ThemeProvider>().toggle();
+              } else if (value == 'logout') {
                 await context.read<AuthProvider>().logout();
+                if (!context.mounted) return;
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  (route) => false,
-                );
-              } else if (value == 'pos') {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const HomeScreen()),
                   (route) => false,
                 );
               }

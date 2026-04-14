@@ -27,7 +27,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: false,
-		MaxAge: 12 * time.Hour,
+		MaxAge:           12 * time.Hour,
 	}))
 	r.Use(gin.Logger(), gin.Recovery())
 
@@ -44,11 +44,11 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	healthHandler := handlers.NewHealthHandler(db)
 	r.GET("/health", healthHandler.Health)
 
-		// ---- Mock test endpoint ----
+	// ---- Mock test endpoint ----
 	r.GET("/test", func(c *gin.Context) {
-			c.JSON(200, gin.H{
-					"message": "welcome",
-			})
+		c.JSON(200, gin.H{
+			"message": "welcome",
+		})
 	})
 
 	// Repositories needed for auth handler
@@ -61,6 +61,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	authGroup := r.Group("/auth")
 	{
 		authGroup.POST("/login", authHandler.Login)
+		authGroup.POST("/verify-password", authHandler.VerifyPassword)
 		authGroup.POST("/logout", authMw.RequireAuth(), authHandler.Logout)
 		authGroup.GET("/me", authMw.RequireAuth(), authHandler.Me)
 	}
@@ -111,10 +112,12 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	}
 
 	billRepo := repository.NewBillRepository(db)
+	returnNoteRepo := repository.NewReturnNoteRepository(db)
 	companyRepo := repository.NewCompanyRepository(db)
 	promotionRepo := repository.NewPromotionRepository(db)
 	addressRepo := repository.NewAddressRepository(db)
 	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo, partRepo, memberRepo, companyRepo, promotionRepo, addressRepo)
+	returnNotesHandler := handlers.NewReturnNotesHandler(returnNoteRepo, billRepo, memberRepo, branchRepo, posRepo)
 	bills := r.Group("/bills")
 	bills.Use(authMw.RequirePermission("bills", "read"))
 	// GET endpoints allow access without posId/branchId (for admin users)
@@ -131,6 +134,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		billsWrite.PUT("/:id/add-item", billsHandler.AddItem)                     // add item to bill by part code
 		billsWrite.PUT("/:id/add-item-by-barcode", billsHandler.AddItemByBarcode) // add item to bill by barcode
 		billsWrite.PUT("/:id/remove-item", billsHandler.RemoveItem)               // remove item from bill
+		billsWrite.PUT("/:id/update-item-price", billsHandler.UpdateItemPrice)    // update item line price in bill
 		billsWrite.PUT("/:id/add-discount", billsHandler.AddDiscount)             // apply discount to bill
 		billsWrite.PUT("/:id/remove-discount", billsHandler.RemoveDiscount)       // remove discount from bill
 		billsWrite.PUT("/:id/add-member-by-phone", billsHandler.AddMemberByPhone) // assign member to bill by phone number
@@ -145,6 +149,20 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	billsDelete.Use(middleware.RequirePOSBranch()) // Bills endpoints require POS session with branchId and posId
 	{
 		billsDelete.DELETE("/:id", billsHandler.Delete) // delete bill permanently
+	}
+
+	returns := r.Group("/returns")
+	returns.Use(authMw.RequirePermission("bills", "read"))
+	{
+		returns.GET("", returnNotesHandler.List)
+		returns.GET("/reference/:billId", returnNotesHandler.GetReferenceBill)
+		returns.GET("/:id", returnNotesHandler.Get)
+	}
+	returnsWrite := r.Group("/returns")
+	returnsWrite.Use(authMw.RequirePermission("bills", "write"))
+	returnsWrite.Use(middleware.RequirePOSBranch())
+	{
+		returnsWrite.POST("", returnNotesHandler.Create)
 	}
 
 	// Reports (CSV exports)
@@ -293,6 +311,88 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		userBranchesWrite.POST("", userBranchHandler.Create)
 		userBranchesWrite.DELETE("/:user_id/:branch_id", userBranchHandler.Delete)
 	}
+
+	// Inventory Transfer
+	transferRepo := repository.NewInventoryTransferRepository(db)
+	stockCountRepo := repository.NewStockCountRepository(db)
+	dailyCloseRepo := repository.NewDailyCloseRepository(db)
+	cashReconRepo := repository.NewCashReconciliationRepository(db)
+
+	transferHandler := handlers.NewInventoryTransferHandler(transferRepo, branchRepo)
+	stockCountHandler := handlers.NewStockCountHandler(stockCountRepo, branchRepo)
+	dailyCloseHandler := handlers.NewDailyCloseHandler(dailyCloseRepo, branchRepo)
+	cashReconHandler := handlers.NewCashReconciliationHandler(cashReconRepo, dailyCloseRepo)
+	stockVarianceHandler := handlers.NewStockVarianceHandler(stockCountRepo)
+
+	transfersRead := r.Group("/transfers")
+	transfersRead.Use(authMw.RequirePermission("transfers", "read"))
+	{
+		transfersRead.GET("", transferHandler.List)
+		transfersRead.GET("/:id", transferHandler.GetByID)
+	}
+	transfersWrite := r.Group("/transfers")
+	transfersWrite.Use(authMw.RequirePermission("transfers", "write"))
+	{
+		transfersWrite.POST("", transferHandler.Create)
+		transfersWrite.PUT("/:id/receive", transferHandler.Receive)
+		transfersWrite.PUT("/:id/cancel", transferHandler.Cancel) // van_staff can cancel own requests
+	}
+	transfersApprove := r.Group("/transfers")
+	transfersApprove.Use(authMw.RequirePermission("transfers", "approve"))
+	{
+		transfersApprove.PUT("/:id/approve", transferHandler.Approve)
+		transfersApprove.PUT("/:id/dispatch", transferHandler.Dispatch)
+		transfersApprove.PUT("/:id/acknowledge", transferHandler.Acknowledge)
+	}
+
+	// Stock Count
+	stockCountsRead := r.Group("/stock-counts")
+	stockCountsRead.Use(authMw.RequirePermission("stock_count", "read"))
+	{
+		stockCountsRead.GET("", stockCountHandler.List)
+		stockCountsRead.GET("/:id", stockCountHandler.GetByID)
+	}
+	stockCountsWrite := r.Group("/stock-counts")
+	stockCountsWrite.Use(authMw.RequirePermission("stock_count", "write"))
+	{
+		stockCountsWrite.POST("", stockCountHandler.Create)
+		stockCountsWrite.PUT("/:id/items", stockCountHandler.UpdateItems)
+		stockCountsWrite.PUT("/:id/submit", stockCountHandler.Submit)
+	}
+
+	// Daily Close
+	dailyClosesRead := r.Group("/daily-closes")
+	dailyClosesRead.Use(authMw.RequirePermission("daily_close", "read"))
+	{
+		dailyClosesRead.GET("", dailyCloseHandler.List)
+		dailyClosesRead.GET("/summary", dailyCloseHandler.GetSummary)
+		dailyClosesRead.GET("/:id", dailyCloseHandler.GetByID)
+	}
+	dailyClosesWrite := r.Group("/daily-closes")
+	dailyClosesWrite.Use(authMw.RequirePermission("daily_close", "write"))
+	{
+		dailyClosesWrite.POST("", dailyCloseHandler.Create)
+	}
+
+	// Cash Reconciliation
+	cashReconsRead := r.Group("/cash-reconciliations")
+	cashReconsRead.Use(authMw.RequirePermission("cash_reconciliation", "read"))
+	{
+		cashReconsRead.GET("", cashReconHandler.List)
+		cashReconsRead.GET("/:id", cashReconHandler.GetByID)
+	}
+	cashReconsWrite := r.Group("/cash-reconciliations")
+	cashReconsWrite.Use(authMw.RequirePermission("cash_reconciliation", "write"))
+	{
+		cashReconsWrite.POST("", cashReconHandler.Create)
+	}
+
+	// Stock Variance Report
+	reports.GET("/stock-variance", authMw.RequirePermission("reports_variance", "read"), stockVarianceHandler.GetVariance)
+
+	// POS Mirror WebSocket (no auth middleware — handler authenticates via ?token= query param)
+	posMirrorHandler := handlers.NewPosMirrorHandler(sessionRepo, userRepo)
+	r.GET("/ws/pos-mirror", posMirrorHandler.HandleWS)
 
 	// Fallback 404
 	r.NoRoute(func(c *gin.Context) {

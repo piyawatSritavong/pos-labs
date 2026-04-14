@@ -1,7 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
-import 'package:frontend/services/return_note_storage.dart';
+import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -14,12 +17,43 @@ class CartSummarySection extends StatefulWidget {
 
 class _CartSummarySectionState extends State<CartSummarySection> {
   final TextEditingController _discountController = TextEditingController();
+  final TextEditingController _memberPhoneController = TextEditingController();
+  Map<String, TextEditingController>? _itemPriceControllers;
+  Map<String, FocusNode>? _itemPriceFocusNodes;
+  Map<String, double>? _itemBaseUnitPrices;
+  Map<String, TextEditingController>? _qtyControllers;
+  Map<String, FocusNode>? _qtyFocusNodes;
   bool _isPercentMode = true; // true = %, false = บาท
   double _discountAmount = 0.0;
+  String _lastDiscountSyncSignature = '';
+
+  Map<String, TextEditingController> get _safeItemPriceControllers =>
+      _itemPriceControllers ??= <String, TextEditingController>{};
+  Map<String, FocusNode> get _safeItemPriceFocusNodes =>
+      _itemPriceFocusNodes ??= <String, FocusNode>{};
+  Map<String, TextEditingController> get _safeQtyControllers =>
+      _qtyControllers ??= <String, TextEditingController>{};
+  Map<String, FocusNode> get _safeQtyFocusNodes =>
+      _qtyFocusNodes ??= <String, FocusNode>{};
+  Map<String, double> get _safeItemBaseUnitPrices =>
+      _itemBaseUnitPrices ??= <String, double>{};
 
   @override
   void dispose() {
     _discountController.dispose();
+    _memberPhoneController.dispose();
+    for (final controller in _safeItemPriceControllers.values) {
+      controller.dispose();
+    }
+    for (final focusNode in _safeItemPriceFocusNodes.values) {
+      focusNode.dispose();
+    }
+    for (final c in _safeQtyControllers.values) {
+      c.dispose();
+    }
+    for (final f in _safeQtyFocusNodes.values) {
+      f.dispose();
+    }
     super.dispose();
   }
 
@@ -27,6 +61,272 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     if (v == null) return 0.0;
     if (v is num) return v.toDouble();
     return double.tryParse(v.toString()) ?? 0.0;
+  }
+
+  String _itemKey(_BillLineItem item) {
+    return '${item.partCode ?? item.code}|${item.addressCode ?? ''}|${item.isReturn}';
+  }
+
+  void _syncItemPriceEditors(List<_BillLineItem> items) {
+    final itemPriceControllers = _safeItemPriceControllers;
+    final itemPriceFocusNodes = _safeItemPriceFocusNodes;
+    final itemBaseUnitPrices = _safeItemBaseUnitPrices;
+    final activeKeys = items
+        .where((item) => !item.isReturn)
+        .map(_itemKey)
+        .toSet();
+
+    final staleKeys = itemPriceControllers.keys
+        .where((key) => !activeKeys.contains(key))
+        .toList();
+    for (final key in staleKeys) {
+      itemPriceControllers.remove(key)?.dispose();
+      itemPriceFocusNodes.remove(key)?.dispose();
+      itemBaseUnitPrices.remove(key);
+    }
+
+    for (final item in items.where((entry) => !entry.isReturn)) {
+      final key = _itemKey(item);
+      final controller = itemPriceControllers.putIfAbsent(
+        key,
+        () => TextEditingController(),
+      );
+      final focusNode = itemPriceFocusNodes.putIfAbsent(key, () => FocusNode());
+      itemBaseUnitPrices.putIfAbsent(key, () => item.price);
+      final lineTotal = (item.price * item.qty).toStringAsFixed(2);
+      if (!focusNode.hasFocus && controller.text != lineTotal) {
+        controller.text = lineTotal;
+      }
+    }
+  }
+
+  void _syncQtyEditors(List<_BillLineItem> items) {
+    final controllers = _safeQtyControllers;
+    final focusNodes = _safeQtyFocusNodes;
+    final activeKeys = items.where((i) => !i.isReturn).map(_itemKey).toSet();
+
+    for (final key in controllers.keys
+        .where((k) => !activeKeys.contains(k))
+        .toList()) {
+      controllers.remove(key)?.dispose();
+      focusNodes.remove(key)?.dispose();
+    }
+
+    for (final item in items.where((i) => !i.isReturn)) {
+      final key = _itemKey(item);
+      final controller = controllers.putIfAbsent(
+          key, () => TextEditingController(text: '${item.qty}'));
+      focusNodes.putIfAbsent(key, () => FocusNode());
+      final expected = '${item.qty}';
+      if (!focusNodes[key]!.hasFocus && controller.text != expected) {
+        controller.text = expected;
+      }
+    }
+  }
+
+  Future<void> _setItemQty(
+    BuildContext context,
+    _BillLineItem item,
+    int newQty,
+  ) async {
+    if (item.isReturn || item.partCode == null || item.addressCode == null) {
+      return;
+    }
+    final currentQty = item.qty;
+    if (newQty == currentQty) return;
+
+    final auth = context.read<AuthProvider>();
+    final bill = context.read<BillProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final token = auth.token;
+    if (token == null) {
+      messenger.showSnackBar(
+          const SnackBar(content: Text('token หาย กรุณา login ใหม่')));
+      return;
+    }
+
+    try {
+      if (newQty <= 0) {
+        PosMirrorService.current?.notifyLastAction('qty_remove');
+        await bill.removeItem(
+          token: token,
+          partCode: item.partCode!,
+          addressCode: item.addressCode!,
+          qty: 1,
+          isRemoveAll: true,
+        );
+      } else if (newQty > currentQty) {
+        PosMirrorService.current?.notifyLastAction('qty_add');
+        await bill.addItem(
+          token: token,
+          partCode: item.partCode!,
+          addressCode: item.addressCode!,
+          qty: newQty - currentQty,
+        );
+      } else {
+        PosMirrorService.current?.notifyLastAction('qty_remove');
+        await bill.removeItem(
+          token: token,
+          partCode: item.partCode!,
+          addressCode: item.addressCode!,
+          qty: currentQty - newQty,
+          isRemoveAll: false,
+        );
+      }
+    } catch (e) {
+      messenger
+          .showSnackBar(SnackBar(content: Text('อัปเดตจำนวนสินค้าไม่สำเร็จ: $e')));
+    }
+  }
+
+  double _computeDiscountPreviewAmount(
+    double subtotal,
+    double inputValue,
+    bool isPercentMode,
+  ) {
+    final rawAmount = isPercentMode
+        ? subtotal * (inputValue / 100.0)
+        : inputValue;
+    return rawAmount.clamp(0.0, subtotal).toDouble();
+  }
+
+  String _friendlyItemPriceError(Object error) {
+    final message = error.toString();
+    if (message.contains('price_below_minimum')) {
+      return 'ลดราคาได้ไม่เกิน 10% ของยอดรายการนี้';
+    }
+    if (message.contains('invalid_line_total')) {
+      return 'กรุณากรอกราคามากกว่า 0';
+    }
+    return 'แก้ไขราคาไม่สำเร็จ: $error';
+  }
+
+  Future<void> _increaseItemQty(
+    BuildContext context,
+    _BillLineItem item,
+  ) async {
+    if (item.isReturn || item.partCode == null || item.addressCode == null) {
+      return;
+    }
+    final auth = context.read<AuthProvider>();
+    final bill = context.read<BillProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final token = auth.token;
+    if (token == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      );
+      return;
+    }
+
+    PosMirrorService.current?.notifyLastAction('qty_add');
+    try {
+      await bill.addItem(
+        token: token,
+        partCode: item.partCode!,
+        addressCode: item.addressCode!,
+        qty: 1,
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('เพิ่มจำนวนสินค้าไม่สำเร็จ: $e')),
+      );
+    }
+  }
+
+  Future<void> _decreaseItemQty(
+    BuildContext context,
+    _BillLineItem item,
+  ) async {
+    if (item.isReturn || item.partCode == null || item.addressCode == null) {
+      return;
+    }
+    final auth = context.read<AuthProvider>();
+    final bill = context.read<BillProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final token = auth.token;
+    if (token == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      );
+      return;
+    }
+
+    PosMirrorService.current?.notifyLastAction('qty_remove');
+    try {
+      await bill.removeItem(
+        token: token,
+        partCode: item.partCode!,
+        addressCode: item.addressCode!,
+        qty: 1,
+        isRemoveAll: item.qty <= 1,
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('ลดจำนวนสินค้าไม่สำเร็จ: $e')),
+      );
+    }
+  }
+
+  Future<void> _updateLineTotalPrice(
+    BuildContext context,
+    _BillLineItem item,
+  ) async {
+    if (item.isReturn || item.partCode == null || item.addressCode == null) {
+      return;
+    }
+    final key = _itemKey(item);
+    final controller = _safeItemPriceControllers[key];
+    if (controller == null) {
+      return;
+    }
+
+    final raw = controller.text.trim().replaceAll(',', '');
+    final currentLineTotal = item.price * item.qty;
+    if (raw.isEmpty) {
+      controller.text = currentLineTotal.toStringAsFixed(2);
+      return;
+    }
+
+    final parsed = double.tryParse(raw);
+    if (parsed == null) {
+      controller.text = currentLineTotal.toStringAsFixed(2);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('รูปแบบราคาไม่ถูกต้อง')));
+      return;
+    }
+
+    if ((parsed - currentLineTotal).abs() < 0.0001) {
+      controller.text = currentLineTotal.toStringAsFixed(2);
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    final bill = context.read<BillProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final token = auth.token;
+    if (token == null) {
+      controller.text = currentLineTotal.toStringAsFixed(2);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      );
+      return;
+    }
+
+    try {
+      await bill.updateItemLineTotal(
+        token: token,
+        partCode: item.partCode!,
+        addressCode: item.addressCode!,
+        lineTotal: parsed,
+      );
+    } catch (e) {
+      controller.text = currentLineTotal.toStringAsFixed(2);
+      messenger.showSnackBar(
+        SnackBar(content: Text(_friendlyItemPriceError(e))),
+      );
+    }
   }
 
   List<_BillLineItem> _mapItems(
@@ -47,6 +347,12 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       final addressCode =
           item['addressCode']?.toString() ?? item['storeCode']?.toString();
 
+      final totalStock =
+          (item['totalStock'] ?? item['total_stock'] ?? 0) is num
+              ? ((item['totalStock'] ?? item['total_stock'] ?? 0) as num)
+                  .toInt()
+              : 0;
+
       return _BillLineItem(
         name:
             item['nameTh']?.toString() ??
@@ -59,6 +365,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         partCode: partCode,
         addressCode: addressCode,
         isReturn: false,
+        totalStock: totalStock,
       );
     }).toList();
 
@@ -93,11 +400,11 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       return;
     }
 
+    PosMirrorService.current?.notifyLastAction('hold');
     try {
-      await bill.switchBill(token: token);
-      messenger.showSnackBar(
-        const SnackBar(content: Text('พักบิลและสร้างบิลใหม่แล้ว')),
-      );
+      await bill.holdCurrentBill(token: token);
+      bill.resetCurrentBillState();
+      messenger.showSnackBar(const SnackBar(content: Text('พักบิลแล้ว')));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('พักบิลไม่สำเร็จ: $e')));
     }
@@ -115,8 +422,46 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       return;
     }
 
-    await bill.clearBill(token: token);
-    messenger.showSnackBar(const SnackBar(content: Text('ล้างตะกร้าแล้ว')));
+    PosMirrorService.current?.notifyLastAction('clear');
+    try {
+      await bill.clearBill(token: token);
+      messenger.showSnackBar(const SnackBar(content: Text('ล้างตะกร้าแล้ว')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('ล้างบิลไม่สำเร็จ: $e')));
+    }
+  }
+
+  Future<void> _attachMemberToBill(BuildContext context) async {
+    final auth = context.read<AuthProvider>();
+    final bill = context.read<BillProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final token = auth.token;
+    if (token == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      );
+      return;
+    }
+
+    final phone = _memberPhoneController.text.trim();
+    if (phone.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('กรุณากรอกเบอร์โทรสมาชิก')),
+      );
+      return;
+    }
+
+    try {
+      await bill.assignMemberByPhone(token: token, phone: phone);
+      if (!mounted) return;
+      _memberPhoneController.clear();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('ผูกสมาชิกเข้าบิลแล้ว')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('ผูกสมาชิกไม่สำเร็จ: $e')));
+    }
   }
 
   void _applyQuickDiscount(
@@ -124,13 +469,15 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     double percent,
     double subtotal,
   ) {
+    PosMirrorService.current?.notifyLastAction('discount_${percent.toInt()}');
     final bill = context.read<BillProvider>();
+    final nextAmount = _computeDiscountPreviewAmount(subtotal, percent, true);
     setState(() {
       _isPercentMode = true;
       _discountController.text = percent.toStringAsFixed(0);
-      _discountAmount = subtotal * (percent / 100.0);
+      _discountAmount = nextAmount;
     });
-    bill.applyLocalDiscount(discountAmount: _discountAmount);
+    bill.applyLocalDiscount(discountAmount: nextAmount);
   }
 
   void _recalculateDiscount(BuildContext context, double subtotal) {
@@ -149,18 +496,161 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       return;
     }
 
+    final nextAmount = _computeDiscountPreviewAmount(
+      subtotal,
+      parsed,
+      _isPercentMode,
+    );
     setState(() {
-      if (_isPercentMode) {
-        _discountAmount = subtotal * (parsed / 100.0);
-      } else {
-        _discountAmount = parsed;
-      }
+      _discountAmount = nextAmount;
     });
-    bill.applyLocalDiscount(discountAmount: _discountAmount);
+    bill.applyLocalDiscount(discountAmount: nextAmount);
   }
 
-  Future<void> _mockSetManualDiscount() async {
-    await Future.delayed(const Duration(milliseconds: 350));
+  String _formatDiscountInput(double value) {
+    if (value <= 0) {
+      return '';
+    }
+    final rounded = value.roundToDouble();
+    if ((value - rounded).abs() < 0.0001) {
+      return rounded.toStringAsFixed(0);
+    }
+    return value.toStringAsFixed(2);
+  }
+
+  void _syncDiscountInputFromBill(BillProvider bill) {
+    final manual = bill.manualDiscountDetail;
+    final signature = [
+      bill.billId ?? '',
+      manual?['promotionCode']?.toString() ?? '',
+      manual?['unit']?.toString() ?? '',
+      manual?['amount']?.toString() ?? '',
+      bill.subtotal.toStringAsFixed(2),
+      _discountController.text.trim(),
+      _isPercentMode.toString(),
+    ].join('|');
+    if (signature == _lastDiscountSyncSignature) {
+      return;
+    }
+    _lastDiscountSyncSignature = signature;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final hasManual = manual != null;
+      if (hasManual) {
+        final nextPercentMode = bill.isManualDiscountPercentMode;
+        final inputValue = bill.manualDiscountInputValue;
+        final nextAmount = _computeDiscountPreviewAmount(
+          bill.subtotal,
+          inputValue,
+          nextPercentMode,
+        );
+        final nextText = _formatDiscountInput(inputValue);
+        final requiresStateSync =
+            _isPercentMode != nextPercentMode ||
+            (_discountAmount - nextAmount).abs() >= 0.01 ||
+            _discountController.text != nextText;
+
+        if (requiresStateSync) {
+          setState(() {
+            _isPercentMode = nextPercentMode;
+            _discountAmount = nextAmount;
+            if (_discountController.text != nextText) {
+              _discountController.text = nextText;
+            }
+          });
+        }
+        return;
+      }
+
+      final raw = _discountController.text.trim().replaceAll(',', '');
+      if (raw.isEmpty) {
+        if (_discountAmount != 0.0) {
+          setState(() {
+            _discountAmount = 0.0;
+          });
+        }
+        return;
+      }
+
+      final parsed = double.tryParse(raw);
+      if (parsed == null) {
+        return;
+      }
+
+      final nextAmount = _computeDiscountPreviewAmount(
+        bill.subtotal,
+        parsed,
+        _isPercentMode,
+      );
+      if ((_discountAmount - nextAmount).abs() >= 0.01) {
+        setState(() {
+          _discountAmount = nextAmount;
+        });
+      }
+      if ((bill.discount - nextAmount).abs() >= 0.01) {
+        bill.applyLocalDiscount(discountAmount: nextAmount);
+      }
+    });
+  }
+
+  Future<bool> _persistManualDiscount(
+    BuildContext context, {
+    required String token,
+  }) async {
+    final bill = context.read<BillProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (bill.items.isEmpty) {
+      return true;
+    }
+
+    final raw = _discountController.text.trim().replaceAll(',', '');
+    if (raw.isEmpty) {
+      try {
+        await bill.clearManualDiscount(token: token);
+        return true;
+      } catch (e) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('ลบส่วนลดไม่สำเร็จ: $e')),
+        );
+        return false;
+      }
+    }
+
+    final parsed = double.tryParse(raw);
+    if (parsed == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('รูปแบบส่วนลดไม่ถูกต้อง')),
+      );
+      return false;
+    }
+
+    if (parsed <= 0) {
+      try {
+        await bill.clearManualDiscount(token: token);
+        return true;
+      } catch (e) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('ลบส่วนลดไม่สำเร็จ: $e')),
+        );
+        return false;
+      }
+    }
+
+    try {
+      await bill.setManualDiscount(
+        token: token,
+        isPercentMode: _isPercentMode,
+        inputValue: parsed,
+      );
+      return true;
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('บันทึกส่วนลดไม่สำเร็จ: $e')),
+      );
+      return false;
+    }
   }
 
   void _resetPaymentState() {
@@ -168,10 +658,12 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       _discountAmount = 0.0;
       _isPercentMode = true;
       _discountController.clear();
+      _lastDiscountSyncSignature = '';
     });
   }
 
   Future<void> _handleConfirmPayment(BuildContext context) async {
+    PosMirrorService.current?.notifyLastAction('pay');
     final bill = context.read<BillProvider>();
     final messenger = ScaffoldMessenger.of(context);
     final auth = context.read<AuthProvider>();
@@ -183,112 +675,104 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       return;
     }
 
+    final discountSaved = await _persistManualDiscount(context, token: token);
+    if (!discountSaved || !mounted) {
+      return;
+    }
+
     final total = bill.netSettlementAmount;
     final hasPurchaseItems = bill.items.isNotEmpty;
     final hasReturnItems = bill.hasReturnItems;
     String returnSettleMode = 'none';
     final referenceBillId = bill.returnReferenceBillId;
-    final returnLinesSnapshot = bill.returnLines
-        .map((line) => Map<String, dynamic>.from(line))
-        .toList();
-    final returnCreditSnapshot = bill.returnCreditAmount;
+    _PaymentSelection? paymentSelection;
 
     if (hasReturnItems && total < 0) {
       final settle = await showDialog<_ReturnSettlement>(
         context: context,
         barrierDismissible: false,
-        builder: (_) => _ReturnSettlementDialog(refundAmount: total.abs()),
+        builder: (_) => _ReturnSettlementDialog(
+          refundAmount: total.abs(),
+          hasMember: bill.assignedMember != null,
+        ),
       );
       if (settle == null || !mounted) return;
       returnSettleMode = settle == _ReturnSettlement.credit
-          ? 'credit'
+          ? 'customer_credit'
           : 'cash_refund';
+    } else if (hasReturnItems) {
+      returnSettleMode = 'exchange';
     }
 
-    if (total > 0) {
-      final selectedMethod = await showDialog<PaymentMethod>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const _PaymentMethodDialog(),
-      );
-
-      if (selectedMethod == null || !mounted) return;
-
-      // If QR, show QR payment dialog
-      if (selectedMethod == PaymentMethod.qr) {
-        // แจ้งให้ฝั่ง CustomerScreen แสดงหน้าสแกน QR
-        bill.setAwaitingQrPayment(true);
-
-        if (!mounted) return;
-
-        // ยืนยันจากพนักงานว่าลูกค้าจ่ายเงินผ่าน QR ครบแล้ว
-        final confirmed = await showDialog<bool>(
+    if (hasPurchaseItems) {
+      if (total > 0) {
+        final selectedMethod = await showDialog<_PaymentSelection>(
           context: context,
           barrierDismissible: false,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('ลูกค้าชำระเงินเรียบร้อย'),
-            content: Text(
-              'ลูกค้าชำระเงินผ่าน QR Code ตามยอด ฿${total.toStringAsFixed(2)} เรียบร้อยแล้วหรือไม่?',
+          builder: (_) => _PaymentMethodDialog(total: total),
+        );
+
+        if (selectedMethod == null || !mounted) return;
+        paymentSelection = selectedMethod;
+
+        if (selectedMethod.kind == _PaymentKind.transfer) {
+          bill.setAwaitingQrPayment(true);
+
+          if (!mounted) return;
+
+          final confirmed = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('ลูกค้าชำระเงินเรียบร้อย'),
+              content: Text(
+                'ลูกค้าชำระเงินผ่านการโอน ตามยอด ฿${total.toStringAsFixed(2)} เรียบร้อยแล้วหรือไม่?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('ไม่ใช่'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('ใช่'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('ไม่ใช่'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: const Text('ใช่'),
-              ),
-            ],
-          ),
-        );
+          );
 
-        if (!mounted) return;
+          if (!mounted) return;
 
-        if (confirmed != true) {
-          // ยกเลิกการชำระเงินผ่าน QR ปิดสถานะรอชำระที่ฝั่งลูกค้า
+          if (confirmed != true) {
+            bill.setAwaitingQrPayment(false);
+            return;
+          }
+
           bill.setAwaitingQrPayment(false);
-          return;
-        }
+        } else if (selectedMethod.kind == _PaymentKind.cash) {
+          bill.setAwaitingCashPayment(value: true, amount: total);
 
-        // ลูกค้าชำระเงินผ่าน QR เรียบร้อย ปิด popup ที่ฝั่งลูกค้า
-        bill.setAwaitingQrPayment(false);
-      } else if (selectedMethod == PaymentMethod.cash) {
-        // แจ้งฝั่ง CustomerScreen ให้แสดง popup ชำระเงินสด
-        bill.setAwaitingCashPayment(value: true, amount: total);
+          if (!mounted) return;
 
-        if (!mounted) return;
+          final confirmed = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogContext) => _CashConfirmDialog(total: total),
+          );
 
-        // ยืนยันจากพนักงานโดยกรอกจำนวนเงินที่ลูกค้าชำระ และแสดงเงินทอนแบบเรียลไทม์
-        final confirmed = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) => _CashConfirmDialog(total: total),
-        );
+          if (!mounted) return;
 
-        if (!mounted) return;
+          if (confirmed != true) {
+            bill.setAwaitingCashPayment(value: false);
+            return;
+          }
 
-        if (confirmed != true) {
-          // ยกเลิกการชำระเงินสด ปิดสถานะรอชำระเงินที่ฝั่งลูกค้า
           bill.setAwaitingCashPayment(value: false);
-          return;
         }
-
-        // ลูกค้าชำระเงินสดเรียบร้อย ปิด popup ที่ฝั่งลูกค้า
-        bill.setAwaitingCashPayment(value: false);
-      }
-    }
-
-    if (!mounted) return;
-
-    var usedMock = false;
-    try {
-      await bill.setManualDiscount(token: token, promotionCode: 'PROMO001');
-    } catch (e) {
-      usedMock = true;
-      await _mockSetManualDiscount();
-      if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text('API ยังไม่พร้อม: $e')));
+      } else {
+        paymentSelection = _PaymentSelection.exchange(
+          netSettlementAmount: total,
+        );
       }
     }
 
@@ -297,44 +781,61 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     final paid = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => ReceiptDialog(
+      builder: (dialogContext) => _ReceiptDialog(
         settlementTotal: total,
         hasPurchaseItems: hasPurchaseItems,
+        paymentSelection: paymentSelection,
+        returnSettleMode: returnSettleMode == 'none' ? null : returnSettleMode,
       ),
     );
 
     if (paid == true && mounted) {
-      if (hasReturnItems && referenceBillId != null) {
-        await ReturnNoteStorage.appendNote({
-          'id': 'CN-${DateTime.now().millisecondsSinceEpoch}',
-          'referenceBillId': referenceBillId,
-          'createdAt': DateTime.now().toIso8601String(),
-          'purchaseTotal': bill.total,
-          'returnCreditTotal': returnCreditSnapshot,
-          'netTotal': total,
-          'settlementMode': returnSettleMode,
-          'lines': returnLinesSnapshot,
-        });
+      try {
+        if (hasPurchaseItems &&
+            paymentSelection != null &&
+            bill.billId != null) {
+          await bill.payCurrentBill(
+            token: token,
+            paymentMethod: paymentSelection.backendMethod,
+            paymentMeta: paymentSelection.paymentMeta,
+          );
+        }
+
+        if (hasReturnItems && referenceBillId != null) {
+          await bill.createReturnNote(
+            token: token,
+            settlementMode: returnSettleMode == 'none'
+                ? 'exchange'
+                : returnSettleMode,
+            purchaseBillId: hasPurchaseItems ? bill.billId : null,
+            paymentMethod: paymentSelection?.backendMethod,
+            paymentMeta: paymentSelection?.paymentMeta,
+          );
+        }
+
+        bill.clearReturnSession();
+        _resetPaymentState();
+        bill.resetCurrentBillState();
+      } catch (e) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('บันทึกรายการชำระเงินไม่สำเร็จ: $e')),
+        );
+        return;
       }
-      bill.clearReturnSession();
-      _resetPaymentState();
     }
 
     if (mounted) {
       bill.setShowThankYouOverlay(false);
-    }
-
-    if (usedMock && mounted) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('แสดงใบเสร็จด้วยข้อมูล mock')),
-      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final bill = context.watch<BillProvider>();
+    _syncDiscountInputFromBill(bill);
     final items = _mapItems(bill.items, bill.returnLines);
+    _syncItemPriceEditors(items);
+    _syncQtyEditors(items);
     final subtotal = bill.subtotal;
     final taxRate = bill.taxRate;
     final tax = bill.tax;
@@ -342,288 +843,666 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     final returnCredit = bill.returnCreditAmount;
     final total = bill.netSettlementAmount;
     final hasSettlementItems = bill.items.isNotEmpty || bill.hasReturnItems;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSizes.radius),
-        border: Border.all(color: AppColors.border),
-        boxShadow: AppShadows.soft,
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'ตะกร้าสินค้า',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                '${items.length} รายการ',
-                style: const TextStyle(color: AppColors.muted),
-              ),
-            ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact =
+            constraints.maxWidth < 400 || constraints.maxHeight < 520;
+        final isTightHeight = constraints.maxHeight < 480;
+        final panelPadding = isTightHeight ? 14.0 : (isCompact ? 16.0 : 20.0);
+        final sectionGap = isTightHeight ? 6.0 : (isCompact ? 8.0 : 12.0);
+        final summaryRowGap = isTightHeight ? 6.0 : 8.0;
+        final bottomSectionMaxHeight = isTightHeight
+            ? 170.0
+            : (isCompact ? 220.0 : 320.0);
+        final useSplitLayout = constraints.maxWidth >= 760;
+        final quickDiscountButtonStyle = OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          minimumSize: const Size(0, 34),
+          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          visualDensity: VisualDensity.compact,
+        );
+        final itemListPanel = Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.colorBorder),
           ),
-          if (bill.hasReturnItems) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.danger.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: AppColors.danger.withValues(alpha: 0.25),
-                ),
-              ),
-              child: Row(
+          padding: EdgeInsets.all(isTightHeight ? 10 : 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
                 children: [
                   Expanded(
+                    flex: 6,
                     child: Text(
-                      'คืนจากบิล ${bill.returnReferenceBillId ?? '-'} • ${bill.returnLineCount} ชิ้น',
-                      style: const TextStyle(
-                        color: AppColors.danger,
+                      'ชื่อ',
+                      style: TextStyle(
+                        color: context.colorMuted,
                         fontWeight: FontWeight.w600,
+                        fontSize: 12,
                       ),
                     ),
                   ),
-                  TextButton(
-                    onPressed: bill.isLoading ? null : bill.clearReturnSession,
-                    child: const Text('ล้างรายการคืน'),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      'จำนวน',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: context.colorMuted,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      'ราคา',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: context.colorMuted,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-          Expanded(
-            child: items.isEmpty
-                ? const Center(
-                    child: Text(
-                      'ยังไม่มีสินค้าในตะกร้า',
-                      style: TextStyle(color: AppColors.muted),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: items.length,
-                    padding: const EdgeInsets.only(top: 8, bottom: 8),
-                    itemBuilder: (context, index) {
-                      final it = items[index];
-                      final lineTotal = (it.price * it.qty).toStringAsFixed(2);
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
+              const SizedBox(height: 8),
+              Divider(
+                height: 1,
+                color: context.colorBorder.withValues(alpha: 0.7),
+              ),
+              SizedBox(height: sectionGap),
+              Expanded(
+                child: items.isEmpty
+                    ? Center(
+                        child: Text(
+                          'ยังไม่มีสินค้าในตะกร้า',
+                          style: TextStyle(color: context.colorMuted),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: items.length,
+                        padding: EdgeInsets.symmetric(vertical: sectionGap),
+                        itemBuilder: (context, index) {
+                          final it = items[index];
+                          final lineTotal = (it.price * it.qty).toStringAsFixed(
+                            2,
+                          );
+                          final itemKey = _itemKey(it);
+                          final priceController =
+                              _safeItemPriceControllers[itemKey];
+                          final priceFocusNode =
+                              _safeItemPriceFocusNodes[itemKey];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 6,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${it.name} • ${it.code}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      if (!it.isReturn &&
+                                          it.totalStock > 0 &&
+                                          it.qty >= it.totalStock)
+                                        const Row(
+                                          children: [
+                                            Icon(
+                                              Icons.warning_amber_rounded,
+                                              size: 12,
+                                              color: Colors.orange,
+                                            ),
+                                            SizedBox(width: 3),
+                                            Text(
+                                              'สต๊อกใกล้หมด',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.orange,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: it.isReturn
+                                      ? Text(
+                                          '-${it.qty}',
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        )
+                                      : Align(
+                                          alignment: Alignment.center,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.center,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                IconButton(
+                                                  onPressed: bill.isLoading
+                                                      ? null
+                                                      : () => _decreaseItemQty(
+                                                          context,
+                                                          it,
+                                                        ),
+                                                  icon: const Icon(
+                                                    Icons.remove,
+                                                  ),
+                                                  iconSize: 18,
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints.tightFor(
+                                                        width: 24,
+                                                        height: 24,
+                                                      ),
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  tooltip: 'ลดจำนวน',
+                                                ),
+                                                SizedBox(
+                                                  width: 40,
+                                                  child: TextField(
+                                                    controller: _safeQtyControllers[itemKey],
+                                                    focusNode: _safeQtyFocusNodes[itemKey],
+                                                    textAlign: TextAlign.center,
+                                                    keyboardType: TextInputType.number,
+                                                    style: const TextStyle(
+                                                        fontWeight: FontWeight.w600,
+                                                        fontSize: 13),
+                                                    decoration: const InputDecoration(
+                                                      isDense: true,
+                                                      contentPadding: EdgeInsets.symmetric(
+                                                          vertical: 4, horizontal: 2),
+                                                      border: OutlineInputBorder(),
+                                                    ),
+                                                    onSubmitted: (v) {
+                                                      final n = int.tryParse(v);
+                                                      if (n != null) {
+                                                        _setItemQty(context, it, n);
+                                                      }
+                                                    },
+                                                    onTapOutside: (_) {
+                                                      final v = _safeQtyControllers[itemKey]?.text ?? '';
+                                                      final n = int.tryParse(v);
+                                                      if (n != null) {
+                                                        _setItemQty(context, it, n);
+                                                      }
+                                                      _safeQtyFocusNodes[itemKey]?.unfocus();
+                                                    },
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  onPressed: bill.isLoading
+                                                      ? null
+                                                      : () => _increaseItemQty(
+                                                          context,
+                                                          it,
+                                                        ),
+                                                  icon: const Icon(Icons.add),
+                                                  iconSize: 18,
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints.tightFor(
+                                                        width: 24,
+                                                        height: 24,
+                                                      ),
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  tooltip: 'เพิ่มจำนวน',
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: it.isReturn
+                                      ? Text(
+                                          '-฿$lineTotal',
+                                          textAlign: TextAlign.right,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: context.colorDanger,
+                                          ),
+                                        )
+                                      : Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            TextField(
+                                              controller: priceController,
+                                              focusNode: priceFocusNode,
+                                              enabled: !bill.isLoading,
+                                              textAlign: TextAlign.right,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
+                                              decoration: const InputDecoration(
+                                                isDense: true,
+                                                prefixText: '฿',
+                                                border: OutlineInputBorder(),
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 10,
+                                                    ),
+                                              ),
+                                              onSubmitted: (_) =>
+                                                  _updateLineTotalPrice(
+                                                    context,
+                                                    it,
+                                                  ),
+                                              onTapOutside: (_) =>
+                                                  _updateLineTotalPrice(
+                                                    context,
+                                                    it,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+        final pricingPanel = Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.colorBorder),
+          ),
+          padding: EdgeInsets.all(isTightHeight ? 10 : 12),
+          child: LayoutBuilder(
+            builder: (context, pricingConstraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: pricingConstraints.maxHeight,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildDialogSummaryRow(context,
+                            'ราคารวม',
+                            '฿${subtotal.toStringAsFixed(2)}',
+                          ),
+                          SizedBox(height: summaryRowGap),
+                          _buildDialogSummaryRow(context,
+                            'ส่วนลด',
+                            '- ฿${effectiveDiscount.toStringAsFixed(2)}',
+                          ),
+                          if (returnCredit > 0) ...[
+                            SizedBox(height: summaryRowGap),
+                            _buildDialogSummaryRow(context,
+                              'คืนสินค้า (Credit)',
+                              '- ฿${returnCredit.toStringAsFixed(2)}',
+                            ),
+                          ],
+                          SizedBox(height: summaryRowGap),
+                          _buildDialogSummaryRow(context,
+                            'ภาษี (${(taxRate * 100).toStringAsFixed(0)}%)',
+                            '฿${tax.toStringAsFixed(2)}',
+                          ),
+                        ],
+                      ),
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: sectionGap),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Expanded(
-                              flex: 5,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    it.name,
-                                    style: const TextStyle(
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: const Text(
+                                    'ส่วนลด',
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    it.code,
-                                    style: const TextStyle(
-                                      color: AppColors.muted,
-                                      fontSize: 12,
+                                ),
+                                const SizedBox(width: 8),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    for (final percent in [5, 10, 15, 20])
+                                      OutlinedButton(
+                                        style: quickDiscountButtonStyle,
+                                        onPressed: () => _applyQuickDiscount(
+                                          context,
+                                          percent.toDouble(),
+                                          subtotal,
+                                        ),
+                                        child: Text('$percent%'),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: sectionGap),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _discountController,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    decoration: const InputDecoration(
+                                      labelText: 'ส่วนลด',
+                                      hintText: 'เช่น 5 หรือ 100',
+                                      border: OutlineInputBorder(),
                                     ),
+                                    onChanged: (_) =>
+                                        _recalculateDiscount(context, subtotal),
                                   ),
-                                ],
+                                ),
+                                const SizedBox(width: 8),
+                                DropdownButton<bool>(
+                                  value: _isPercentMode,
+                                  onChanged: (value) {
+                                    if (value == null) return;
+                                    setState(() {
+                                      _isPercentMode = value;
+                                    });
+                                    _recalculateDiscount(context, subtotal);
+                                  },
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: true,
+                                      child: Text('%'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: false,
+                                      child: Text('บาท'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              vertical: isCompact ? 10 : 12,
+                              horizontal: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: context.colorPrimary.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(
+                                AppSizes.radius,
                               ),
                             ),
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                it.isReturn ? '-${it.qty}' : '${it.qty}',
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'รวมสุทธิ',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                Text(
+                                  '${total < 0 ? '-฿' : '฿'}${total.abs().toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    color: total < 0
+                                        ? context.colorDanger
+                                        : context.colorPrimary,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(height: sectionGap),
+                          ElevatedButton(
+                            onPressed: (bill.isLoading || !hasSettlementItems)
+                                ? null
+                                : () => _handleConfirmPayment(context),
+                            child: const Text('ชำระเงิน'),
+                          ),
+                          SizedBox(height: sectionGap),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: bill.isLoading
+                                      ? null
+                                      : () => _holdBill(context),
+                                  child: const Text('พักบิล'),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: context.colorDanger,
+                                    side: BorderSide(
+                                      color: context.colorDanger,
+                                    ),
+                                  ),
+                                  onPressed: bill.isLoading
+                                      ? null
+                                      : () => _clearBill(context),
+                                  child: const Text('ล้างบิล'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+
+        return Container(
+          decoration: BoxDecoration(
+            color: context.colorSurface,
+            borderRadius: BorderRadius.circular(AppSizes.radius),
+            border: Border.all(color: context.colorBorder),
+            boxShadow: AppShadows.soft,
+          ),
+          padding: EdgeInsets.all(panelPadding),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'ตะกร้าสินค้า',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 12),
+                  if (bill.assignedMember != null) ...[
+                    // Member chip — show who is linked
+                    Expanded(
+                      child: Container(
+                        height: 40,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: Colors.green.withValues(alpha: 0.35)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.person,
+                                size: 16, color: Colors.green),
+                            const SizedBox(width: 6),
                             Expanded(
-                              flex: 3,
                               child: Text(
-                                '${it.isReturn ? '-' : ''}฿$lineTotal',
-                                textAlign: TextAlign.right,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: it.isReturn ? AppColors.danger : null,
+                                bill.memberDisplayName,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
                                 ),
                               ),
                             ),
                           ],
                         ),
-                      );
-                    },
-                  ),
-          ),
-          Divider(height: 1, color: AppColors.border.withValues(alpha: 0.5)),
-          const SizedBox(height: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildDialogSummaryRow(
-                'Subtotal',
-                '฿${subtotal.toStringAsFixed(2)}',
-              ),
-              const SizedBox(height: 8),
-              _buildDialogSummaryRow(
-                'ส่วนลด',
-                '- ฿${effectiveDiscount.toStringAsFixed(2)}',
-              ),
-              if (returnCredit > 0) ...[
-                const SizedBox(height: 8),
-                _buildDialogSummaryRow(
-                  'คืนสินค้า (Credit)',
-                  '- ฿${returnCredit.toStringAsFixed(2)}',
-                ),
-              ],
-              const SizedBox(height: 8),
-              _buildDialogSummaryRow(
-                'ภาษี (${(taxRate * 100).toStringAsFixed(0)}%)',
-                '฿${tax.toStringAsFixed(2)}',
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: const Text(
-                      'ส่วนลด',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final percent in [5, 10, 15, 20])
-                        OutlinedButton(
-                          onPressed: () => _applyQuickDiscount(
-                            context,
-                            percent.toDouble(),
-                            subtotal,
-                          ),
-                          child: Text('$percent'),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'ยกเลิกสมาชิก',
+                      onPressed: bill.isLoading
+                          ? null
+                          : () async {
+                              final token =
+                                  context.read<AuthProvider>().token;
+                              if (token == null) return;
+                              try {
+                                await context
+                                    .read<BillProvider>()
+                                    .unassignMember(token: token);
+                              } catch (e) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(
+                                          'ยกเลิกสมาชิกไม่สำเร็จ: $e')),
+                                );
+                              }
+                            },
+                      icon: const Icon(Icons.close, size: 18),
+                    ),
+                  ] else ...[
+                    // Phone input for linking a member
+                    Expanded(
+                      child: TextField(
+                        controller: _memberPhoneController,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          hintText: 'เบอร์โทรสมาชิก',
+                          border: OutlineInputBorder(),
+                          isDense: true,
                         ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _discountController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'ส่วนลด',
-                        hintText: 'เช่น 5 หรือ 100',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (_) => _recalculateDiscount(context, subtotal),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  DropdownButton<bool>(
-                    value: _isPercentMode,
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _isPercentMode = value;
-                      });
-                      _recalculateDiscount(context, subtotal);
-                    },
-                    items: const [
-                      DropdownMenuItem(value: true, child: Text('%')),
-                      DropdownMenuItem(value: false, child: Text('บาท')),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 14,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(AppSizes.radius),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'รวมสุทธิ',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        onSubmitted: (_) => _attachMemberToBill(context),
                       ),
                     ),
-                    Text(
-                      '${total < 0 ? '-฿' : '฿'}${total.abs().toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: total < 0 ? AppColors.danger : AppColors.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: bill.isLoading
+                          ? null
+                          : () => _attachMemberToBill(context),
+                      child: const Text('ผูกสมาชิก'),
                     ),
                   ],
-                ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ElevatedButton(
-            onPressed: (bill.isLoading || !hasSettlementItems)
-                ? null
-                : () => _handleConfirmPayment(context),
-            child: Text(
-              total < 0
-                  ? 'ยืนยันคืนเงิน • ${items.length} รายการ • ฿${total.abs().toStringAsFixed(2)}'
-                  : 'ยืนยัน • ${items.length} รายการ • ฿${total.toStringAsFixed(2)}',
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: bill.isLoading ? null : () => _holdBill(context),
-                  child: const Text('พักบิล'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                    side: const BorderSide(color: AppColors.danger),
+              if (bill.hasReturnItems) ...[
+                SizedBox(height: sectionGap),
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: isCompact ? 6 : 8,
                   ),
-                  onPressed: bill.isLoading ? null : () => _clearBill(context),
-                  child: const Text('ล้างบิล'),
+                  decoration: BoxDecoration(
+                    color: context.colorDanger.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: context.colorDanger.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'คืนจากบิล ${bill.returnReferenceBillId ?? '-'} • ${bill.returnLineCount} ชิ้น',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: context.colorDanger,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: bill.isLoading
+                            ? null
+                            : bill.clearReturnSession,
+                        child: const Text('ล้างรายการคืน'),
+                      ),
+                    ],
+                  ),
                 ),
+              ],
+              SizedBox(height: sectionGap),
+              Expanded(
+                child: useSplitLayout
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(flex: 6, child: itemListPanel),
+                          SizedBox(width: sectionGap),
+                          Expanded(flex: 4, child: pricingPanel),
+                        ],
+                      )
+                    : Column(
+                        children: [
+                          Expanded(child: itemListPanel),
+                          SizedBox(height: sectionGap),
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: bottomSectionMaxHeight,
+                            ),
+                            child: pricingPanel,
+                          ),
+                        ],
+                      ),
               ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildDialogSummaryRow(
+    BuildContext context,
     String label,
     String value, {
     bool isEmphasis = false,
@@ -643,7 +1522,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
           style: TextStyle(
             fontWeight: isEmphasis ? FontWeight.bold : FontWeight.normal,
             fontSize: isEmphasis ? 16 : 14,
-            color: isEmphasis ? AppColors.primary : null,
+            color: isEmphasis ? context.colorPrimary : null,
           ),
         ),
       ],
@@ -660,6 +1539,15 @@ class _QrPaymentDialog extends StatefulWidget {
 
 class _QrPaymentDialogState extends State<_QrPaymentDialog> {
   bool _showSuccess = false;
+  Future<Uint8List>? _qrFuture;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _qrFuture ??= ApiService.getQrImage(
+      token: context.read<AuthProvider>().token ?? '',
+    );
+  }
 
   Future<void> _handleConfirm() async {
     if (_showSuccess) return;
@@ -692,13 +1580,18 @@ class _QrPaymentDialogState extends State<_QrPaymentDialog> {
                   alignment: Alignment.center,
                   children: [
                     Positioned.fill(
-                      child: Image.asset(
-                        'images/shop_qr.png',
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
+                      child: FutureBuilder<Uint8List>(
+                        future: _qrFuture,
+                        builder: (context, snap) {
+                          if (snap.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          if (snap.hasData && snap.data != null) {
+                            return Image.memory(snap.data!, fit: BoxFit.contain);
+                          }
                           return const Center(
                             child: Text(
-                              'กรุณาเพิ่มรูป QR code ที่ assets/images/shop_qr.png',
+                              'ไม่พบรูป QR code\nกรุณาอัปโหลดที่หน้าตั้งค่าการชำระเงิน',
                               textAlign: TextAlign.center,
                             ),
                           );
@@ -754,6 +1647,7 @@ class _BillLineItem {
     this.partCode,
     this.addressCode,
     required this.isReturn,
+    this.totalStock = 0,
   });
 
   final String name;
@@ -763,19 +1657,113 @@ class _BillLineItem {
   final String? partCode;
   final String? addressCode;
   final bool isReturn;
+  final int totalStock;
 }
 
-enum PaymentMethod { cash, qr }
+enum _PaymentKind { cash, transfer, creditTerm, exchange }
 
-class ReceiptDialog extends StatelessWidget {
-  const ReceiptDialog({
-    super.key,
+class _CreditTermInstallment {
+  const _CreditTermInstallment({required this.dueDate, required this.amount});
+
+  final DateTime dueDate;
+  final double amount;
+
+  Map<String, dynamic> toJson(int index) {
+    return <String, dynamic>{
+      'label': 'งวดที่ ${index + 1}',
+      'dueDate': _formatDateValue(dueDate),
+      'amount': amount,
+    };
+  }
+}
+
+class _PaymentSelection {
+  const _PaymentSelection({
+    required this.kind,
+    required this.backendMethod,
+    required this.label,
+    this.paymentMeta,
+    this.deliveryDate,
+    this.installments = const <_CreditTermInstallment>[],
+  });
+
+  factory _PaymentSelection.cash() {
+    return const _PaymentSelection(
+      kind: _PaymentKind.cash,
+      backendMethod: 'cash',
+      label: 'เงินสด',
+    );
+  }
+
+  factory _PaymentSelection.transfer() {
+    return const _PaymentSelection(
+      kind: _PaymentKind.transfer,
+      backendMethod: 'bank',
+      label: 'โอน',
+    );
+  }
+
+  factory _PaymentSelection.creditTerm({
+    required DateTime deliveryDate,
+    required List<_CreditTermInstallment> installments,
+  }) {
+    final paymentMeta = <String, dynamic>{
+      'type': 'credit_term',
+      'deliveryDate': _formatDateValue(deliveryDate),
+      'installments': [
+        for (var i = 0; i < installments.length; i++) installments[i].toJson(i),
+      ],
+    };
+    return _PaymentSelection(
+      kind: _PaymentKind.creditTerm,
+      backendMethod: 'credit_term',
+      label: 'เงินเซ็น',
+      paymentMeta: paymentMeta,
+      deliveryDate: deliveryDate,
+      installments: installments,
+    );
+  }
+
+  factory _PaymentSelection.exchange({required double netSettlementAmount}) {
+    return _PaymentSelection(
+      kind: _PaymentKind.exchange,
+      backendMethod: 'exchange',
+      label: 'แลกเปลี่ยน',
+      paymentMeta: <String, dynamic>{
+        'type': 'exchange',
+        'netSettlementAmount': netSettlementAmount,
+      },
+    );
+  }
+
+  final _PaymentKind kind;
+  final String backendMethod;
+  final String label;
+  final Object? paymentMeta;
+  final DateTime? deliveryDate;
+  final List<_CreditTermInstallment> installments;
+}
+
+String _formatDateValue(DateTime date) {
+  final local = date.toLocal();
+  final year = local.year.toString().padLeft(4, '0');
+  final month = local.month.toString().padLeft(2, '0');
+  final day = local.day.toString().padLeft(2, '0');
+  return '$year-$month-$day';
+}
+
+class _ReceiptDialog extends StatelessWidget {
+  const _ReceiptDialog({
     required this.settlementTotal,
     required this.hasPurchaseItems,
+    this.paymentSelection,
+    this.returnSettleMode,
   });
 
   final double settlementTotal;
   final bool hasPurchaseItems;
+  final _PaymentSelection? paymentSelection;
+  final String? returnSettleMode;
 
   @override
   Widget build(BuildContext context) {
@@ -783,8 +1771,9 @@ class ReceiptDialog extends StatelessWidget {
 
     final subtotal = bill.subtotal;
     final discount = bill.discount;
+    final amountAfterDiscount = bill.amountAfterDiscount;
     final taxRate = bill.taxRate;
-    final tax = subtotal * taxRate;
+    final tax = bill.tax;
     final total = bill.total;
     final returnCredit = bill.returnCreditAmount;
     final netTotal = settlementTotal;
@@ -842,6 +1831,37 @@ class ReceiptDialog extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 16),
+              if (paymentSelection != null) ...[
+                _buildReceiptRow('วิธีชำระเงิน', paymentSelection!.label),
+                const SizedBox(height: 4),
+              ],
+              if (paymentSelection?.kind == _PaymentKind.creditTerm &&
+                  paymentSelection?.deliveryDate != null) ...[
+                _buildReceiptRow(
+                  'วันที่รับของ',
+                  _formatDateValue(paymentSelection!.deliveryDate!),
+                ),
+                const SizedBox(height: 4),
+                for (
+                  var i = 0;
+                  i < paymentSelection!.installments.length;
+                  i++
+                ) ...[
+                  _buildReceiptRow(
+                    'งวดที่ ${i + 1}',
+                    '${_formatDateValue(paymentSelection!.installments[i].dueDate)} • ฿${paymentSelection!.installments[i].amount.toStringAsFixed(2)}',
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ],
+              if (returnSettleMode != null && returnSettleMode!.isNotEmpty) ...[
+                _buildReceiptRow('ปิดรายการคืน', switch (returnSettleMode) {
+                  'cash_refund' => 'คืนเงินสด',
+                  'customer_credit' => 'เก็บเป็นเครดิตลูกค้า',
+                  _ => 'แลกเปลี่ยนสินค้า',
+                }),
+                const SizedBox(height: 4),
+              ],
               if (bill.items.isNotEmpty) ...[
                 Row(
                   children: [
@@ -932,8 +1952,8 @@ class ReceiptDialog extends StatelessWidget {
                                   const SizedBox(height: 4),
                                   Text(
                                     code,
-                                    style: const TextStyle(
-                                      color: AppColors.muted,
+                                    style: TextStyle(
+                                      color: context.colorMuted,
                                       fontSize: 12,
                                     ),
                                   ),
@@ -970,9 +1990,14 @@ class ReceiptDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
               ],
-              _buildReceiptRow('Subtotal', '฿${subtotal.toStringAsFixed(2)}'),
+              _buildReceiptRow('ก่อนลด', '฿${subtotal.toStringAsFixed(2)}'),
               const SizedBox(height: 4),
               _buildReceiptRow('ส่วนลด', '- ฿${discount.toStringAsFixed(2)}'),
+              const SizedBox(height: 4),
+              _buildReceiptRow(
+                'หลังหักส่วนลด',
+                '฿${amountAfterDiscount.toStringAsFixed(2)}',
+              ),
               const SizedBox(height: 4),
               _buildReceiptRow(
                 'ภาษี (${(taxRate * 100).toStringAsFixed(0)}%)',
@@ -1006,40 +2031,13 @@ class ReceiptDialog extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 16),
+              OutlinedButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('ย้อนกลับ'),
+              ),
+              const SizedBox(height: 8),
               ElevatedButton(
-                onPressed: () async {
-                  final auth = Provider.of<AuthProvider>(
-                    context,
-                    listen: false,
-                  );
-                  final billProvider = bill;
-                  final messenger = ScaffoldMessenger.of(context);
-                  final token = auth.token;
-                  if (token == null) {
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text('token หาย กรุณา login ใหม่'),
-                      ),
-                    );
-                    return;
-                  }
-
-                  try {
-                    if (hasPurchaseItems && billProvider.billId != null) {
-                      await billProvider.payCurrentBill(token: token);
-                    }
-                    await billProvider.switchBill(token: token);
-                  } catch (e) {
-                    messenger.showSnackBar(
-                      SnackBar(content: Text('บันทึกบิลไม่สำเร็จ: $e')),
-                    );
-                    return;
-                  }
-
-                  if (context.mounted) {
-                    Navigator.of(context).pop(true);
-                  }
-                },
+                onPressed: () => Navigator.of(context).pop(true),
                 child: const Text('กลับหน้าหลัก'),
               ),
             ],
@@ -1078,9 +2076,13 @@ class ReceiptDialog extends StatelessWidget {
 enum _ReturnSettlement { cash, credit }
 
 class _ReturnSettlementDialog extends StatelessWidget {
-  const _ReturnSettlementDialog({required this.refundAmount});
+  const _ReturnSettlementDialog({
+    required this.refundAmount,
+    required this.hasMember,
+  });
 
   final double refundAmount;
+  final bool hasMember;
 
   @override
   Widget build(BuildContext context) {
@@ -1101,8 +2103,8 @@ class _ReturnSettlementDialog extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 'ลูกค้าต้องรับคืน ฿${refundAmount.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  color: AppColors.danger,
+                style: TextStyle(
+                  color: context.colorDanger,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1116,12 +2118,16 @@ class _ReturnSettlementDialog extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: () =>
-                    Navigator.of(context).pop(_ReturnSettlement.credit),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: Text('เก็บเป็นเครดิตลูกค้า'),
+              Tooltip(
+                message: hasMember ? '' : 'กรุณาผูกสมาชิกก่อนเพื่อเก็บเครดิต',
+                child: OutlinedButton(
+                  onPressed: hasMember
+                      ? () => Navigator.of(context).pop(_ReturnSettlement.credit)
+                      : null,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    child: Text('เก็บเป็นเครดิตลูกค้า'),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1137,56 +2143,447 @@ class _ReturnSettlementDialog extends StatelessWidget {
   }
 }
 
-class _PaymentMethodDialog extends StatelessWidget {
-  const _PaymentMethodDialog();
+class _CreditTermInstallmentDraft {
+  _CreditTermInstallmentDraft({required this.dueDate, required double amount})
+    : amountController = TextEditingController(text: amount.toStringAsFixed(2));
+
+  DateTime dueDate;
+  final TextEditingController amountController;
+
+  double get amount =>
+      double.tryParse(amountController.text.replaceAll(',', '').trim()) ?? 0.0;
+
+  void dispose() {
+    amountController.dispose();
+  }
+}
+
+class _PaymentMethodDialog extends StatefulWidget {
+  const _PaymentMethodDialog({required this.total});
+
+  final double total;
+
+  @override
+  State<_PaymentMethodDialog> createState() => _PaymentMethodDialogState();
+}
+
+class _PaymentMethodDialogState extends State<_PaymentMethodDialog> {
+  late _PaymentKind _selectedKind;
+  late DateTime _deliveryDate;
+  late List<_CreditTermInstallmentDraft> _installments;
+
+  @override
+  void initState() {
+    super.initState();
+    final today = DateTime.now();
+    _selectedKind = _PaymentKind.cash;
+    _deliveryDate = DateTime(today.year, today.month, today.day);
+    _installments = <_CreditTermInstallmentDraft>[
+      _CreditTermInstallmentDraft(
+        dueDate: _deliveryDate.add(const Duration(days: 1)),
+        amount: widget.total,
+      ),
+    ];
+    for (final installment in _installments) {
+      installment.amountController.addListener(_refresh);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final installment in _installments) {
+      installment.dispose();
+    }
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  double get _scheduledTotal => _installments.fold<double>(
+    0.0,
+    (sum, installment) => sum + installment.amount,
+  );
+
+  double get _difference => widget.total - _scheduledTotal;
+
+  bool get _isCreditTermValid {
+    if (_installments.isEmpty) {
+      return false;
+    }
+    final allPositive = _installments.every(
+      (installment) => installment.amount > 0,
+    );
+    return allPositive && _difference.abs() < 0.01;
+  }
+
+  DateTime _minimumDueDateForIndex(int index) {
+    final anchorDate = index == 0
+        ? _deliveryDate
+        : _installments[index - 1].dueDate;
+    return DateTime(
+      anchorDate.year,
+      anchorDate.month,
+      anchorDate.day,
+    ).add(const Duration(days: 1));
+  }
+
+  void _normalizeInstallmentDates({int startIndex = 0}) {
+    for (var i = startIndex; i < _installments.length; i++) {
+      final minimumDate = _minimumDueDateForIndex(i);
+      if (_installments[i].dueDate.isBefore(minimumDate)) {
+        _installments[i].dueDate = minimumDate;
+      }
+    }
+  }
+
+  void _updateDeliveryDate(DateTime date) {
+    setState(() {
+      _deliveryDate = DateTime(date.year, date.month, date.day);
+      _normalizeInstallmentDates(startIndex: 0);
+    });
+  }
+
+  void _updateInstallmentDueDate(int index, DateTime date) {
+    setState(() {
+      final minimumDate = _minimumDueDateForIndex(index);
+      final normalizedDate = DateTime(date.year, date.month, date.day);
+      _installments[index].dueDate = normalizedDate.isBefore(minimumDate)
+          ? minimumDate
+          : normalizedDate;
+      _normalizeInstallmentDates(startIndex: index + 1);
+    });
+  }
+
+  Future<void> _pickDate({
+    required DateTime initialDate,
+    DateTime? firstDate,
+    required ValueChanged<DateTime> onSelected,
+  }) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: firstDate ?? DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    onSelected(DateTime(picked.year, picked.month, picked.day));
+  }
+
+  void _addInstallment() {
+    final last = _installments.isNotEmpty ? _installments.last : null;
+    final nextDueDate = _minimumDueDateForIndex(_installments.length);
+    double nextAmount = 0.0;
+    if (last != null && last.amount > 0) {
+      final half = double.parse((last.amount / 2).toStringAsFixed(2));
+      final remainder = double.parse((last.amount - half).toStringAsFixed(2));
+      last.amountController.text = half.toStringAsFixed(2);
+      nextAmount = remainder;
+    }
+
+    final installment = _CreditTermInstallmentDraft(
+      dueDate: nextDueDate,
+      amount: nextAmount,
+    );
+    installment.amountController.addListener(_refresh);
+    setState(() {
+      _installments.add(installment);
+    });
+  }
+
+  void _removeInstallment(int index) {
+    if (_installments.length <= 1) {
+      return;
+    }
+    final removed = _installments.removeAt(index);
+    removed.dispose();
+    setState(() {});
+  }
+
+  void _applyShortcut(int index, int days) {
+    setState(() {
+      _installments[index].dueDate = _installments[index].dueDate.add(
+        Duration(days: days),
+      );
+      _normalizeInstallmentDates(startIndex: index + 1);
+    });
+  }
+
+  void _confirm() {
+    switch (_selectedKind) {
+      case _PaymentKind.cash:
+        Navigator.of(context).pop(_PaymentSelection.cash());
+        return;
+      case _PaymentKind.transfer:
+        Navigator.of(context).pop(_PaymentSelection.transfer());
+        return;
+      case _PaymentKind.creditTerm:
+        if (!_isCreditTermValid) {
+          return;
+        }
+        Navigator.of(context).pop(
+          _PaymentSelection.creditTerm(
+            deliveryDate: _deliveryDate,
+            installments: _installments
+                .map(
+                  (installment) => _CreditTermInstallment(
+                    dueDate: installment.dueDate,
+                    amount: installment.amount,
+                  ),
+                )
+                .toList(),
+          ),
+        );
+        return;
+      case _PaymentKind.exchange:
+        return;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final differenceColor = _difference.abs() < 0.01
+        ? context.colorPrimary
+        : (_difference > 0 ? context.colorDanger : context.colorAccent);
+    final maxDialogHeight = MediaQuery.of(context).size.height * 0.85;
+
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
+        constraints: BoxConstraints(maxWidth: 560, maxHeight: maxDialogHeight),
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'วิธีชำระเงิน',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () =>
-                          Navigator.of(context).pop(PaymentMethod.cash),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('เงินสด'),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'วิธีชำระเงิน',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: _selectedKind == _PaymentKind.cash
+                              ? context.colorPrimary.withValues(alpha: 0.08)
+                              : null,
+                        ),
+                        onPressed: () {
+                          setState(() => _selectedKind = _PaymentKind.cash);
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text('เงินสด'),
+                        ),
                       ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor:
+                              _selectedKind == _PaymentKind.transfer
+                              ? context.colorPrimary.withValues(alpha: 0.08)
+                              : null,
+                        ),
+                        onPressed: () {
+                          setState(() => _selectedKind = _PaymentKind.transfer);
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text('โอน'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor:
+                              _selectedKind == _PaymentKind.creditTerm
+                              ? context.colorPrimary.withValues(alpha: 0.08)
+                              : null,
+                        ),
+                        onPressed: () {
+                          setState(
+                            () => _selectedKind = _PaymentKind.creditTerm,
+                          );
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text('เงินเซ็น'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_selectedKind == _PaymentKind.creditTerm) ...[
+                  const SizedBox(height: 16),
+                  InkWell(
+                    onTap: () => _pickDate(
+                      initialDate: _deliveryDate,
+                      onSelected: _updateDeliveryDate,
+                    ),
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'วันที่รับของ',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      child: Text(_formatDateValue(_deliveryDate)),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () =>
-                          Navigator.of(context).pop(PaymentMethod.qr),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('QR Code'),
+                  const SizedBox(height: 12),
+                  ...List.generate(_installments.length, (index) {
+                    final installment = _installments[index];
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        bottom: index == _installments.length - 1 ? 0 : 12,
                       ),
-                    ),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: context.colorBorder),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  'งวดที่ ${index + 1}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const Spacer(),
+                                if (_installments.length > 1)
+                                  IconButton(
+                                    onPressed: () => _removeInstallment(index),
+                                    icon: const Icon(Icons.close),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            InkWell(
+                              onTap: () => _pickDate(
+                                initialDate: installment.dueDate,
+                                firstDate: _minimumDueDateForIndex(index),
+                                onSelected: (date) =>
+                                    _updateInstallmentDueDate(index, date),
+                              ),
+                              child: InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: 'วันนัดจ่ายเงิน',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                child: Text(
+                                  _formatDateValue(installment.dueDate),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: installment.amountController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: 'จำนวนเงินงวดนี้',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final days in const [10, 15, 30])
+                                  OutlinedButton(
+                                    onPressed: () =>
+                                        _applyShortcut(index, days),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    child: Text('$days วัน'),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _addInstallment,
+                        icon: const Icon(Icons.add),
+                        label: const Text('เพิ่มงวด'),
+                      ),
+                      const Spacer(),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'ยอดบิล ฿${widget.total.toStringAsFixed(2)}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          Text(
+                            _difference.abs() < 0.01
+                                ? 'ยอดงวดครบแล้ว'
+                                : (_difference > 0
+                                      ? 'ขาดอีก ฿${_difference.toStringAsFixed(2)}'
+                                      : 'เกิน ฿${(-_difference).toStringAsFixed(2)}'),
+                            style: TextStyle(
+                              color: differenceColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ],
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('ยกเลิก'),
-              ),
-            ],
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('ยกเลิก'),
+                    ),
+                    const Spacer(),
+                    ElevatedButton(
+                      onPressed:
+                          _selectedKind == _PaymentKind.creditTerm &&
+                              !_isCreditTermValid
+                          ? null
+                          : _confirm,
+                      child: const Text('ยืนยัน'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

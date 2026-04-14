@@ -17,7 +17,7 @@ func NewPartRepository(db *sql.DB) PartRepository {
 	return &partRepositoryPG{db: db}
 }
 
-func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int) ([]PartSummary, error) {
+func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, branchID *string) ([]PartSummary, error) {
 	if limit <= 0 {
 		limit = config.DefaultLimit
 	}
@@ -25,32 +25,72 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int) ([]
 		offset = 0
 	}
 
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT
-			p.code,
-			p.bar_code,
-			p.category_id,
-			COALESCE(c.label, ''),
-			COALESCE(c.label_th, ''),
-			p.unit_id,
-			COALESCE(u.label, ''),
-			COALESCE(u.label_th, ''),
-			p.name,
-			COALESCE(p.name_th, ''),
-			p.price,
-			COALESCE(p.is_active, false),
-			COALESCE(SUM(a.qty), 0) AS total_stock
-		FROM "part_master" p
-		LEFT JOIN "category_master" c ON c.id = p.category_id
-		LEFT JOIN "unit_master" u ON u.id = p.unit_id
-		LEFT JOIN "address_master" a ON a.part_code = p.code
-		GROUP BY
-			p.code, p.bar_code, p.category_id, c.label, c.label_th,
-			p.unit_id, u.label, u.label_th,
-			p.name, p.name_th, p.price, p.is_active
-		ORDER BY p.code
-		LIMIT $1 OFFSET $2
-	`, limit, offset)
+	var (
+		rows *sql.Rows
+		err  error
+	)
+
+	if branchID != nil && *branchID != "" {
+		// Filter parts that have stock addresses in stores belonging to the given branch
+		rows, err = r.db.QueryContext(ctx, `
+			SELECT
+				p.code,
+				p.bar_code,
+				p.category_id,
+				COALESCE(c.label, ''),
+				COALESCE(c.label_th, ''),
+				p.unit_id,
+				COALESCE(u.label, ''),
+				COALESCE(u.label_th, ''),
+				p.name,
+				COALESCE(p.name_th, ''),
+				p.price,
+				COALESCE(p.is_active, false),
+				COALESCE((
+					SELECT SUM(a2.qty)
+					FROM "address_master" a2
+					JOIN "branch_store" bs2 ON bs2.store_id = a2.store_id
+					WHERE a2.part_code = p.code AND bs2.branch_id = $3
+				), 0) AS total_stock
+			FROM "part_master" p
+			LEFT JOIN "category_master" c ON c.id = p.category_id
+			LEFT JOIN "unit_master" u ON u.id = p.unit_id
+			WHERE EXISTS (
+				SELECT 1 FROM "address_master" a
+				JOIN "branch_store" bs ON bs.store_id = a.store_id
+				WHERE a.part_code = p.code AND bs.branch_id = $3
+			)
+			ORDER BY p.code
+			LIMIT $1 OFFSET $2
+		`, limit, offset, *branchID)
+	} else {
+		rows, err = r.db.QueryContext(ctx, `
+			SELECT
+				p.code,
+				p.bar_code,
+				p.category_id,
+				COALESCE(c.label, ''),
+				COALESCE(c.label_th, ''),
+				p.unit_id,
+				COALESCE(u.label, ''),
+				COALESCE(u.label_th, ''),
+				p.name,
+				COALESCE(p.name_th, ''),
+				p.price,
+				COALESCE(p.is_active, false),
+				COALESCE(SUM(a.qty), 0) AS total_stock
+			FROM "part_master" p
+			LEFT JOIN "category_master" c ON c.id = p.category_id
+			LEFT JOIN "unit_master" u ON u.id = p.unit_id
+			LEFT JOIN "address_master" a ON a.part_code = p.code
+			GROUP BY
+				p.code, p.bar_code, p.category_id, c.label, c.label_th,
+				p.unit_id, u.label, u.label_th,
+				p.name, p.name_th, p.price, p.is_active
+			ORDER BY p.code
+			LIMIT $1 OFFSET $2
+		`, limit, offset)
+	}
 	if err != nil {
 		return nil, err
 	}

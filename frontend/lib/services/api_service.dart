@@ -32,7 +32,22 @@ class ApiService {
 
     if (decoded is Map<String, dynamic>) {
       // ลองดู key มาตรฐานก่อน
-      final listKeys = ['items', 'data', 'users', 'parts', 'results'];
+      final listKeys = [
+        'items',
+        'data',
+        'users',
+        'parts',
+        'results',
+        'members',
+        'bills',
+        'branches',
+        'promotions',
+        'addresses',
+        'userBranches',
+        'devices',
+        'pos',
+        'returns',
+      ];
       for (final key in listKeys) {
         if (decoded[key] is List) {
           return (decoded[key] as List)
@@ -125,15 +140,27 @@ class ApiService {
     throw Exception('Unexpected /auth/login response format: ${response.body}');
   }
 
+  // 1.15) POST /auth/verify-password (checks password without touching sessions)
+  static Future<bool> verifyPassword({
+    required String username,
+    required String password,
+  }) async {
+    final uri = Uri.parse('$baseUrl/auth/verify-password');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'password': password}),
+    );
+    return response.statusCode == 200;
+  }
+
   // 1.2) POST /auth/logout
   static Future<void> logout(String token) async {
     final uri = Uri.parse('$baseUrl/auth/logout');
 
     final response = await http.post(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-      },
+      headers: {'Authorization': 'Bearer $token'},
     );
 
     if (response.statusCode != 200 && response.statusCode != 204) {
@@ -197,6 +224,7 @@ class ApiService {
 
   // ======================================================================
   // 3) /bills
+  // Feature: POS Checkout / Hold Bill / Return Flow (อ้างอิงบิลเดิมผ่าน transaction)
   // ======================================================================
 
   // GET /bills?limit=&offset=&date=&date_from=&date_to=
@@ -207,10 +235,15 @@ class ApiService {
     String? date,
     String? dateFrom,
     String? dateTo,
+    String? memberId,
+    List<String>? statuses,
+    bool includeDetails = false,
+    String scope = 'branch',
   }) async {
     final queryParams = <String, String>{
       'limit': '$limit',
       'offset': '$offset',
+      'scope': scope,
     };
 
     // According to backend docs, `date` is mutually exclusive with `date_from`/`date_to`.
@@ -224,10 +257,19 @@ class ApiService {
         queryParams['date_to'] = dateTo;
       }
     }
+    if (memberId != null && memberId.isNotEmpty) {
+      queryParams['memberId'] = memberId;
+    }
+    if (statuses != null && statuses.isNotEmpty) {
+      queryParams['statuses'] = statuses.join(',');
+    }
+    if (includeDetails) {
+      queryParams['includeDetails'] = 'true';
+    }
 
-    final uri = Uri.parse('$baseUrl/bills').replace(
-      queryParameters: queryParams,
-    );
+    final uri = Uri.parse(
+      '$baseUrl/bills',
+    ).replace(queryParameters: queryParams);
 
     final response = await http.get(
       uri,
@@ -374,13 +416,15 @@ class ApiService {
     return _extractObjectFromResponse(decoded, '/bills/:id/remove-item');
   }
 
-  // PUT /bills/:id/add-discount — ใช้ promotionCode
-  static Future<Map<String, dynamic>> addBillDiscount({
+  // PUT /bills/:id/update-item-price — แก้ยอดราคาของรายการสินค้าในบิล
+  static Future<Map<String, dynamic>> updateItemPriceInBill({
     required String token,
     required String billId,
-    required String promotionCode,
+    required String partCode,
+    required String addressCode,
+    required double lineTotal,
   }) async {
-    final uri = Uri.parse('$baseUrl/bills/$billId/add-discount');
+    final uri = Uri.parse('$baseUrl/bills/$billId/update-item-price');
 
     final response = await http.put(
       uri,
@@ -388,14 +432,67 @@ class ApiService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-      body: jsonEncode({'promotionCode': promotionCode}),
+      body: jsonEncode({
+        'partCode': partCode,
+        'addressCode': addressCode,
+        'lineTotal': lineTotal,
+      }),
     );
 
-    // Backend ยังไม่มี endpoint นี้ (404) ให้ข้ามไปก่อนแบบชั่วคราว
-    // โดยคืนค่า bill ล่าสุด เพื่อไม่ให้ flow หน้าบ้านพัง
-    if (response.statusCode == 404) {
-      return getBill(token: token, billId: billId);
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to update item price: ${response.statusCode} ${response.body}',
+      );
     }
+
+    final decoded = jsonDecode(response.body);
+    final payload = _extractObjectFromResponse(
+      decoded,
+      '/bills/:id/update-item-price',
+    );
+    if (_looksLikeBillObject(payload)) {
+      return payload;
+    }
+    return getBill(token: token, billId: billId);
+  }
+
+  static bool _looksLikeBillObject(Map<String, dynamic> payload) {
+    return payload.containsKey('purchaseAmount') ||
+        payload.containsKey('totalAmount') ||
+        payload.containsKey('status') ||
+        payload.containsKey('details') ||
+        payload.containsKey('discounts');
+  }
+
+  // PUT /bills/:id/add-discount — ใช้ promotionCode หรือ manual unit+amount
+  static Future<Map<String, dynamic>> addBillDiscount({
+    required String token,
+    required String billId,
+    String? promotionCode,
+    String? unit,
+    double? amount,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/$billId/add-discount');
+
+    final body = <String, dynamic>{};
+    if (promotionCode != null && promotionCode.isNotEmpty) {
+      body['promotionCode'] = promotionCode;
+    }
+    if (unit != null && unit.isNotEmpty) {
+      body['unit'] = unit;
+    }
+    if (amount != null) {
+      body['amount'] = amount;
+    }
+
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(body),
+    );
 
     if (response.statusCode != 200) {
       throw Exception(
@@ -404,7 +501,14 @@ class ApiService {
     }
 
     final decoded = jsonDecode(response.body);
-    return _extractObjectFromResponse(decoded, '/bills/:id/add-discount');
+    final payload = _extractObjectFromResponse(
+      decoded,
+      '/bills/:id/add-discount',
+    );
+    if (_looksLikeBillObject(payload)) {
+      return payload;
+    }
+    return getBill(token: token, billId: billId);
   }
 
   // PUT /bills/:id/remove-discount — ลบส่วนลด
@@ -431,7 +535,72 @@ class ApiService {
     }
 
     final decoded = jsonDecode(response.body);
-    return _extractObjectFromResponse(decoded, '/bills/:id/remove-discount');
+    final payload = _extractObjectFromResponse(
+      decoded,
+      '/bills/:id/remove-discount',
+    );
+    if (_looksLikeBillObject(payload)) {
+      return payload;
+    }
+    return getBill(token: token, billId: billId);
+  }
+
+  // Feature: POS - ผูกสมาชิกเข้าบิล (ค้นหาจากเบอร์โทร)
+  // PUT /bills/:id/add-member-by-phone
+  static Future<Map<String, dynamic>> addMemberToBillByPhone({
+    required String token,
+    required String billId,
+    required String phone,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/$billId/add-member-by-phone');
+
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'phone': phone}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to add member to bill: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(
+      decoded,
+      '/bills/:id/add-member-by-phone',
+    );
+  }
+
+  // Feature: POS - ถอดสมาชิกออกจากบิล
+  // PUT /bills/:id/remove-member
+  static Future<Map<String, dynamic>> removeMemberFromBill({
+    required String token,
+    required String billId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/$billId/remove-member');
+
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to remove member from bill: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/bills/:id/remove-member');
   }
 
   // PUT /bills/:id/payment — ชำระเงิน
@@ -440,12 +609,16 @@ class ApiService {
     required String billId,
     String paymentMethod = 'cash',
     String? paymentRef,
+    Object? paymentMeta,
   }) async {
     final uri = Uri.parse('$baseUrl/bills/$billId/payment');
 
     final body = <String, dynamic>{'paymentMethod': paymentMethod};
     if (paymentRef != null && paymentRef.isNotEmpty) {
       body['paymentRef'] = paymentRef;
+    }
+    if (paymentMeta != null) {
+      body['paymentMeta'] = paymentMeta;
     }
 
     final response = await http.put(
@@ -465,6 +638,138 @@ class ApiService {
 
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/bills/:id/payment');
+  }
+
+  // GET /returns/reference/:billId — ดึงบิลอ้างอิงสำหรับคืนสินค้า พร้อม qty ที่ยังคืนได้
+  static Future<Map<String, dynamic>> getReturnReferenceBill({
+    required String token,
+    required String billId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/returns/reference/$billId');
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to fetch return reference bill: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/returns/reference/:billId');
+  }
+
+  // POST /returns — สร้าง credit note การคืนสินค้า
+  static Future<Map<String, dynamic>> createReturnNote({
+    required String token,
+    required String referenceBillId,
+    required String settlementMode,
+    required List<Map<String, dynamic>> lines,
+    String? purchaseBillId,
+    String? paymentMethod,
+    String? paymentRef,
+    Object? paymentMeta,
+  }) async {
+    final uri = Uri.parse('$baseUrl/returns');
+
+    final body = <String, dynamic>{
+      'referenceBillId': referenceBillId,
+      'settlementMode': settlementMode,
+      'lines': lines,
+    };
+    if (purchaseBillId != null && purchaseBillId.isNotEmpty) {
+      body['purchaseBillId'] = purchaseBillId;
+    }
+    if (paymentMethod != null && paymentMethod.isNotEmpty) {
+      body['paymentMethod'] = paymentMethod;
+    }
+    if (paymentRef != null && paymentRef.isNotEmpty) {
+      body['paymentRef'] = paymentRef;
+    }
+    if (paymentMeta != null) {
+      body['paymentMeta'] = paymentMeta;
+    }
+
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(
+        'Failed to create return note: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/returns');
+  }
+
+  // GET /returns — รายการ credit note / คืนสินค้า
+  static Future<List<Map<String, dynamic>>> getReturnNotes({
+    required String token,
+    int limit = 100,
+    int offset = 0,
+    String scope = 'branch',
+    bool includeDetails = false,
+    String? date,
+    String? dateFrom,
+    String? dateTo,
+    String? referenceBillId,
+  }) async {
+    final queryParams = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      'scope': scope,
+    };
+
+    if (date != null && date.isNotEmpty) {
+      queryParams['date'] = date;
+    } else {
+      if (dateFrom != null && dateFrom.isNotEmpty) {
+        queryParams['date_from'] = dateFrom;
+      }
+      if (dateTo != null && dateTo.isNotEmpty) {
+        queryParams['date_to'] = dateTo;
+      }
+    }
+    if (referenceBillId != null && referenceBillId.isNotEmpty) {
+      queryParams['referenceBillId'] = referenceBillId;
+    }
+    if (includeDetails) {
+      queryParams['includeDetails'] = 'true';
+    }
+
+    final uri = Uri.parse(
+      '$baseUrl/returns',
+    ).replace(queryParameters: queryParams);
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to load return notes: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractListFromResponse(decoded, '/returns');
   }
 
   // GET /bills/:id — ดึงบิลเต็ม ๆ (ใช้ตอน refresh)
@@ -589,6 +894,7 @@ class ApiService {
 
   // ======================================================================
   // 4) /branches
+  // Feature: Branch Management (Backoffice)
   // ======================================================================
 
   // GET /branches - ดึงรายชื่อสาขาทั้งหมด
@@ -747,6 +1053,7 @@ class ApiService {
 
   // ======================================================================
   // 5) /company
+  // Feature: Company Settings (Backoffice)
   // ======================================================================
 
   // GET /company - ดึงข้อมูล company
@@ -815,6 +1122,7 @@ class ApiService {
 
   // ======================================================================
   // 6) /parts
+  // Feature: Product Search + Product Master (POS + Backoffice)
   // ======================================================================
 
   // GET /parts?limit=&offset=
@@ -822,10 +1130,11 @@ class ApiService {
     required String token,
     int limit = 20,
     int offset = 0,
+    String? branchId,
   }) async {
-    final uri = Uri.parse(
-      '$baseUrl/parts',
-    ).replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
+    final params = <String, String>{'limit': '$limit', 'offset': '$offset'};
+    if (branchId != null && branchId.isNotEmpty) params['branchId'] = branchId;
+    final uri = Uri.parse('$baseUrl/parts').replace(queryParameters: params);
 
     final response = await http.get(
       uri,
@@ -921,7 +1230,194 @@ class ApiService {
   }
 
   // ======================================================================
-  // 7) /pos
+  // 7) /members
+  // Feature: Member Management (Backoffice สมาชิก + POS ค้นหาสมาชิก)
+  // ======================================================================
+
+  // GET /members?limit=&offset=&q=
+  static Future<List<Map<String, dynamic>>> getMembers({
+    required String token,
+    int limit = 20,
+    int offset = 0,
+    String? query,
+  }) async {
+    final queryParams = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+    if (query != null && query.isNotEmpty) {
+      queryParams['q'] = query;
+    }
+
+    final uri = Uri.parse(
+      '$baseUrl/members',
+    ).replace(queryParameters: queryParams);
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to load members: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractListFromResponse(decoded, '/members');
+  }
+
+  // GET /members/search?q=&limit=&offset=
+  static Future<List<Map<String, dynamic>>> searchMembers({
+    required String token,
+    required String query,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/members/search').replace(
+      queryParameters: {'q': query, 'limit': '$limit', 'offset': '$offset'},
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to search members: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractListFromResponse(decoded, '/members/search');
+  }
+
+  // GET /members/:id
+  static Future<Map<String, dynamic>> getMemberById({
+    required String token,
+    required String memberId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId');
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to load member: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/members/:id');
+  }
+
+  // POST /members
+  static Future<Map<String, dynamic>> createMember({
+    required String token,
+    required String name,
+    required String phone,
+    String? email,
+    int points = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/members');
+
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'name': name,
+        'phone': phone,
+        'email': email ?? '',
+        'points': points,
+      }),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(
+        'Failed to create member: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/members');
+  }
+
+  // PUT /members/:id
+  static Future<Map<String, dynamic>> updateMember({
+    required String token,
+    required String memberId,
+    required String name,
+    required String phone,
+    String? email,
+    int points = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId');
+
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'name': name,
+        'phone': phone,
+        'email': email ?? '',
+        'points': points,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to update member: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/members/:id');
+  }
+
+  // DELETE /members/:id
+  static Future<void> deleteMember({
+    required String token,
+    required String memberId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId');
+
+    final response = await http.delete(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception(
+        'Failed to delete member: ${response.statusCode} ${response.body}',
+      );
+    }
+  }
+
+  // ======================================================================
+  // 8) /pos
   // ======================================================================
 
   // GET /pos - ดึงรายการอุปกรณ์ POS
@@ -1087,7 +1583,8 @@ class ApiService {
   }
 
   // ======================================================================
-  // 8) /promotions
+  // 9) /promotions
+  // Feature: Promotion Management (Backoffice)
   // ======================================================================
 
   // GET /promotions - ดึงรายการโปรโมชั่น
@@ -1218,7 +1715,8 @@ class ApiService {
   }
 
   // ======================================================================
-  // 9) /promotions
+  // 10) /addresses
+  // Feature: Inventory Address Management (Backoffice + POS stock mapping)
   // ======================================================================
 
   // GET /addresses - ดึงรายการที่อยู่สินค้า (store address)
@@ -1374,7 +1872,8 @@ class ApiService {
   }
 
   // ======================================================================
-  // 10) /assets
+  // 11) /assets
+  // Feature: Payment Settings (QR image upload/display)
   // ======================================================================
 
   // GET /assets/qr-image - ดึงรูป QR (binary)
@@ -1410,7 +1909,75 @@ class ApiService {
   }
 
   // ======================================================================
-  // 11) /user-branches
+  // 12) /reports
+  // Feature: Reports/Export (Backoffice ดาวน์โหลด CSV)
+  // ======================================================================
+
+  // GET /reports/bills?date=YYYY-MM-DD&items=0|1  => CSV bytes
+  static Future<Uint8List> exportBillsReportCsv({
+    required String token,
+    required String date,
+    bool includeItems = false,
+  }) async {
+    final uri = Uri.parse('$baseUrl/reports/bills').replace(
+      queryParameters: {'date': date, 'items': includeItems ? '1' : '0'},
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to export bills report: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    return response.bodyBytes;
+  }
+
+  // GET /reports/parts => CSV bytes
+  static Future<Uint8List> exportPartsReportCsv({required String token}) async {
+    final uri = Uri.parse('$baseUrl/reports/parts');
+
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to export parts report: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    return response.bodyBytes;
+  }
+
+  // GET /reports/inventory => CSV bytes
+  static Future<Uint8List> exportInventoryReportCsv({
+    required String token,
+  }) async {
+    final uri = Uri.parse('$baseUrl/reports/inventory');
+
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to export inventory report: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    return response.bodyBytes;
+  }
+
+  // ======================================================================
+  // 13) /user-branches
+  // Feature: Access Control (map user ↔ branch)
   // ======================================================================
 
   // GET /user-branches
@@ -1443,11 +2010,100 @@ class ApiService {
       );
     }
     final decoded = jsonDecode(response.body);
+
+    // /user-branches/:user_id/:branch_id returns a single object
+    if (userId != null && branchId != null) {
+      final obj = _extractObjectFromResponse(
+        decoded,
+        '/user-branches/:user_id/:branch_id',
+      );
+      return [obj];
+    }
+
     return _extractListFromResponse(decoded, '/user-branches');
   }
 
+  // GET /user-branches/:user_id/:branch_id
+  static Future<Map<String, dynamic>> getUserBranch({
+    required String token,
+    required String userId,
+    required String branchId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/user-branches/$userId/$branchId');
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to load user branch: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(
+      decoded,
+      '/user-branches/:user_id/:branch_id',
+    );
+  }
+
+  // POST /user-branches
+  static Future<Map<String, dynamic>> createUserBranch({
+    required String token,
+    required String userId,
+    required String branchId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/user-branches');
+
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'userId': userId, 'branchId': branchId}),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(
+        'Failed to create user branch: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/user-branches');
+  }
+
+  // DELETE /user-branches/:user_id/:branch_id
+  static Future<void> deleteUserBranch({
+    required String token,
+    required String userId,
+    required String branchId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/user-branches/$userId/$branchId');
+
+    final response = await http.delete(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception(
+        'Failed to delete user branch: ${response.statusCode} ${response.body}',
+      );
+    }
+  }
+
   // ======================================================================
-  // 12) /users
+  // 14) /users
+  // Feature: User Management (Backoffice)
   // ======================================================================
 
   // GET /users
@@ -1506,6 +2162,7 @@ class ApiService {
     required String password,
     bool isActive = true,
     bool isSuperuser = false,
+    List<String>? customPermissions,
   }) async {
     final uri = Uri.parse('$baseUrl/users');
     final response = await http.post(
@@ -1521,6 +2178,7 @@ class ApiService {
         'password': password,
         'isActive': isActive,
         'isSuperuser': isSuperuser,
+        if (customPermissions != null) 'customPermissions': customPermissions,
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
@@ -1542,6 +2200,7 @@ class ApiService {
     String? password,
     bool? isActive,
     bool? isSuperuser,
+    List<String>? customPermissions,
   }) async {
     final uri = Uri.parse('$baseUrl/users/$userId');
     final body = <String, dynamic>{
@@ -1557,6 +2216,9 @@ class ApiService {
     }
     if (isSuperuser != null) {
       body['isSuperuser'] = isSuperuser;
+    }
+    if (customPermissions != null) {
+      body['customPermissions'] = customPermissions;
     }
     final response = await http.put(
       uri,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/login_screen.dart';
 import 'package:frontend/screens/customer_screen.dart';
+import 'package:frontend/screens/backoffice_screen.dart';
 import 'package:frontend/providers/auth_provider.dart';
 
 class AuthGate extends StatefulWidget {
@@ -18,6 +19,7 @@ class _AuthGateState extends State<AuthGate> {
     super.initState();
     // Auto-login
     Future.delayed(Duration.zero, () {
+      if (!mounted) return;
       final auth = Provider.of<AuthProvider>(context, listen: false);
       auth.autoLogin();
     });
@@ -38,6 +40,7 @@ class _AuthGateState extends State<AuthGate> {
         }
         
         if (auth.isAuthenticated) {
+          if (auth.hasBackofficeAccess) return const BackofficeScreen();
           return const HomeScreen();
         }
 
