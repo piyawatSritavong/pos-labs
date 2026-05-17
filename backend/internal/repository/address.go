@@ -14,6 +14,10 @@ type Address struct {
 	Max      int
 	Rop      int
 	Remarks  string
+	// Populated by the List query via LEFT JOIN. Empty string when not joined
+	// (Create/Update/Get-by-code use a non-joined query and leave these blank).
+	PartName  string
+	StoreName string
 }
 
 type AddressRepository interface {

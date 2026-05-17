@@ -95,15 +95,15 @@ func (h *PartsHandler) Get(c *gin.Context) {
 
 	// Build response shape as requested
 	resp := gin.H{
-		"code":      part.Code,
-		"barCode":   part.BarCode,
-		"name":      part.Name,
-		"nameTh":    part.NameTH,
-		"details":   part.Details,
-		"cost":      part.Cost,
-		"price":     part.Price,
-		"image":     part.Image,
-		"isActive":  part.IsActive,
+		"code":     part.Code,
+		"barCode":  part.BarCode,
+		"name":     part.Name,
+		"nameTh":   part.NameTH,
+		"details":  part.Details,
+		"cost":     part.Cost,
+		"price":    part.Price,
+		"image":    part.Image,
+		"isActive": part.IsActive,
 		"category": gin.H{
 			"id":      part.CategoryID,
 			"label":   part.CategoryLabel,
@@ -127,12 +127,13 @@ func (h *PartsHandler) Get(c *gin.Context) {
 				"label":   a.StoreLabel,
 				"labelTh": a.StoreLabelTH,
 			},
-			"shelf":   a.Shelf,
-			"qty":     a.Qty,
-			"min":     a.Min,
-			"max":     a.Max,
-			"rop":     a.Rop,
-			"remarks": a.Remarks,
+			"shelf":     a.Shelf,
+			"qty":       a.Qty,
+			"min":       a.Min,
+			"max":       a.Max,
+			"rop":       a.Rop,
+			"remarks":   a.Remarks,
+			"isDefault": a.IsDefault,
 		})
 	}
 	resp["addresses"] = addrs
@@ -142,9 +143,9 @@ func (h *PartsHandler) Get(c *gin.Context) {
 
 // Search searches for parts with filters and returns detailed results
 // Query parameters:
-//   - q: universal search query (searches in: part code, barcode, part name, name_th, 
-//       category name, category name_th, address code, store address shelf, 
-//       store address remarks, store label, store label_th)
+//   - q: universal search query (searches in: part code, barcode, part name, name_th,
+//     category name, category name_th, address code, store address shelf,
+//     store address remarks, store label, store label_th)
 //   - categoryId: filter by category ID (optional)
 //   - isActive: filter by active status (true/false) (optional)
 //   - crossBranch: if true, search across all branches; if false, only session branch (default: false)
@@ -153,7 +154,7 @@ func (h *PartsHandler) Get(c *gin.Context) {
 func (h *PartsHandler) Search(c *gin.Context) {
 	// Parse query parameters
 	query := c.Query("q")
-	categoryID := c.Query("categoryId") 
+	categoryID := c.Query("categoryId")
 	isActiveStr := c.Query("isActive")
 	crossBranchStr := c.Query("crossBranch")
 
@@ -245,25 +246,26 @@ func (h *PartsHandler) Search(c *gin.Context) {
 					"label":   a.StoreLabel,
 					"labelTh": a.StoreLabelTH,
 				},
-				"shelf":   a.Shelf,
-				"qty":     a.Qty,
-				"min":     a.Min,
-				"max":     a.Max,
-				"rop":     a.Rop,
-				"remarks": a.Remarks,
+				"shelf":     a.Shelf,
+				"qty":       a.Qty,
+				"min":       a.Min,
+				"max":       a.Max,
+				"rop":       a.Rop,
+				"remarks":   a.Remarks,
+				"isDefault": a.IsDefault,
 			})
 		}
 
 		out = append(out, gin.H{
-			"code":      part.Code,
-			"barCode":   part.BarCode,
-			"name":      part.Name,
-			"nameTh":    part.NameTH,
-			"details":   part.Details,
-			"cost":      part.Cost,
-			"price":     part.Price,
-			"image":     part.Image,
-			"isActive":  part.IsActive,
+			"code":     part.Code,
+			"barCode":  part.BarCode,
+			"name":     part.Name,
+			"nameTh":   part.NameTH,
+			"details":  part.Details,
+			"cost":     part.Cost,
+			"price":    part.Price,
+			"image":    part.Image,
+			"isActive": part.IsActive,
 			"category": gin.H{
 				"id":      part.CategoryID,
 				"label":   part.CategoryLabel,
@@ -283,4 +285,3 @@ func (h *PartsHandler) Search(c *gin.Context) {
 		"parts": out,
 	})
 }
-

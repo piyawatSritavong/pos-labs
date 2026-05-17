@@ -42,15 +42,17 @@ func (h *AddressHandler) List(c *gin.Context) {
 	out := make([]gin.H, 0, len(addresses))
 	for _, a := range addresses {
 		out = append(out, gin.H{
-			"code":     a.Code,
-			"partCode": a.PartCode,
-			"storeId":  a.StoreID,
-			"shelf":    a.Shelf,
-			"qty":      a.Qty,
-			"min":      a.Min,
-			"max":      a.Max,
-			"rop":      a.Rop,
-			"remarks":  a.Remarks,
+			"code":      a.Code,
+			"partCode":  a.PartCode,
+			"partName":  a.PartName, // joined from part_master.name_th / name
+			"storeId":   a.StoreID,
+			"storeName": a.StoreName, // joined from store_master.label_th / label
+			"shelf":     a.Shelf,
+			"qty":       a.Qty,
+			"min":       a.Min,
+			"max":       a.Max,
+			"rop":       a.Rop,
+			"remarks":   a.Remarks,
 		})
 	}
 
@@ -212,4 +214,3 @@ func (h *AddressHandler) Delete(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "address_deleted"})
 }
-

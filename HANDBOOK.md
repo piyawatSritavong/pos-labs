@@ -28,7 +28,7 @@ python3 -m http.server 8083 --directory build/web &
 |---|---|---|---|---|
 | `localhost:8081` | `admin` | `admin123` | Super Admin | จัดการระบบทั้งหมด |
 | `localhost:8082` | `hqmanager` | `hq123456` | HQ Manager | จัดการ HQ / ดูรายงาน |
-| `localhost:8083` | `vanstaff1` | `van123456` | Van Staff | ขายของบนรถแวน |
+| `localhost:8083` | `pos1` | `pos123456` | Van Staff | ขายของบนรถแวน |
 
 ---
 
@@ -65,7 +65,7 @@ python3 -m http.server 8083 --directory build/web &
 | MASTER DATA | Parts, Addresses, Promotions, Members |
 | OPERATIONS | Bills, Returns, Reports, Payment, Transfers, Cash Recon, Variance |
 
-### Van Staff (vanstaff1)
+### Van Staff (pos1)
 เข้าสู่ **POS Screen** โดยอัตโนมัติ — ไม่มี Backoffice
 
 | ปุ่มบน Header | ไอคอน | ใช้ทำอะไร |
@@ -89,7 +89,7 @@ python3 -m http.server 8083 --directory build/web &
 
 ### ขั้นตอน
 
-1. Login ที่ `localhost:8083` ด้วย `vanstaff1 / van123456`
+1. Login ที่ `localhost:8083` ด้วย `pos1 / pos123456`
    - ✅ ต้องเข้าหน้า POS โดยตรง (ไม่ใช่ Backoffice)
 
 2. พิมพ์ชื่อสินค้าในช่อง "พิมพ์ค้นหาสินค้า" หรือสแกนบาร์โค้ด
@@ -107,7 +107,7 @@ python3 -m http.server 8083 --directory build/web &
 ### Flow สรุป
 
 ```
-[Login vanstaff1] → [POS Screen]
+[Login pos1] → [POS Screen]
         ↓
 [ค้นหาสินค้า / สแกนบาร์โค้ด]
         ↓
@@ -321,7 +321,7 @@ python3 -m http.server 8083 --directory build/web &
 
 #### 7D — Van Staff รับของ (localhost:8083)
 
-9. Login `vanstaff1` → POS → กดปุ่ม 🚚 (รับสินค้าโอน)
+9. Login `pos1` → POS → กดปุ่ม 🚚 (รับสินค้าโอน)
 
 10. เห็นใบโอนที่ส่งมาให้ สถานะ `dispatched`
 
@@ -375,7 +375,7 @@ Status: pending → approved → dispatched → received
 
 #### 7E — Van Staff ส่งคำขอ (localhost:8083)
 
-1. Login `vanstaff1` → POS → กดปุ่ม 📋 (คำขอเบิกสินค้า)
+1. Login `pos1` → POS → กดปุ่ม 📋 (คำขอเบิกสินค้า)
 
 2. Tab **"สร้างคำขอใหม่"**:
    - เลือกต้นทาง: Dropdown สาขา (เลือก HQ)
@@ -452,7 +452,7 @@ Status: requested → pending → approved → dispatched → received
 
 ### ขั้นตอน
 
-1. Login `vanstaff1` → กดปุ่ม 📦 (นับสต๊อก)
+1. Login `pos1` → กดปุ่ม 📦 (นับสต๊อก)
 
 2. ระบบสร้างรอบนับอัตโนมัติ → แสดงรายการสินค้าพร้อม **ยอดในระบบ**
 
@@ -503,7 +503,7 @@ Status: requested → pending → approved → dispatched → received
 
 ### ขั้นตอน
 
-1. Login `vanstaff1` → กดปุ่ม 🧮 (ปิดยอด)
+1. Login `pos1` → กดปุ่ม 🧮 (ปิดยอด)
 
 2. ระบบดึงยอดขายวันนี้มาแสดง:
    - ยอดขายรวม, เงินสด, โอนเงิน, ยอดคืนสินค้า, ยอดสุทธิ
@@ -632,7 +632,7 @@ GET /reports/stock-variance?countId=SC20260402000001
 
 ### ขั้นตอน
 
-1. Login `vanstaff1` → POS (ต้องเปิดไว้)
+1. Login `pos1` → POS (ต้องเปิดไว้)
 
 2. Login `admin` → Backoffice → **Support POS**
 
@@ -682,10 +682,10 @@ Go Hub:
 3. Login `hqmanager` → Sidebar ✅ ไม่มี Users, Company, Branches, POS, Support POS
 
 #### 13C — Van Staff ไม่มี Backoffice
-4. Login `vanstaff1` → ✅ เข้า POS / ไม่มีปุ่ม OFFICE
+4. Login `pos1` → ✅ เข้า POS / ไม่มีปุ่ม OFFICE
 
 #### 13D — API Authorization
-5. DevTools (F12) → Network → Login `vanstaff1`
+5. DevTools (F12) → Network → Login `pos1`
 6. GET `/users` → ✅ 403 Forbidden
 
 ### Flow สรุป
@@ -751,7 +751,7 @@ API Guard (Backend):
 
 ### ขั้นตอน
 
-1. Login `vanstaff1` → POS → กดปุ่ม 📋 (คำขอเบิกสินค้า) บน Header
+1. Login `pos1` → POS → กดปุ่ม 📋 (คำขอเบิกสินค้า) บน Header
 
 2. **Tab "คำขอของฉัน"** — ดูรายการคำขอที่เคยส่ง
    - badge สี: 🟠 รอรับเรื่อง → 🟡 รออนุมัติ → 🔵 อนุมัติแล้ว → 🟣 จัดส่งแล้ว → 🟢 รับแล้ว
@@ -851,7 +851,7 @@ Status Transitions:
 กาเครื่องหมายที่ช่อง `[✔]` เมื่อทดสอบแล้วผ่าน หรือ `[✖]` ถ้า error
 
 ### Case 1: ขายสินค้าพื้นฐาน
-- [] Login vanstaff1 → เข้า POS โดยตรง (ไม่ใช่ Backoffice)
+- [] Login pos1 → เข้า POS โดยตรง (ไม่ใช่ Backoffice)
 - [] ค้นหาสินค้าแล้วเพิ่มลงตะกร้าได้
 - [] ราคารวมคำนวณถูกต้อง
 - [] กดชำระเงิน → เลือกเงินสด → ยืนยันสำเร็จ
@@ -931,7 +931,7 @@ Status Transitions:
 - [] แถวสีแดง = ขาด, สีเขียว = เกิน
 
 ### Case 12: Support POS Monitor
-- [] vanstaff1 เปิด POS อยู่ (ต้อง Online)
+- [] pos1 เปิด POS อยู่ (ต้อง Online)
 - [] Admin → Support POS → เห็น "Online (1)"
 - [] กดชื่อ Van Staff → POSMirrorView แสดง
 - [] Van Staff เพิ่มสินค้า → Admin เห็นใน ~1 วินาที
@@ -941,7 +941,7 @@ Status Transitions:
 - [] 13A: Admin เข้า Backoffice โดยตรง / ไม่มีปุ่ม "POS" ใน menu
 - [] 13B: HQ Manager ไม่เห็น Users, Company, Branches, POS, Support POS
 - [] 13C: Van Staff เข้า POS โดยตรง / ไม่มีปุ่ม OFFICE
-- [] 13D: vanstaff1 เรียก GET /users → ได้ 403
+- [] 13D: pos1 เรียก GET /users → ได้ 403
 
 ### Case 14: QR Payment
 - [] Admin ตั้งค่า QR Image ได้

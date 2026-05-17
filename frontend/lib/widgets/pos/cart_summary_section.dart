@@ -105,9 +105,8 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     final focusNodes = _safeQtyFocusNodes;
     final activeKeys = items.where((i) => !i.isReturn).map(_itemKey).toSet();
 
-    for (final key in controllers.keys
-        .where((k) => !activeKeys.contains(k))
-        .toList()) {
+    for (final key
+        in controllers.keys.where((k) => !activeKeys.contains(k)).toList()) {
       controllers.remove(key)?.dispose();
       focusNodes.remove(key)?.dispose();
     }
@@ -115,7 +114,9 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     for (final item in items.where((i) => !i.isReturn)) {
       final key = _itemKey(item);
       final controller = controllers.putIfAbsent(
-          key, () => TextEditingController(text: '${item.qty}'));
+        key,
+        () => TextEditingController(text: '${item.qty}'),
+      );
       focusNodes.putIfAbsent(key, () => FocusNode());
       final expected = '${item.qty}';
       if (!focusNodes[key]!.hasFocus && controller.text != expected) {
@@ -141,7 +142,8 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     final token = auth.token;
     if (token == null) {
       messenger.showSnackBar(
-          const SnackBar(content: Text('token หาย กรุณา login ใหม่')));
+        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      );
       return;
     }
 
@@ -174,8 +176,9 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         );
       }
     } catch (e) {
-      messenger
-          .showSnackBar(SnackBar(content: Text('อัปเดตจำนวนสินค้าไม่สำเร็จ: $e')));
+      messenger.showSnackBar(
+        SnackBar(content: Text('อัปเดตจำนวนสินค้าไม่สำเร็จ: $e')),
+      );
     }
   }
 
@@ -347,11 +350,9 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       final addressCode =
           item['addressCode']?.toString() ?? item['storeCode']?.toString();
 
-      final totalStock =
-          (item['totalStock'] ?? item['total_stock'] ?? 0) is num
-              ? ((item['totalStock'] ?? item['total_stock'] ?? 0) as num)
-                  .toInt()
-              : 0;
+      final totalStock = (item['totalStock'] ?? item['total_stock'] ?? 0) is num
+          ? ((item['totalStock'] ?? item['total_stock'] ?? 0) as num).toInt()
+          : 0;
 
       return _BillLineItem(
         name:
@@ -851,9 +852,6 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         final panelPadding = isTightHeight ? 14.0 : (isCompact ? 16.0 : 20.0);
         final sectionGap = isTightHeight ? 6.0 : (isCompact ? 8.0 : 12.0);
         final summaryRowGap = isTightHeight ? 6.0 : 8.0;
-        final bottomSectionMaxHeight = isTightHeight
-            ? 170.0
-            : (isCompact ? 220.0 : 320.0);
         final useSplitLayout = constraints.maxWidth >= 760;
         final quickDiscountButtonStyle = OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1020,32 +1018,53 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                                                 SizedBox(
                                                   width: 40,
                                                   child: TextField(
-                                                    controller: _safeQtyControllers[itemKey],
-                                                    focusNode: _safeQtyFocusNodes[itemKey],
+                                                    controller:
+                                                        _safeQtyControllers[itemKey],
+                                                    focusNode:
+                                                        _safeQtyFocusNodes[itemKey],
                                                     textAlign: TextAlign.center,
-                                                    keyboardType: TextInputType.number,
+                                                    keyboardType:
+                                                        TextInputType.number,
                                                     style: const TextStyle(
-                                                        fontWeight: FontWeight.w600,
-                                                        fontSize: 13),
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 13,
+                                                    ),
                                                     decoration: const InputDecoration(
                                                       isDense: true,
-                                                      contentPadding: EdgeInsets.symmetric(
-                                                          vertical: 4, horizontal: 2),
-                                                      border: OutlineInputBorder(),
+                                                      contentPadding:
+                                                          EdgeInsets.symmetric(
+                                                            vertical: 4,
+                                                            horizontal: 2,
+                                                          ),
+                                                      border:
+                                                          OutlineInputBorder(),
                                                     ),
                                                     onSubmitted: (v) {
                                                       final n = int.tryParse(v);
                                                       if (n != null) {
-                                                        _setItemQty(context, it, n);
+                                                        _setItemQty(
+                                                          context,
+                                                          it,
+                                                          n,
+                                                        );
                                                       }
                                                     },
                                                     onTapOutside: (_) {
-                                                      final v = _safeQtyControllers[itemKey]?.text ?? '';
+                                                      final v =
+                                                          _safeQtyControllers[itemKey]
+                                                              ?.text ??
+                                                          '';
                                                       final n = int.tryParse(v);
                                                       if (n != null) {
-                                                        _setItemQty(context, it, n);
+                                                        _setItemQty(
+                                                          context,
+                                                          it,
+                                                          n,
+                                                        );
                                                       }
-                                                      _safeQtyFocusNodes[itemKey]?.unfocus();
+                                                      _safeQtyFocusNodes[itemKey]
+                                                          ?.unfocus();
                                                     },
                                                   ),
                                                 ),
@@ -1137,201 +1156,176 @@ class _CartSummarySectionState extends State<CartSummarySection> {
             border: Border.all(color: context.colorBorder),
           ),
           padding: EdgeInsets.all(isTightHeight ? 10 : 12),
-          child: LayoutBuilder(
-            builder: (context, pricingConstraints) {
-              return SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: pricingConstraints.maxHeight,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildDialogSummaryRow(
+                    context,
+                    'ราคารวม',
+                    '฿${subtotal.toStringAsFixed(2)}',
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  SizedBox(height: summaryRowGap),
+                  _buildDialogSummaryRow(
+                    context,
+                    'ส่วนลด',
+                    '- ฿${effectiveDiscount.toStringAsFixed(2)}',
+                  ),
+                  if (returnCredit > 0) ...[
+                    SizedBox(height: summaryRowGap),
+                    _buildDialogSummaryRow(
+                      context,
+                      'คืนสินค้า (Credit)',
+                      '- ฿${returnCredit.toStringAsFixed(2)}',
+                    ),
+                  ],
+                  SizedBox(height: summaryRowGap),
+                  _buildDialogSummaryRow(
+                    context,
+                    'ภาษี (${(taxRate * 100).toStringAsFixed(0)}%)',
+                    '฿${tax.toStringAsFixed(2)}',
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildDialogSummaryRow(context,
-                            'ราคารวม',
-                            '฿${subtotal.toStringAsFixed(2)}',
-                          ),
-                          SizedBox(height: summaryRowGap),
-                          _buildDialogSummaryRow(context,
-                            'ส่วนลด',
-                            '- ฿${effectiveDiscount.toStringAsFixed(2)}',
-                          ),
-                          if (returnCredit > 0) ...[
-                            SizedBox(height: summaryRowGap),
-                            _buildDialogSummaryRow(context,
-                              'คืนสินค้า (Credit)',
-                              '- ฿${returnCredit.toStringAsFixed(2)}',
-                            ),
-                          ],
-                          SizedBox(height: summaryRowGap),
-                          _buildDialogSummaryRow(context,
-                            'ภาษี (${(taxRate * 100).toStringAsFixed(0)}%)',
-                            '฿${tax.toStringAsFixed(2)}',
-                          ),
-                        ],
-                      ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(vertical: sectionGap),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: const Text(
-                                    'ส่วนลด',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  children: [
-                                    for (final percent in [5, 10, 15, 20])
-                                      OutlinedButton(
-                                        style: quickDiscountButtonStyle,
-                                        onPressed: () => _applyQuickDiscount(
-                                          context,
-                                          percent.toDouble(),
-                                          subtotal,
-                                        ),
-                                        child: Text('$percent%'),
-                                      ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: sectionGap),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: _discountController,
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                    decoration: const InputDecoration(
-                                      labelText: 'ส่วนลด',
-                                      hintText: 'เช่น 5 หรือ 100',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    onChanged: (_) =>
-                                        _recalculateDiscount(context, subtotal),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                DropdownButton<bool>(
-                                  value: _isPercentMode,
-                                  onChanged: (value) {
-                                    if (value == null) return;
-                                    setState(() {
-                                      _isPercentMode = value;
-                                    });
-                                    _recalculateDiscount(context, subtotal);
-                                  },
-                                  items: const [
-                                    DropdownMenuItem(
-                                      value: true,
-                                      child: Text('%'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: false,
-                                      child: Text('บาท'),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ],
+                      const Expanded(
+                        child: Text(
+                          'ส่วนลด',
+                          style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                      const SizedBox(width: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
                         children: [
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              vertical: isCompact ? 10 : 12,
-                              horizontal: 14,
-                            ),
-                            decoration: BoxDecoration(
-                              color: context.colorPrimary.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(
-                                AppSizes.radius,
+                          for (final percent in [5, 10, 15, 20])
+                            OutlinedButton(
+                              style: quickDiscountButtonStyle,
+                              onPressed: () => _applyQuickDiscount(
+                                context,
+                                percent.toDouble(),
+                                subtotal,
                               ),
+                              child: Text('$percent%'),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'รวมสุทธิ',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                Text(
-                                  '${total < 0 ? '-฿' : '฿'}${total.abs().toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    color: total < 0
-                                        ? context.colorDanger
-                                        : context.colorPrimary,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          SizedBox(height: sectionGap),
-                          ElevatedButton(
-                            onPressed: (bill.isLoading || !hasSettlementItems)
-                                ? null
-                                : () => _handleConfirmPayment(context),
-                            child: const Text('ชำระเงิน'),
-                          ),
-                          SizedBox(height: sectionGap),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: bill.isLoading
-                                      ? null
-                                      : () => _holdBill(context),
-                                  child: const Text('พักบิล'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: context.colorDanger,
-                                    side: BorderSide(
-                                      color: context.colorDanger,
-                                    ),
-                                  ),
-                                  onPressed: bill.isLoading
-                                      ? null
-                                      : () => _clearBill(context),
-                                  child: const Text('ล้างบิล'),
-                                ),
-                              ),
-                            ],
-                          ),
                         ],
                       ),
                     ],
                   ),
-                ),
-              );
-            },
+                  SizedBox(height: sectionGap),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _discountController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'ส่วนลด',
+                            hintText: 'เช่น 5 หรือ 100',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (_) =>
+                              _recalculateDiscount(context, subtotal),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      DropdownButton<bool>(
+                        value: _isPercentMode,
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() => _isPercentMode = value);
+                          _recalculateDiscount(context, subtotal);
+                        },
+                        items: const [
+                          DropdownMenuItem(value: true, child: Text('%')),
+                          DropdownMenuItem(value: false, child: Text('บาท')),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      vertical: isCompact ? 10 : 12,
+                      horizontal: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: context.colorPrimary.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(AppSizes.radius),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'รวมสุทธิ',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        Text(
+                          '${total < 0 ? '-฿' : '฿'}${total.abs().toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: total < 0
+                                ? context.colorDanger
+                                : context.colorPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: sectionGap),
+                  ElevatedButton(
+                    onPressed: (bill.isLoading || !hasSettlementItems)
+                        ? null
+                        : () => _handleConfirmPayment(context),
+                    child: const Text('ชำระเงิน'),
+                  ),
+                  SizedBox(height: sectionGap),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: bill.isLoading
+                              ? null
+                              : () => _holdBill(context),
+                          child: const Text('พักบิล'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: context.colorDanger,
+                            side: BorderSide(color: context.colorDanger),
+                          ),
+                          onPressed: bill.isLoading
+                              ? null
+                              : () => _clearBill(context),
+                          child: const Text('ล้างบิล'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
           ),
         );
 
@@ -1363,12 +1357,16 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                           color: Colors.green.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                              color: Colors.green.withValues(alpha: 0.35)),
+                            color: Colors.green.withValues(alpha: 0.35),
+                          ),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.person,
-                                size: 16, color: Colors.green),
+                            const Icon(
+                              Icons.person,
+                              size: 16,
+                              color: Colors.green,
+                            ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
@@ -1391,8 +1389,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                       onPressed: bill.isLoading
                           ? null
                           : () async {
-                              final token =
-                                  context.read<AuthProvider>().token;
+                              final token = context.read<AuthProvider>().token;
                               if (token == null) return;
                               try {
                                 await context
@@ -1402,8 +1399,8 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                                 if (!context.mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                      content: Text(
-                                          'ยกเลิกสมาชิกไม่สำเร็จ: $e')),
+                                    content: Text('ยกเลิกสมาชิกไม่สำเร็จ: $e'),
+                                  ),
                                 );
                               }
                             },
@@ -1483,14 +1480,9 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                       )
                     : Column(
                         children: [
-                          Expanded(child: itemListPanel),
+                          Expanded(flex: 2, child: itemListPanel),
                           SizedBox(height: sectionGap),
-                          ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxHeight: bottomSectionMaxHeight,
-                            ),
-                            child: pricingPanel,
-                          ),
+                          Expanded(flex: 3, child: pricingPanel),
                         ],
                       ),
               ),
@@ -1584,10 +1576,15 @@ class _QrPaymentDialogState extends State<_QrPaymentDialog> {
                         future: _qrFuture,
                         builder: (context, snap) {
                           if (snap.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator());
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
                           }
                           if (snap.hasData && snap.data != null) {
-                            return Image.memory(snap.data!, fit: BoxFit.contain);
+                            return Image.memory(
+                              snap.data!,
+                              fit: BoxFit.contain,
+                            );
                           }
                           return const Center(
                             child: Text(
@@ -1781,8 +1778,8 @@ class _ReceiptDialog extends StatelessWidget {
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
-        child: Padding(
+        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 680),
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2122,7 +2119,8 @@ class _ReturnSettlementDialog extends StatelessWidget {
                 message: hasMember ? '' : 'กรุณาผูกสมาชิกก่อนเพื่อเก็บเครดิต',
                 child: OutlinedButton(
                   onPressed: hasMember
-                      ? () => Navigator.of(context).pop(_ReturnSettlement.credit)
+                      ? () =>
+                            Navigator.of(context).pop(_ReturnSettlement.credit)
                       : null,
                   child: const Padding(
                     padding: EdgeInsets.symmetric(vertical: 10),

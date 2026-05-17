@@ -1,0 +1,1 @@
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "custom_permissions" TEXT[] DEFAULT NULL;

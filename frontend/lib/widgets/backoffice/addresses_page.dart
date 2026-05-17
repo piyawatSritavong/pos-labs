@@ -227,46 +227,53 @@ class _AddressesManagementSectionState
   }
 
   Widget _buildDataTable(List<Map<String, dynamic>> items) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        headingRowHeight: 44,
-        dataRowMinHeight: 44,
-        dataRowMaxHeight: 56,
-        columnSpacing: 24,
-        columns: const [
-          DataColumn(label: Text('Part Code')),
-          DataColumn(label: Text('Part Name')),
-          DataColumn(label: Text('Store')),
-          DataColumn(label: Text('Shelf')),
-          DataColumn(label: Text('Qty')),
-          DataColumn(label: Text('Min / ROP')),
-          DataColumn(label: Text('Max')),
-        ],
-        rows: items.map((a) {
-          final partCode = (a['partCode'] ?? '').toString();
-          final partName = (a['partName'] ?? '').toString();
-          final storeName = (a['storeName'] ?? a['storeId'] ?? '').toString();
-          final shelf = (a['shelf'] ?? '').toString();
-          final qty = (a['qty'] ?? '').toString();
-          final min = (a['min'] ?? '').toString();
-          final rop = (a['rop'] ?? '').toString();
-          final max = (a['max'] ?? '').toString();
-
-          return DataRow(
-            cells: [
-              DataCell(Text(partCode)),
-              DataCell(Text(partName.isEmpty ? '-' : partName)),
-              DataCell(Text(storeName.isEmpty ? '-' : storeName)),
-              DataCell(Text(shelf.isEmpty ? '-' : shelf)),
-              DataCell(Text(qty.isEmpty ? '-' : qty)),
-              DataCell(
-                Text('${min.isEmpty ? '-' : min} / ${rop.isEmpty ? '-' : rop}'),
-              ),
-              DataCell(Text(max.isEmpty ? '-' : max)),
+    return Scrollbar(
+      child: SingleChildScrollView(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowHeight: 44,
+            dataRowMinHeight: 44,
+            dataRowMaxHeight: 56,
+            columnSpacing: 24,
+            columns: const [
+              DataColumn(label: Text('Part Code')),
+              DataColumn(label: Text('Part Name')),
+              DataColumn(label: Text('Store')),
+              DataColumn(label: Text('Shelf')),
+              DataColumn(label: Text('Qty')),
+              DataColumn(label: Text('Min / ROP')),
+              DataColumn(label: Text('Max')),
             ],
-          );
-        }).toList(),
+            rows: items.map((a) {
+              final partCode = (a['partCode'] ?? '').toString();
+              final partName = (a['partName'] ?? '').toString();
+              final storeName = (a['storeName'] ?? a['storeId'] ?? '')
+                  .toString();
+              final shelf = (a['shelf'] ?? '').toString();
+              final qty = (a['qty'] ?? '').toString();
+              final min = (a['min'] ?? '').toString();
+              final rop = (a['rop'] ?? '').toString();
+              final max = (a['max'] ?? '').toString();
+
+              return DataRow(
+                cells: [
+                  DataCell(Text(partCode)),
+                  DataCell(Text(partName.isEmpty ? '-' : partName)),
+                  DataCell(Text(storeName.isEmpty ? '-' : storeName)),
+                  DataCell(Text(shelf.isEmpty ? '-' : shelf)),
+                  DataCell(Text(qty.isEmpty ? '-' : qty)),
+                  DataCell(
+                    Text(
+                      '${min.isEmpty ? '-' : min} / ${rop.isEmpty ? '-' : rop}',
+                    ),
+                  ),
+                  DataCell(Text(max.isEmpty ? '-' : max)),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
       ),
     );
   }

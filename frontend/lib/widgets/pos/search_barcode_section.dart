@@ -7,7 +7,9 @@ import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
 class SearchBarcodeSection extends StatefulWidget {
-  const SearchBarcodeSection({super.key});
+  const SearchBarcodeSection({super.key, this.itemsPerPage = 9});
+
+  final int itemsPerPage;
 
   @override
   State<SearchBarcodeSection> createState() => SearchBarcodeSectionState();
@@ -22,9 +24,12 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
   int _currentPage = 0;
 
   List<List<Product>> _chunkedProducts() {
+    final pageSize = widget.itemsPerPage;
     final chunks = <List<Product>>[];
-    for (var i = 0; i < _products.length; i += 9) {
-      final end = i + 9 > _products.length ? _products.length : i + 9;
+    for (var i = 0; i < _products.length; i += pageSize) {
+      final end = i + pageSize > _products.length
+          ? _products.length
+          : i + pageSize;
       chunks.add(_products.sublist(i, end));
     }
     return chunks;
@@ -44,9 +49,21 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
     Map<String, dynamic>? defaultAddress;
 
     for (final addr in rawAddresses) {
-      if (addr is Map<String, dynamic> && addr['is_default'] == true) {
+      if (addr is Map<String, dynamic> &&
+          (addr['isDefault'] == true || addr['is_default'] == true)) {
         defaultAddress = addr;
         break;
+      }
+    }
+
+    if (defaultAddress == null) {
+      for (final addr in rawAddresses) {
+        if (addr is! Map<String, dynamic>) continue;
+        final qty = _toDouble(addr['qty']);
+        if (qty > 0) {
+          defaultAddress = addr;
+          break;
+        }
       }
     }
 
@@ -59,7 +76,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
 
     final defaultAddressCode =
         defaultAddress?['addressCode']?.toString() ??
-            defaultAddress?['code']?.toString();
+        defaultAddress?['code']?.toString();
 
     return Product(
       id: json['id']?.toString() ?? json['code']?.toString() ?? '',
@@ -87,7 +104,10 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
 
     setState(() => _isLoading = true);
     try {
-      final raw = await ApiPartsService.getPartByCode(token: token, code: trimmed);
+      final raw = await ApiPartsService.getPartByCode(
+        token: token,
+        code: trimmed,
+      );
       final product = _mapProduct(raw);
       _products = [product];
       if (_lastAutoAddedBarcode != trimmed) {
@@ -175,10 +195,10 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
   @override
   Widget build(BuildContext context) {
     final pages = _chunkedProducts();
-    final currentPageIndex =
-        pages.isEmpty ? 0 : _currentPage.clamp(0, pages.length - 1).toInt();
-    final currentPageCount =
-        pages.isEmpty ? 0 : pages[currentPageIndex].length;
+    final currentPageIndex = pages.isEmpty
+        ? 0
+        : _currentPage.clamp(0, pages.length - 1).toInt();
+    final currentPageCount = pages.isEmpty ? 0 : pages[currentPageIndex].length;
 
     return Container(
       decoration: BoxDecoration(
@@ -253,8 +273,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
                                 if (_pageController.hasClients) {
                                   _pageController.animateToPage(
                                     index,
-                                    duration:
-                                        const Duration(milliseconds: 300),
+                                    duration: const Duration(milliseconds: 300),
                                     curve: Curves.easeOut,
                                   );
                                 }
@@ -262,7 +281,9 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
                               child: Container(
                                 width: 12,
                                 height: 12,
-                                margin: const EdgeInsets.symmetric(horizontal: 5),
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                ),
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: index == _currentPage
@@ -293,7 +314,10 @@ class _EmptyProductsState extends StatelessWidget {
         children: [
           Icon(Icons.inventory_2_outlined, size: 48, color: context.colorMuted),
           const SizedBox(height: 8),
-          Text('ยิงบาร์โค้ด/พิมค้นหา', style: TextStyle(color: context.colorMuted)),
+          Text(
+            'ยิงบาร์โค้ด/พิมค้นหา',
+            style: TextStyle(color: context.colorMuted),
+          ),
         ],
       ),
     );
@@ -365,8 +389,10 @@ class _ProductCard extends StatelessWidget {
               style: OutlinedButton.styleFrom(
                 foregroundColor: context.colorPrimary,
                 side: BorderSide(color: context.colorPrimary),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(999),
                 ),

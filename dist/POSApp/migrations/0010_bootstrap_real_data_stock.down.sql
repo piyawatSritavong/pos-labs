@@ -1,0 +1,2 @@
+-- No-op: this migration bootstraps sellable stock for generated real-data rows.
+-- Reversing it would overwrite live inventory counts.

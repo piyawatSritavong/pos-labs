@@ -1,12 +1,16 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 class ApiCompanyService {
   // ตรวจสอบว่าแอปกำลังรันอยู่ในโหมด Release (Production) หรือไม่
   static const bool _isProduction = bool.fromEnvironment('dart.vm.product');
-  static const String baseUrl = _isProduction
-      ? 'http://54.169.213.40:8080'
-      : 'http://localhost:8080';
+  // บน Flutter Web ใช้ relative URL (same-origin) ให้เรียก API ผ่าน host เดียวกับหน้าเว็บ
+  static const String baseUrl = kIsWeb
+      ? ''
+      : (_isProduction
+            ? 'http://54.169.213.40:8080'
+            : 'http://localhost:8080');
 
   // Helper: ดึง Map<String,dynamic> จาก response ที่อาจเป็นหลายรูปแบบ
   static Map<String, dynamic> _extractObjectFromResponse(

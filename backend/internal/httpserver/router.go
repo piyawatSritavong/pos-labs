@@ -3,6 +3,9 @@ package httpserver
 import (
 	"database/sql"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"backend/internal/config"
@@ -394,8 +397,89 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	posMirrorHandler := handlers.NewPosMirrorHandler(sessionRepo, userRepo)
 	r.GET("/ws/pos-mirror", posMirrorHandler.HandleWS)
 
-	// Fallback 404
+	// ----------------------------------------------------------------------
+	// Static Flutter Web + SPA fallback.
+	//
+	// Order of resolution for an unmatched route:
+	//   1. Non-GET/HEAD → JSON 404 (API mistake, not a page request)
+	//   2. Path matches a known API prefix → JSON 404 (preserve API semantics
+	//      for typo'd endpoints; /assets is intentionally NOT in this list
+	//      because Flutter Web serves its bundled assets under /assets/*)
+	//   3. File exists under STATIC_FILES_PATH → serve the file
+	//   4. index.html exists → serve it (SPA client-side routing)
+	//   5. Otherwise → JSON 404
+	//
+	// STATIC_FILES_PATH defaults to "static" (see config.go). On the Windows
+	// POS deployment this resolves to C:\POSApp\static which holds the
+	// Flutter Web release build. Existing API routes (/auth, /parts, ...) are
+	// registered ABOVE this handler so they are matched first by Gin.
+	// ----------------------------------------------------------------------
+	apiPrefixes := []string{
+		"/auth/", "/parts/", "/members/", "/bills/", "/returns/",
+		"/reports/", "/company/", "/branches/", "/pos/", "/promotions/",
+		"/addresses/", "/users/", "/user-branches/", "/transfers/",
+		"/stock-counts/", "/daily-closes/", "/cash-reconciliations/",
+		"/ws/",
+	}
+	exactAPIPaths := map[string]struct{}{
+		"/health": {}, "/test": {},
+		"/auth": {}, "/parts": {}, "/members": {}, "/bills": {}, "/returns": {},
+		"/reports": {}, "/company": {}, "/branches": {}, "/pos": {}, "/promotions": {},
+		"/addresses": {}, "/users": {}, "/user-branches": {}, "/transfers": {},
+		"/stock-counts": {}, "/daily-closes": {}, "/cash-reconciliations": {},
+	}
+
+	// Reuse staticDir declared earlier for the /assets/qr-image handler.
+	if staticDir == "" {
+		staticDir = "static"
+	}
+	absStatic, _ := filepath.Abs(staticDir)
+
 	r.NoRoute(func(c *gin.Context) {
+		method := c.Request.Method
+		if method != http.MethodGet && method != http.MethodHead {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+
+		reqPath := c.Request.URL.Path
+
+		// Exact-match known API roots (e.g. /health typo'd path) → JSON 404
+		if _, isAPI := exactAPIPaths[reqPath]; isAPI {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+		for _, p := range apiPrefixes {
+			if strings.HasPrefix(reqPath, p) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+				return
+			}
+		}
+
+		// Resolve target file inside staticDir, guarding against path traversal.
+		// filepath.Rel returns "../..." when target escapes absStatic — reject
+		// those cases. This is more robust than a string-prefix check (handles
+		// case-insensitive filesystems and trailing-separator quirks).
+		cleaned := filepath.Clean("/" + strings.TrimPrefix(reqPath, "/"))
+		target := filepath.Join(absStatic, cleaned)
+		rel, relErr := filepath.Rel(absStatic, target)
+		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
+		}
+
+		if info, err := os.Stat(target); err == nil && !info.IsDir() {
+			c.File(target)
+			return
+		}
+
+		// SPA fallback: any unknown path (no extension match, not API) → index.html
+		indexPath := filepath.Join(absStatic, "index.html")
+		if info, err := os.Stat(indexPath); err == nil && !info.IsDir() {
+			c.File(indexPath)
+			return
+		}
+
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 	})
 

@@ -558,78 +558,108 @@ class PartsManagementSection extends StatelessWidget {
                         ? const Center(child: CircularProgressIndicator())
                         : partsProvider.parts.isEmpty
                         ? const Center(child: Text('ยังไม่มีข้อมูลสินค้า'))
-                        : SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: DataTable(
-                              headingRowHeight: 44,
-                              dataRowMinHeight: 44,
-                              dataRowMaxHeight: 56,
-                              columnSpacing: 24,
-                              columns: const [
-                                DataColumn(label: Text('รหัสสินค้า')),
-                                DataColumn(label: Text('ชื่อสินค้า')),
-                                DataColumn(label: Text('Barcode')),
-                                DataColumn(label: Text('หน่วย')),
-                                DataColumn(label: Text('ราคาขาย')),
-                                DataColumn(label: Text('Actions')),
-                              ],
-                              rows: partsProvider.parts.map((p) {
-                                final code = p['code']?.toString() ?? '';
-                                final name = p['name']?.toString() ?? '';
-                                final barcode = p['barcode']?.toString() ?? '';
-                                final unit = p['unit']?.toString() ?? '';
-                                final priceValue = p['price'];
-                                String priceText;
-                                if (priceValue is num) {
-                                  priceText = priceValue.toStringAsFixed(2);
-                                } else {
-                                  priceText = priceValue?.toString() ?? '';
-                                }
-
-                                return DataRow(
-                                  cells: [
-                                    DataCell(Text(code)),
-                                    DataCell(Text(name)),
-                                    DataCell(Text(barcode)),
-                                    DataCell(Text(unit)),
-                                    DataCell(Text('฿$priceText')),
-                                    DataCell(
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.end,
-                                        children: [
-                                          IconButton(
-                                            icon: const Icon(Icons.edit),
-                                            tooltip: 'แก้ไขสินค้า',
-                                            onPressed: () {
-                                              if (token.isEmpty) return;
-                                              _showEditPartDialog(
-                                                context,
-                                                token,
-                                                partsProvider,
-                                                p,
-                                              );
-                                            },
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(Icons.delete),
-                                            tooltip: 'ลบสินค้า',
-                                            onPressed: () {
-                                              if (token.isEmpty) return;
-                                              _confirmDeletePart(
-                                                context,
-                                                token,
-                                                partsProvider,
-                                                code,
-                                              );
-                                            },
-                                          ),
-                                        ],
-                                      ),
-                                    ),
+                        : Scrollbar(
+                            child: SingleChildScrollView(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  headingRowHeight: 44,
+                                  dataRowMinHeight: 44,
+                                  dataRowMaxHeight: 56,
+                                  columnSpacing: 24,
+                                  columns: const [
+                                    DataColumn(label: Text('รหัสสินค้า')),
+                                    DataColumn(label: Text('ชื่อสินค้า')),
+                                    DataColumn(label: Text('Barcode')),
+                                    DataColumn(label: Text('หน่วย')),
+                                    DataColumn(label: Text('ราคาขาย')),
+                                    DataColumn(label: Text('Actions')),
                                   ],
-                                );
-                              }).toList(),
+                                  rows: partsProvider.parts.map((p) {
+                                    final code = p['code']?.toString() ?? '';
+                                    // Prefer Thai name when available; backend returns both `name` and `nameTh`.
+                                    final name =
+                                        (p['nameTh']?.toString().isNotEmpty ==
+                                                    true
+                                                ? p['nameTh']
+                                                : p['name'])
+                                            ?.toString() ??
+                                        '';
+                                    // Backend returns camelCase `barCode` (not `barcode`).
+                                    final barcode =
+                                        p['barCode']?.toString() ?? '';
+                                    // Backend returns `unit` as an object {id, label, labelTh}.
+                                    // Render the Thai label first, then English, then id.
+                                    final unitMap = p['unit'];
+                                    final unit = (unitMap is Map)
+                                        ? ((unitMap['labelTh']
+                                                              ?.toString()
+                                                              .isNotEmpty ==
+                                                          true
+                                                      ? unitMap['labelTh']
+                                                      : (unitMap['label']
+                                                                    ?.toString()
+                                                                    .isNotEmpty ==
+                                                                true
+                                                            ? unitMap['label']
+                                                            : unitMap['id']))
+                                                  ?.toString() ??
+                                              '')
+                                        : (unitMap?.toString() ?? '');
+                                    final priceValue = p['price'];
+                                    String priceText;
+                                    if (priceValue is num) {
+                                      priceText = priceValue.toStringAsFixed(2);
+                                    } else {
+                                      priceText = priceValue?.toString() ?? '';
+                                    }
+
+                                    return DataRow(
+                                      cells: [
+                                        DataCell(Text(code)),
+                                        DataCell(Text(name)),
+                                        DataCell(Text(barcode)),
+                                        DataCell(Text(unit)),
+                                        DataCell(Text('฿$priceText')),
+                                        DataCell(
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.end,
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(Icons.edit),
+                                                tooltip: 'แก้ไขสินค้า',
+                                                onPressed: () {
+                                                  if (token.isEmpty) return;
+                                                  _showEditPartDialog(
+                                                    context,
+                                                    token,
+                                                    partsProvider,
+                                                    p,
+                                                  );
+                                                },
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(Icons.delete),
+                                                tooltip: 'ลบสินค้า',
+                                                onPressed: () {
+                                                  if (token.isEmpty) return;
+                                                  _confirmDeletePart(
+                                                    context,
+                                                    token,
+                                                    partsProvider,
+                                                    code,
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
                             ),
                           ),
                   ),

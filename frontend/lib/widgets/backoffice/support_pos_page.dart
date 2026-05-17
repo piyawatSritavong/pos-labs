@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
@@ -7,9 +8,16 @@ import 'package:frontend/theme/app_theme.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 /// Builds watcher WebSocket URL from the same base as the broadcaster.
+/// บน Flutter Web ใช้ same-origin; บน desktop ใช้ http://localhost:8080
 String _buildWatcherWsUrl(String token) {
-  const baseUrl = 'http://localhost:8080';
-  final wsBase = baseUrl.replaceFirst('http://', 'ws://');
+  String baseUrl;
+  if (kIsWeb) {
+    final origin = Uri.base;
+    baseUrl = '${origin.scheme}://${origin.authority}';
+  } else {
+    baseUrl = 'http://localhost:8080';
+  }
+  final wsBase = baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
   return '$wsBase/ws/pos-mirror?token=$token';
 }
 

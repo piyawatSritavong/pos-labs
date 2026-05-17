@@ -23,6 +23,17 @@ class _CustomerScreenState extends State<CustomerScreen> {
     if (kIsWeb) {
       _bc = html.BroadcastChannel('pos_mirror');
       _bc!.addEventListener('message', _onMirrorMessage);
+      // ขอ fullscreen หลังหน้าถูก render เสร็จ (Web only) เพื่อให้แสดงเต็มจอ 2
+      // user gesture จากปุ่มในหน้าหลักจะส่งต่อมาให้ popup นี้ใช้สิทธิ์ขอ fullscreen ได้
+      WidgetsBinding.instance.addPostFrameCallback((_) => _requestFullscreen());
+    }
+  }
+
+  void _requestFullscreen() {
+    try {
+      html.document.documentElement?.requestFullscreen();
+    } catch (_) {
+      // permission denied / not in user gesture context — แสดง windowed mode ปกติ
     }
   }
 

@@ -146,6 +146,28 @@ func buildBillItemSummary(details []repository.BillDetail) (itemCount int, total
 	return itemCount, totalQty
 }
 
+func (h *BillsHandler) restoreInventoryAfterFailedAdd(ctx context.Context, addressCode string, qty int) {
+	if qty <= 0 || strings.TrimSpace(addressCode) == "" {
+		return
+	}
+	if err := h.addresses.IncreaseInventory(ctx, addressCode, qty); err != nil {
+		log.Printf("critical: failed to restore inventory for address %s after add-item failure: %v", addressCode, err)
+	}
+}
+
+func (h *BillsHandler) rollbackAddedBillItem(ctx context.Context, billID, partCode, addressCode string, addedQty int, hadExisting bool, previousQty int) {
+	if hadExisting {
+		if err := h.bills.UpdateItemQty(ctx, billID, partCode, addressCode, previousQty); err != nil {
+			log.Printf("critical: failed to restore previous bill item qty for bill %s part %s address %s: %v", billID, partCode, addressCode, err)
+		}
+	} else {
+		if err := h.bills.RemoveItem(ctx, billID, partCode, addressCode); err != nil {
+			log.Printf("critical: failed to remove bill item during add-item rollback for bill %s part %s address %s: %v", billID, partCode, addressCode, err)
+		}
+	}
+	h.restoreInventoryAfterFailedAdd(ctx, addressCode, addedQty)
+}
+
 func (h *BillsHandler) buildMemberOutput(ctx context.Context, memberID string) interface{} {
 	if strings.TrimSpace(memberID) == "" {
 		return nil
@@ -765,6 +787,7 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 	// Check if item already exists in bill
 	existingItem, err := h.bills.GetItemByPartCode(ctx, id, req.PartCode, req.AddressCode)
 	if err != nil && !repository.IsNotFoundError(err) {
+		h.restoreInventoryAfterFailedAdd(ctx, req.AddressCode, req.Qty)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_check_existing_item"})
 		return
 	}
@@ -773,10 +796,14 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 	userVal, _ := c.Get("user")
 	user, _ := userVal.(*repository.User)
 
+	hadExisting := existingItem != nil
+	previousQty := 0
 	if existingItem != nil {
+		previousQty = existingItem.Qty
 		// Update quantity (add to existing)
 		newQty := existingItem.Qty + req.Qty
 		if err := h.bills.UpdateItemQty(ctx, id, req.PartCode, req.AddressCode, newQty); err != nil {
+			h.restoreInventoryAfterFailedAdd(ctx, req.AddressCode, req.Qty)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_update_item"})
 			return
 		}
@@ -795,6 +822,7 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 			Qty:         req.Qty,
 		}
 		if err := h.bills.AddItem(ctx, detail); err != nil {
+			h.restoreInventoryAfterFailedAdd(ctx, req.AddressCode, req.Qty)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_add_item"})
 			return
 		}
@@ -802,7 +830,10 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 
 	// Recalculate bill amounts
 	if err := h.recalculateBillAmounts(ctx, id); err != nil {
-		log.Printf("Warning: failed to recalculate bill amounts: %v", err)
+		log.Printf("Error: failed to recalculate bill amounts after add-item: %v", err)
+		h.rollbackAddedBillItem(ctx, id, req.PartCode, req.AddressCode, req.Qty, hadExisting, previousQty)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_recalculate_bill"})
+		return
 	}
 
 	// Update bill updated_at and updated_by
@@ -918,6 +949,7 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 	// Check if item already exists in bill
 	existingItem, err := h.bills.GetItemByPartCode(ctx, id, partDetail.Code, selectedAddress.Code)
 	if err != nil && !repository.IsNotFoundError(err) {
+		h.restoreInventoryAfterFailedAdd(ctx, selectedAddress.Code, req.Qty)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_check_existing_item"})
 		return
 	}
@@ -926,10 +958,14 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 	userVal, _ := c.Get("user")
 	user, _ := userVal.(*repository.User)
 
+	hadExisting := existingItem != nil
+	previousQty := 0
 	if existingItem != nil {
+		previousQty = existingItem.Qty
 		// Update quantity (add to existing)
 		newQty := existingItem.Qty + req.Qty
 		if err := h.bills.UpdateItemQty(ctx, id, partDetail.Code, selectedAddress.Code, newQty); err != nil {
+			h.restoreInventoryAfterFailedAdd(ctx, selectedAddress.Code, req.Qty)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_update_item"})
 			return
 		}
@@ -948,6 +984,7 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 			Qty:         req.Qty,
 		}
 		if err := h.bills.AddItem(ctx, detail); err != nil {
+			h.restoreInventoryAfterFailedAdd(ctx, selectedAddress.Code, req.Qty)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_add_item"})
 			return
 		}
@@ -955,7 +992,10 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 
 	// Recalculate bill amounts
 	if err := h.recalculateBillAmounts(ctx, id); err != nil {
-		log.Printf("Warning: failed to recalculate bill amounts: %v", err)
+		log.Printf("Error: failed to recalculate bill amounts after add-item-by-barcode: %v", err)
+		h.rollbackAddedBillItem(ctx, id, partDetail.Code, selectedAddress.Code, req.Qty, hadExisting, previousQty)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_recalculate_bill"})
+		return
 	}
 
 	// Update bill updated_at and updated_by
@@ -2286,6 +2326,19 @@ func (h *BillsHandler) Payment(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_bill"})
+		return
+	}
+
+	items, err := h.bills.GetAllItems(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_bill_items"})
+		return
+	}
+	if len(items) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "empty_bill",
+			"message": "Bill must have at least one item before payment",
+		})
 		return
 	}
 

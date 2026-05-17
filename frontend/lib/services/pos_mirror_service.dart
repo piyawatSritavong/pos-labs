@@ -162,10 +162,18 @@ class PosMirrorService {
 
 /// Builds the WebSocket URL for the POS mirror broadcaster.
 /// Uses ws:// for http:// base URLs (dev), wss:// for https:// (prod).
+///
+/// บน Flutter Web ใช้ same-origin (Uri.base) — Go backend serve ทั้ง Web และ
+/// WebSocket จาก host เดียวกัน (เช่น Windows POS: http://127.0.0.1:8080)
+/// บน desktop/mobile ใช้ค่า hardcoded เดิม
 String buildPosMirrorWsUrl(String token) {
-  const baseUrl = kIsWeb
-      ? String.fromEnvironment('API_URL', defaultValue: 'http://localhost:8080')
-      : 'http://localhost:8080';
+  String baseUrl;
+  if (kIsWeb) {
+    final origin = Uri.base;
+    baseUrl = '${origin.scheme}://${origin.authority}';
+  } else {
+    baseUrl = 'http://localhost:8080';
+  }
   final wsBase = baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
   return '$wsBase/ws/pos-mirror?token=$token';
 }

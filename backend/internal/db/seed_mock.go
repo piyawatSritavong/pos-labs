@@ -183,7 +183,7 @@ func SeedMockData(db *sql.DB) error {
 		BranchID string
 	}{
 		{"hqmanager", "hq123456", "role.hq_manager", "HQ Manager", "00000"},
-		{"vanstaff1", "van123456", "role.van_staff", "Van Staff 1", "00000"},
+		{"pos1", "pos123456", "role.cashier", "POS Cashier 1", "00000"},
 	}
 	for _, u := range testUsers {
 		hash, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
@@ -216,8 +216,8 @@ func SeedMockData(db *sql.DB) error {
 
 	// Categories
 	categories := []struct {
-		ID   string
-		Name string
+		ID     string
+		Name   string
 		NameTH string
 	}{
 		{"CAT001", "Beverages", "เครื่องดื่ม"},
@@ -377,5 +377,3 @@ func SeedMockData(db *sql.DB) error {
 
 	return nil
 }
-
-

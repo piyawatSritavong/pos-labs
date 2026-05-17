@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -16,9 +17,29 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
+  late final TextEditingController _usernameController;
   String _username = '';
   String _password = '';
   bool _obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // บน Web รองรับการ pre-fill username ผ่าน URL parameter (?username=pos1)
+    // start-pos.bat บน Windows POS จะเปิด kiosk ด้วย URL นี้
+    String initial = '';
+    if (kIsWeb) {
+      initial = Uri.base.queryParameters['username']?.trim() ?? '';
+    }
+    _usernameController = TextEditingController(text: initial);
+    _username = initial;
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    super.dispose();
+  }
 
   Future<void> _submit() async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
@@ -76,6 +97,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   // Username
                   TextFormField(
+                    controller: _usernameController,
                     decoration: const InputDecoration(
                       labelText: 'Username',
                       border: OutlineInputBorder(),
@@ -142,7 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 8),
                   const Text(
-                    'ทดสอบ POS: username = admin, password = admin123',
+                    'ทดสอบ POS: username = pos1, password = pos123456',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ],
