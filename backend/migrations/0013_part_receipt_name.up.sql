@@ -34,7 +34,7 @@ UPDATE "bill_item_detail"
 UPDATE "return_note_item_detail" ri
    SET "receipt_name" = COALESCE(NULLIF(bid."receipt_name", ''), NULLIF(pm."receipt_name", ''), 'ITEM ' || ri."part_code")
   FROM "bill_item_detail" bid
-  LEFT JOIN "part_master" pm ON pm."code" = ri."part_code"
+  LEFT JOIN "part_master" pm ON pm."code" = bid."part_code"
  WHERE bid."bill_id" = ri."reference_bill_id"
    AND bid."part_code" = ri."part_code"
    AND bid."address_code" = ri."address_code"
