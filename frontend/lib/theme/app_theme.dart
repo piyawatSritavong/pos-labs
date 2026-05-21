@@ -5,9 +5,9 @@ class AppColors {
   static const surface = Color(0xFFFFFFFF);
   static const border = Color(0xFFE6E6F0);
 
-  // ไจ๊เฮง brand color — สีแดงเลือดหมู
-  static const primary = Color(0xFF3C0009);
-  static const primaryHover = Color(0xFF55000D); // อ่อนกว่า primary เล็กน้อย
+  // พีพี brand color — สีน้ำเงิน
+  static const primary = Color(0xFF1E2B8C);
+  static const primaryHover = Color(0xFF2A3FB8); // อ่อนกว่า primary เล็กน้อย
 
   static const accent = Color(0xFFFBBF24);
   static const accentHover = Color(0xFFF59E0B);
@@ -21,9 +21,9 @@ class AppColorsDark {
   static const bg = Color(0xFF0F172A); // Slate 950
   static const surface = Color(0xFF1E293B); // Slate 800
   static const border = Color(0xFF334155); // Slate 700
-  // Dark theme variant of ไจ๊เฮง brand red — slightly brighter for contrast on dark bg
-  static const primary = Color(0xFF801A1A); // brighter red for dark mode
-  static const primaryHover = Color(0xFF9B2828);
+  // Dark theme variant of พีพี brand blue — slightly brighter for contrast on dark bg
+  static const primary = Color(0xFF4A5DD8); // brighter blue for dark mode
+  static const primaryHover = Color(0xFF6577E2);
   static const accent = Color(0xFFFCD34D); // Amber 300
   static const text = Color(0xFFF1F5F9); // Slate 100
   static const muted = Color(0xFF94A3B8); // Slate 400
