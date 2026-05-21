@@ -18,6 +18,10 @@ func NewHealthHandler(db *sql.DB) *HealthHandler {
 }
 
 func (h *HealthHandler) Health(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *HealthHandler) Ready(c *gin.Context) {
 	// Create a context with timeout for the database query
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -32,5 +36,3 @@ func (h *HealthHandler) Health(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "db": "up"})
 }
-
-

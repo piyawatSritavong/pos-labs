@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"backend/internal/config"
 	"backend/internal/httpserver/handlers"
@@ -15,7 +14,6 @@ import (
 	"backend/internal/printer"
 	"backend/internal/repository"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -25,15 +23,6 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	}
 
 	r := gin.New()
-	// Add CORS middleware to correctly handle browser preflight OPTIONS requests
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: false,
-		MaxAge:           12 * time.Hour,
-	}))
 	r.Use(gin.Logger(), gin.Recovery())
 
 	// CORS middleware (environment-aware)
@@ -48,6 +37,8 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	// Health
 	healthHandler := handlers.NewHealthHandler(db)
 	r.GET("/health", healthHandler.Health)
+	r.GET("/ready", healthHandler.Ready)
+	r.GET("/health/db", healthHandler.Ready)
 
 	// ---- Mock test endpoint ----
 	r.GET("/test", func(c *gin.Context) {
@@ -369,7 +360,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	dailyCloseRepo := repository.NewDailyCloseRepository(db)
 	cashReconRepo := repository.NewCashReconciliationRepository(db)
 
-	transferHandler := handlers.NewInventoryTransferHandler(transferRepo, branchRepo)
+	transferHandler := handlers.NewInventoryTransferHandler(transferRepo, branchRepo, posRepo)
 	stockCountHandler := handlers.NewStockCountHandler(stockCountRepo, branchRepo)
 	dailyCloseHandler := handlers.NewDailyCloseHandler(dailyCloseRepo, branchRepo)
 	cashReconHandler := handlers.NewCashReconciliationHandler(cashReconRepo, dailyCloseRepo)
@@ -385,6 +376,9 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	transfersWrite.Use(authMw.RequirePermission("transfers", "write"))
 	{
 		transfersWrite.POST("", transferHandler.Create)
+		transfersWrite.POST("/pos-restock", transferHandler.CreatePosRestock)
+		transfersWrite.PUT("/:id/items", transferHandler.UpdateItems)
+		transfersWrite.PUT("/:id/submit", transferHandler.Submit)
 		transfersWrite.PUT("/:id/receive", transferHandler.Receive)
 		transfersWrite.PUT("/:id/cancel", transferHandler.Cancel) // van_staff can cancel own requests
 	}
@@ -394,6 +388,8 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		transfersApprove.PUT("/:id/approve", transferHandler.Approve)
 		transfersApprove.PUT("/:id/dispatch", transferHandler.Dispatch)
 		transfersApprove.PUT("/:id/acknowledge", transferHandler.Acknowledge)
+		transfersApprove.PUT("/:id/approve-restock", transferHandler.ApproveRestock)
+		transfersApprove.POST("/:id/print-log", transferHandler.PrintLog)
 	}
 
 	// Stock Count
@@ -442,7 +438,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	reports.GET("/stock-variance", authMw.RequirePermission("reports_variance", "read"), stockVarianceHandler.GetVariance)
 
 	// POS Mirror WebSocket (no auth middleware — handler authenticates via ?token= query param)
-	posMirrorHandler := handlers.NewPosMirrorHandler(sessionRepo, userRepo, posRepo)
+	posMirrorHandler := handlers.NewPosMirrorHandler(sessionRepo, userRepo, posRepo, cfg)
 	r.GET("/ws/pos-mirror", posMirrorHandler.HandleWS)
 	r.GET("/ws/customer-display", posMirrorHandler.HandleCustomerDisplayWS)
 	posMirrorWrite := r.Group("/pos-mirror")
@@ -470,14 +466,14 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	// registered ABOVE this handler so they are matched first by Gin.
 	// ----------------------------------------------------------------------
 	apiPrefixes := []string{
-		"/auth/", "/parts/", "/members/", "/bills/", "/returns/",
+		"/health/", "/ready/", "/auth/", "/parts/", "/members/", "/bills/", "/returns/",
 		"/reports/", "/company/", "/branches/", "/pos/", "/promotions/",
 		"/addresses/", "/users/", "/user-branches/", "/transfers/",
 		"/stock-counts/", "/daily-closes/", "/cash-reconciliations/",
 		"/ws/", "/pos-mirror/",
 	}
 	exactAPIPaths := map[string]struct{}{
-		"/health": {}, "/test": {},
+		"/health": {}, "/ready": {}, "/health/db": {}, "/test": {},
 		"/auth": {}, "/parts": {}, "/members": {}, "/bills": {}, "/returns": {},
 		"/reports": {}, "/company": {}, "/branches": {}, "/pos": {}, "/promotions": {},
 		"/addresses": {}, "/users": {}, "/user-branches": {}, "/transfers": {},
@@ -490,6 +486,11 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		staticDir = "static"
 	}
 	absStatic, _ := filepath.Abs(staticDir)
+	if cfg.ServeStatic {
+		if info, err := os.Stat(absStatic); err != nil || !info.IsDir() {
+			log.Printf("Static serving enabled but STATIC_FILES_PATH=%q is not available; SPA fallback will return JSON 404 until files exist", staticDir)
+		}
+	}
 
 	r.NoRoute(func(c *gin.Context) {
 		method := c.Request.Method
@@ -510,6 +511,11 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 				c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 				return
 			}
+		}
+
+		if !cfg.ServeStatic {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
+			return
 		}
 
 		// Resolve target file inside staticDir, guarding against path traversal.

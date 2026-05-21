@@ -15,6 +15,7 @@ class RequisitionDialog extends StatefulWidget {
 class _RequisitionDialogState extends State<RequisitionDialog>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  final _createKey = GlobalKey<_CreateRestockTabState>();
 
   @override
   void initState() {
@@ -28,30 +29,38 @@ class _RequisitionDialogState extends State<RequisitionDialog>
     super.dispose();
   }
 
+  void _editDraft(String id) {
+    _tabController.animateTo(1);
+    _createKey.currentState?.loadDraft(id);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 680, maxHeight: 700),
+        constraints: const BoxConstraints(maxWidth: 760, maxHeight: 760),
         child: Column(
           children: [
-            // Header
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
               child: Row(
                 children: [
                   const Icon(
-                    Icons.request_page_outlined,
+                    Icons.local_shipping_outlined,
                     color: AppColors.primary,
                   ),
                   const SizedBox(width: 8),
-                  const Text(
-                    'คำขอเบิกสินค้า',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  const Expanded(
+                    child: Text(
+                      'เบิกสินค้าเข้ารถ',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                  const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.close),
                     onPressed: () => Navigator.of(context).pop(),
@@ -62,14 +71,17 @@ class _RequisitionDialogState extends State<RequisitionDialog>
             TabBar(
               controller: _tabController,
               tabs: const [
-                Tab(text: 'คำขอของฉัน'),
-                Tab(text: 'สร้างคำขอใหม่'),
+                Tab(text: 'ประวัติใบเบิก'),
+                Tab(text: 'สร้างใบเบิก'),
               ],
             ),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: const [_MyRequisitionsTab(), _CreateRequisitionTab()],
+                children: [
+                  _MyRestocksTab(onEditDraft: _editDraft),
+                  _CreateRestockTab(key: _createKey),
+                ],
               ),
             ),
           ],
@@ -79,18 +91,16 @@ class _RequisitionDialogState extends State<RequisitionDialog>
   }
 }
 
-// ============================================================
-// Tab 1: My Requisitions
-// ============================================================
+class _MyRestocksTab extends StatefulWidget {
+  const _MyRestocksTab({required this.onEditDraft});
 
-class _MyRequisitionsTab extends StatefulWidget {
-  const _MyRequisitionsTab();
+  final ValueChanged<String> onEditDraft;
 
   @override
-  State<_MyRequisitionsTab> createState() => _MyRequisitionsTabState();
+  State<_MyRestocksTab> createState() => _MyRestocksTabState();
 }
 
-class _MyRequisitionsTabState extends State<_MyRequisitionsTab> {
+class _MyRestocksTabState extends State<_MyRestocksTab> {
   bool _isLoading = true;
   String? _error;
   List<Map<String, dynamic>> _transfers = [];
@@ -102,9 +112,7 @@ class _MyRequisitionsTabState extends State<_MyRequisitionsTab> {
   }
 
   Future<void> _load() async {
-    final auth = context.read<AuthProvider>();
-    final token = auth.token ?? '';
-    final branchId = auth.branchId ?? '';
+    final token = context.read<AuthProvider>().token ?? '';
     if (token.isEmpty) return;
     setState(() {
       _isLoading = true;
@@ -113,54 +121,14 @@ class _MyRequisitionsTabState extends State<_MyRequisitionsTab> {
     try {
       final list = await ApiOperationsService.getTransfers(
         token: token,
-        toBranchId: branchId,
-        limit: 50,
+        transferMode: 'pos_restock',
+        limit: 80,
       );
-      if (!mounted) return;
-      setState(() => _transfers = list);
+      if (mounted) setState(() => _transfers = list);
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Color _statusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'requested':
-        return Colors.deepOrange;
-      case 'pending':
-        return Colors.amber.shade700;
-      case 'approved':
-        return Colors.blue;
-      case 'dispatched':
-        return Colors.purple;
-      case 'received':
-        return Colors.green;
-      case 'cancelled':
-        return Colors.grey;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _statusLabel(String status) {
-    switch (status.toLowerCase()) {
-      case 'requested':
-        return 'รอรับเรื่อง';
-      case 'pending':
-        return 'รออนุมัติ';
-      case 'approved':
-        return 'อนุมัติแล้ว';
-      case 'dispatched':
-        return 'จัดส่งแล้ว';
-      case 'received':
-        return 'รับแล้ว';
-      case 'cancelled':
-        return 'ยกเลิก';
-      default:
-        return status;
     }
   }
 
@@ -169,6 +137,9 @@ class _MyRequisitionsTabState extends State<_MyRequisitionsTab> {
     try {
       await ApiOperationsService.cancelTransfer(token: token, id: id);
       if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ยกเลิกใบเบิกแล้ว')));
       _load();
     } catch (e) {
       if (!mounted) return;
@@ -178,44 +149,9 @@ class _MyRequisitionsTabState extends State<_MyRequisitionsTab> {
     }
   }
 
-  Future<void> _receive(Map<String, dynamic> transfer) async {
-    final token = context.read<AuthProvider>().token ?? '';
-    final id = transfer['id']?.toString() ?? '';
-    final rawItems = (transfer['items'] as List? ?? [])
-        .cast<Map<String, dynamic>>();
-    // Build receive items list — confirm all dispatched quantities
-    final receiveItems = rawItems
-        .map(
-          (item) => {
-            'partCode': item['partCode']?.toString() ?? '',
-            'receivedQty': item['dispatchedQty'] ?? item['qty'] ?? 0,
-          },
-        )
-        .toList();
-    try {
-      await ApiOperationsService.receiveTransfer(
-        token: token,
-        id: id,
-        items: receiveItems,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('รับสินค้าสำเร็จ')));
-      _load();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('รับสินค้าไม่สำเร็จ: $e')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
         child: Column(
@@ -229,144 +165,89 @@ class _MyRequisitionsTabState extends State<_MyRequisitionsTab> {
       );
     }
     if (_transfers.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.inbox_outlined, size: 48, color: AppColors.muted),
-            const SizedBox(height: 8),
-            const Text(
-              'ยังไม่มีคำขอ',
-              style: TextStyle(color: AppColors.muted),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('รีเฟรช'),
-            ),
-          ],
-        ),
+      return const Center(
+        child: Text('ยังไม่มีใบเบิก', style: TextStyle(color: AppColors.muted)),
       );
     }
-
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.separated(
         padding: const EdgeInsets.all(12),
         itemCount: _transfers.length,
         separatorBuilder: (_, _) => const SizedBox(height: 8),
-        itemBuilder: (context, i) {
-          final t = _transfers[i];
-          final id = t['id']?.toString() ?? '';
-          final status = t['status']?.toString() ?? '';
-          final notes = t['notes']?.toString() ?? '';
-          final createdAt = (t['createdAt']?.toString() ?? '').length >= 10
-              ? t['createdAt'].toString().substring(0, 10)
-              : t['createdAt']?.toString() ?? '';
-          final items = (t['items'] as List? ?? [])
-              .cast<Map<String, dynamic>>();
-
-          return Card(
-            margin: EdgeInsets.zero,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+        itemBuilder: (context, index) {
+          final transfer = _transfers[index];
+          final id = transfer['id']?.toString() ?? '';
+          final status = transfer['status']?.toString() ?? '';
+          final createdAt = _shortDate(transfer['createdAt']);
+          final isStale = transfer['isStale'] == true;
+          return Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'คำขอ #${id.length > 8 ? id.substring(0, 8) : id}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        id,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _statusColor(status).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: _statusColor(status).withValues(alpha: 0.4),
-                          ),
-                        ),
-                        child: Text(
-                          _statusLabel(status),
-                          style: TextStyle(
-                            color: _statusColor(status),
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
+                    _StatusBadge(status: status),
+                  ],
+                ),
+                if (createdAt.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    createdAt,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 12,
+                    ),
                   ),
-                  if (createdAt.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      createdAt,
-                      style: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 12,
-                      ),
+                ],
+                if (isStale) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    transfer['staleReason']?.toString() ?? 'ใบค้าง',
+                    style: const TextStyle(
+                      color: AppColors.danger,
+                      fontWeight: FontWeight.w700,
                     ),
-                  ],
-                  if (items.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    ...items.map((item) {
-                      final code = item['partCode']?.toString() ?? '';
-                      final qty = item['qty']?.toString() ?? '0';
-                      return Text(
-                        '• $code  ×$qty',
-                        style: const TextStyle(fontSize: 13),
-                      );
-                    }),
-                  ],
-                  if (notes.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'หมายเหตุ: $notes',
-                      style: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                  // Action buttons
-                  if (status == 'requested') ...[
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: OutlinedButton(
+                  ),
+                ],
+                if (status == 'draft' || status == 'review') ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      if (status == 'draft')
+                        OutlinedButton.icon(
+                          onPressed: () => widget.onEditDraft(id),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          label: const Text('แก้ไข'),
+                        ),
+                      OutlinedButton.icon(
                         onPressed: () => _cancel(id),
+                        icon: const Icon(Icons.close, size: 16),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.danger,
                           side: const BorderSide(color: AppColors.danger),
                         ),
-                        child: const Text('ยกเลิกคำขอ'),
+                        label: const Text('ยกเลิก'),
                       ),
-                    ),
-                  ],
-                  if (status == 'dispatched') ...[
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _receive(t),
-                        icon: const Icon(Icons.check_circle_outline, size: 16),
-                        label: const Text('ยืนยันรับสินค้า'),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ],
-              ),
+              ],
             ),
           );
         },
@@ -375,385 +256,456 @@ class _MyRequisitionsTabState extends State<_MyRequisitionsTab> {
   }
 }
 
-// ============================================================
-// Tab 2: Create Requisition
-// ============================================================
-
-class _CreateRequisitionTab extends StatefulWidget {
-  const _CreateRequisitionTab();
+class _CreateRestockTab extends StatefulWidget {
+  const _CreateRestockTab({super.key});
 
   @override
-  State<_CreateRequisitionTab> createState() => _CreateRequisitionTabState();
+  State<_CreateRestockTab> createState() => _CreateRestockTabState();
 }
 
-class _CreateRequisitionTabState extends State<_CreateRequisitionTab> {
-  final _formKey = GlobalKey<FormState>();
+class _CreateRestockTabState extends State<_CreateRestockTab> {
+  final _scanController = TextEditingController();
   final _notesController = TextEditingController();
-
-  bool _isLoadingData = true;
-  bool _isSubmitting = false;
-  String? _error;
-
+  final List<_RestockLine> _lines = [];
   List<Map<String, dynamic>> _parts = [];
-  // Source branches = all branches excluding own branch
-  List<Map<String, dynamic>> _sourceBranches = [];
-  String? _selectedFromBranchId; // auto-selected, from _sourceBranches
-
-  final List<_ItemRow> _itemRows = [];
+  String? _draftId;
+  bool _loadingParts = true;
+  bool _saving = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _itemRows.add(_ItemRow());
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadParts());
   }
 
   @override
   void dispose() {
+    _scanController.dispose();
     _notesController.dispose();
-    for (final row in _itemRows) {
-      row.dispose();
-    }
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    final auth = context.read<AuthProvider>();
-    final token = auth.token ?? '';
-    final myBranchId = auth.branchId ?? '';
+  Future<void> _loadParts() async {
+    final token = context.read<AuthProvider>().token ?? '';
     if (token.isEmpty) return;
     setState(() {
-      _isLoadingData = true;
+      _loadingParts = true;
       _error = null;
     });
     try {
-      final results = await Future.wait([
-        ApiService.getBranches(token: token, limit: 50),
-        ApiService.getParts(token: token, limit: 500),
-      ]);
-      if (!mounted) return;
-      final allBranches = results[0];
-      final sources = allBranches
-          .where((b) => (b['branchId']?.toString() ?? '') != myBranchId)
-          .toList();
-      setState(() {
-        _parts = results[1];
-        _sourceBranches = sources;
-        _selectedFromBranchId = sources.isNotEmpty
-            ? sources.first['branchId']?.toString()
-            : null;
-      });
+      final parts = await ApiService.getParts(token: token, limit: 2000);
+      if (mounted) setState(() => _parts = parts);
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _isLoadingData = false);
+      if (mounted) setState(() => _loadingParts = false);
     }
   }
 
-  String get _ownBranchDisplay {
-    return context.read<AuthProvider>().branchId ?? '';
-  }
-
-  void _addRow() {
-    setState(() => _itemRows.add(_ItemRow()));
-  }
-
-  void _removeRow(int index) {
+  Future<void> loadDraft(String id) async {
+    final token = context.read<AuthProvider>().token ?? '';
+    if (token.isEmpty) return;
     setState(() {
-      _itemRows[index].dispose();
-      _itemRows.removeAt(index);
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final transfer = await ApiOperationsService.getTransfer(
+        token: token,
+        id: id,
+      );
+      final items = (transfer['items'] as List? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      _lines
+        ..clear()
+        ..addAll(
+          items.map((item) {
+            final code = item['partCode']?.toString() ?? '';
+            final part =
+                _findCachedPart(code) ??
+                {
+                  'code': code,
+                  'barCode': item['barCode'] ?? '',
+                  'nameTh': item['partNameTh'] ?? item['partName'] ?? code,
+                  'unit': {'labelTh': item['unit'] ?? ''},
+                };
+            return _RestockLine(part: part, qty: _toInt(item['requestedQty']));
+          }),
+        );
+      _draftId = id;
+      _notesController.text = transfer['notes']?.toString() ?? '';
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Map<String, dynamic>? _findCachedPart(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return null;
+    for (final part in _parts) {
+      final code = part['code']?.toString().toLowerCase() ?? '';
+      final barcode = part['barCode']?.toString().toLowerCase() ?? '';
+      if (code == q || barcode == q) return part;
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _findPart(String query) async {
+    final cached = _findCachedPart(query);
+    if (cached != null) return cached;
+    final token = context.read<AuthProvider>().token ?? '';
+    final results = await ApiService.searchParts(
+      token: token,
+      query: query,
+      limit: 20,
+    );
+    if (results.isEmpty) return null;
+    return results.first;
+  }
+
+  Future<void> _addFromInput() async {
+    final raw = _scanController.text.trim();
+    if (raw.isEmpty) return;
+    setState(() => _error = null);
+    try {
+      final part = await _findPart(raw);
+      if (part == null) {
+        setState(() => _error = 'ไม่พบสินค้า: $raw');
+        return;
+      }
+      _addPart(part);
+      _scanController.clear();
+    } catch (e) {
+      setState(() => _error = e.toString());
+    }
+  }
+
+  void _addPart(Map<String, dynamic> part) {
+    final code = part['code']?.toString() ?? '';
+    if (code.isEmpty) return;
+    setState(() {
+      final existing = _lines.where((line) => line.code == code).toList();
+      if (existing.isNotEmpty) {
+        existing.first.qty++;
+      } else {
+        _lines.add(_RestockLine(part: part, qty: 1));
+      }
     });
   }
 
-  Future<void> _submit() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (_selectedFromBranchId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ไม่พบสาขาต้นทางที่ใช้เบิกสินค้าได้')),
-      );
-      return;
-    }
-    final validRows = _itemRows
-        .where((r) => r.selectedPart != null && r.qty > 0)
-        .toList();
-    if (validRows.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('กรุณาเพิ่มรายการสินค้าอย่างน้อย 1 รายการ'),
-        ),
-      );
-      return;
-    }
+  List<Map<String, dynamic>> _itemsPayload() => _lines
+      .where((line) => line.qty > 0 && line.code.isNotEmpty)
+      .map((line) => {'partCode': line.code, 'requestedQty': line.qty})
+      .toList();
 
-    final auth = context.read<AuthProvider>();
-    final token = auth.token ?? '';
-    final toBranchId = auth.branchId ?? '';
-
-    setState(() => _isSubmitting = true);
+  Future<String?> _saveDraft() async {
+    final token = context.read<AuthProvider>().token ?? '';
+    final items = _itemsPayload();
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
-      await ApiOperationsService.createTransfer(
-        token: token,
-        fromBranchId: _selectedFromBranchId!,
-        toBranchId: toBranchId,
-        notes: _notesController.text.trim(),
-        items: validRows
-            .map(
-              (r) => {
-                'partCode': r.selectedPart!['code']?.toString() ?? '',
-                'requestedQty': r.qty,
-              },
-            )
-            .toList(),
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('ส่งคำขอเบิกสินค้าสำเร็จ')));
-      Navigator.of(context).pop();
+      if (_draftId == null) {
+        final created = await ApiOperationsService.createPosRestock(
+          token: token,
+          notes: _notesController.text.trim(),
+          items: items,
+        );
+        _draftId = created['id']?.toString();
+      } else {
+        await ApiOperationsService.updateTransferItems(
+          token: token,
+          id: _draftId!,
+          items: items,
+        );
+      }
+      return _draftId;
     } catch (e) {
+      setState(() => _error = e.toString());
+      return null;
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_itemsPayload().isEmpty) {
+      setState(() => _error = 'กรุณาเพิ่มรายการสินค้าอย่างน้อย 1 รายการ');
+      return;
+    }
+    final id = await _saveDraft();
+    if (id == null || !mounted) return;
+    final token = context.read<AuthProvider>().token ?? '';
+    setState(() => _saving = true);
+    try {
+      await ApiOperationsService.submitTransfer(token: token, id: id);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('ส่งคำขอไม่สำเร็จ: $e')));
+      ).showSnackBar(const SnackBar(content: Text('ส่งใบเบิกให้ HQ ตรวจแล้ว')));
+      _clear();
+    } catch (e) {
+      setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _cancelDraft() async {
+    final token = context.read<AuthProvider>().token ?? '';
+    if (_draftId != null) {
+      try {
+        await ApiOperationsService.cancelTransfer(token: token, id: _draftId!);
+      } catch (e) {
+        if (mounted) setState(() => _error = e.toString());
+        return;
+      }
+    }
+    _clear();
+  }
+
+  void _clear() {
+    setState(() {
+      _draftId = null;
+      _lines.clear();
+      _scanController.clear();
+      _notesController.clear();
+      _error = null;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoadingData) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_error!, style: const TextStyle(color: AppColors.danger)),
-            const SizedBox(height: 12),
-            ElevatedButton(onPressed: _loadData, child: const Text('ลองใหม่')),
-          ],
-        ),
-      );
-    }
-
-    final auth = context.read<AuthProvider>();
-    final myUsername = (auth.username?.trim().isNotEmpty == true)
-        ? auth.username!
-        : (auth.name ?? '');
-
-    // No other branches to request from
-    if (_sourceBranches.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.store_mall_directory_outlined,
-              size: 48,
-              color: AppColors.muted,
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'ไม่พบสาขาที่สามารถเบิกสินค้าได้',
-              style: TextStyle(color: AppColors.muted),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: _loadData,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('รีเฟรช'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'ต้นทาง (รถของฉัน)',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
+    if (_loadingParts) return const Center(child: CircularProgressIndicator());
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_draftId != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
                     child: Text(
-                      myUsername,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'ปลายทาง (สาขาของฉัน)',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    child: Text(
-                      _ownBranchDisplay,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _notesController,
-                    decoration: const InputDecoration(
-                      labelText: 'หมายเหตุ (ไม่บังคับ)',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      const Text(
-                        'รายการสินค้า',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                      'Draft: $_draftId',
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontWeight: FontWeight.w600,
                       ),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: _addRow,
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('เพิ่มรายการ'),
-                      ),
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  ..._itemRows.asMap().entries.map((entry) {
-                    final idx = entry.key;
-                    final row = entry.value;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: Autocomplete<Map<String, dynamic>>(
-                              displayStringForOption: (p) =>
-                                  '${p['code'] ?? ''} — ${p['nameTh'] ?? p['name'] ?? ''}',
-                              optionsBuilder: (textEditingValue) {
-                                final q = textEditingValue.text.toLowerCase();
-                                if (q.isEmpty) return const [];
-                                return _parts
-                                    .where((p) {
-                                      final code = (p['code'] ?? '')
-                                          .toString()
-                                          .toLowerCase();
-                                      final name =
-                                          (p['nameTh'] ?? p['name'] ?? '')
-                                              .toString()
-                                              .toLowerCase();
-                                      return code.contains(q) ||
-                                          name.contains(q);
-                                    })
-                                    .take(20);
-                              },
-                              onSelected: (p) {
-                                setState(() => row.selectedPart = p);
-                              },
-                              fieldViewBuilder:
-                                  (context, ctrl, focusNode, onFieldSubmitted) {
-                                    if (row.selectedPart != null &&
-                                        ctrl.text.isEmpty) {
-                                      ctrl.text =
-                                          '${row.selectedPart!['code'] ?? ''} — ${row.selectedPart!['nameTh'] ?? row.selectedPart!['name'] ?? ''}';
-                                    }
-                                    return TextFormField(
-                                      controller: ctrl,
-                                      focusNode: focusNode,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Part Code',
-                                        border: OutlineInputBorder(),
-                                        isDense: true,
-                                      ),
-                                      onChanged: (_) {
-                                        setState(() => row.selectedPart = null);
-                                      },
-                                      validator: (_) => row.selectedPart == null
-                                          ? 'เลือกสินค้า'
-                                          : null,
-                                    );
-                                  },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 120,
-                            child: TextFormField(
-                              initialValue: row.qty > 0 ? '${row.qty}' : '',
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'จำนวน',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                              onChanged: (v) {
-                                row.qty = int.tryParse(v) ?? 0;
-                              },
-                              validator: (v) {
-                                final n = int.tryParse(v ?? '');
-                                if (n == null || n <= 0) return 'ระบุจำนวน';
-                                return null;
-                              },
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.remove_circle_outline,
-                              color: AppColors.danger,
-                            ),
-                            onPressed: _itemRows.length > 1
-                                ? () => _removeRow(idx)
-                                : null,
-                            tooltip: 'ลบรายการ',
-                          ),
-                        ],
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _scanController,
+                        decoration: const InputDecoration(
+                          labelText: 'สแกน/ค้นหาสินค้า',
+                          hintText: 'รหัสสินค้า, barcode, ชื่อสินค้า',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.qr_code_scanner),
+                        ),
+                        onSubmitted: (_) => _addFromInput(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: _addFromInput,
+                      child: const Text('เพิ่ม'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Autocomplete<Map<String, dynamic>>(
+                  displayStringForOption: _partLabel,
+                  optionsBuilder: (value) {
+                    final q = value.text.trim().toLowerCase();
+                    if (q.isEmpty) return const Iterable.empty();
+                    return _parts
+                        .where((part) {
+                          final code =
+                              part['code']?.toString().toLowerCase() ?? '';
+                          final barcode =
+                              part['barCode']?.toString().toLowerCase() ?? '';
+                          final name = (part['nameTh'] ?? part['name'] ?? '')
+                              .toString()
+                              .toLowerCase();
+                          return code.contains(q) ||
+                              barcode.contains(q) ||
+                              name.contains(q);
+                        })
+                        .take(20);
+                  },
+                  onSelected: _addPart,
+                  fieldViewBuilder: (context, controller, focusNode, _) {
+                    return TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: const InputDecoration(
+                        labelText: 'ค้นหาจากรายการสินค้า',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.search),
                       ),
                     );
+                  },
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'รายการสินค้า (${_lines.length} รายการ / ${_lines.fold<int>(0, (sum, line) => sum + line.qty)} ชิ้น)',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                if (_lines.isEmpty)
+                  Container(
+                    height: 140,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'ยังไม่มีสินค้าในใบเบิก',
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                  )
+                else
+                  ..._lines.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final line = entry.value;
+                    return _LineTile(
+                      line: line,
+                      onMinus: () {
+                        setState(() {
+                          if (line.qty > 1) {
+                            line.qty--;
+                          } else {
+                            _lines.removeAt(index);
+                          }
+                        });
+                      },
+                      onPlus: () => setState(() => line.qty++),
+                      onDelete: () => setState(() => _lines.removeAt(index)),
+                    );
                   }),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _notesController,
+                  decoration: const InputDecoration(
+                    labelText: 'หมายเหตุ (ไม่บังคับ)',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: AppColors.danger),
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.end,
+            children: [
+              TextButton(
+                onPressed: _saving ? null : _cancelDraft,
+                child: const Text('Cancel'),
+              ),
+              OutlinedButton(
+                onPressed: _saving ? null : _saveDraft,
+                child: const Text('บันทึก Draft'),
+              ),
+              FilledButton(
+                onPressed: _saving ? null : _submit,
+                child: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Submit ให้ HQ ตรวจ'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LineTile extends StatelessWidget {
+  const _LineTile({
+    required this.line,
+    required this.onMinus,
+    required this.onPlus,
+    required this.onDelete,
+  });
+
+  final _RestockLine line;
+  final VoidCallback onMinus;
+  final VoidCallback onPlus;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextButton(
-                  onPressed: _isSubmitting
-                      ? null
-                      : () => Navigator.of(context).pop(),
-                  child: const Text('ยกเลิก'),
+                Text(
+                  line.name,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _isSubmitting ? null : _submit,
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('ส่งคำขอเบิกสินค้า'),
+                const SizedBox(height: 2),
+                Text(
+                  '${line.code}${line.barcode.isNotEmpty ? ' / ${line.barcode}' : ''}',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
                 ),
               ],
             ),
+          ),
+          IconButton(onPressed: onMinus, icon: const Icon(Icons.remove)),
+          SizedBox(
+            width: 44,
+            child: Text(
+              '${line.qty}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          IconButton(onPressed: onPlus, icon: const Icon(Icons.add)),
+          IconButton(
+            onPressed: onDelete,
+            color: AppColors.danger,
+            icon: const Icon(Icons.delete_outline),
           ),
         ],
       ),
@@ -761,9 +713,74 @@ class _CreateRequisitionTabState extends State<_CreateRequisitionTab> {
   }
 }
 
-class _ItemRow {
-  Map<String, dynamic>? selectedPart;
-  int qty = 1;
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.status});
 
-  void dispose() {}
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (status) {
+      'draft' => Colors.blueGrey,
+      'review' => Colors.deepOrange,
+      'approved' => Colors.blue,
+      'completed' => Colors.green,
+      'cancelled' => Colors.grey,
+      _ => Colors.grey,
+    };
+    final label = switch (status) {
+      'draft' => 'Draft',
+      'review' => 'รอ HQ ตรวจ',
+      'approved' => 'Approved',
+      'completed' => 'Completed',
+      'cancelled' => 'Cancelled',
+      _ => status,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class _RestockLine {
+  _RestockLine({required this.part, required this.qty});
+
+  final Map<String, dynamic> part;
+  int qty;
+
+  String get code => part['code']?.toString() ?? '';
+  String get barcode => part['barCode']?.toString() ?? '';
+  String get name =>
+      (part['nameTh'] ?? part['name'] ?? part['partNameTh'] ?? code).toString();
+}
+
+String _partLabel(Map<String, dynamic> part) {
+  final code = part['code']?.toString() ?? '';
+  final barcode = part['barCode']?.toString() ?? '';
+  final name = (part['nameTh'] ?? part['name'] ?? '').toString();
+  return [code, name, barcode].where((v) => v.isNotEmpty).join(' - ');
+}
+
+String _shortDate(dynamic value) {
+  final text = value?.toString() ?? '';
+  return text.length >= 10 ? text.substring(0, 10) : text;
+}
+
+int _toInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? 0;
 }

@@ -64,6 +64,10 @@ pos-labs/
 4. Run backend server
 5. Run Flutter application
 
+### Cloud Deployment
+
+For Vercel + Render + Supabase deployment, see `docs/CLOUD_DEPLOYMENT.md`.
+
 ## License
 
 [Add your license here]

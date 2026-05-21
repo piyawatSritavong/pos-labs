@@ -529,8 +529,29 @@ class _HomeScreenState extends State<HomeScreen> {
           ).then((_) => PosMirrorService.current?.notifyDialog(null));
         }),
         tile(
-          Icons.request_page_outlined,
-          'เบิกของ',
+          Icons.local_shipping_outlined,
+          'เบิกสินค้าเข้ารถ',
+          null,
+          () => showDialog(
+            context: context,
+            builder: (_) => const RequisitionDialog(),
+          ),
+        ),
+      ],
+      if (auth.isPOSOperator && !auth.isVanStaff) ...[
+        tile(Icons.calculate_outlined, 'ปิดวัน', null, () {
+          PosMirrorService.current?.notifyDialog('daily_close');
+          showDialog(
+            context: context,
+            builder: (_) => DailyCloseDialog(
+              branchId: auth.branchId ?? '',
+              posId: auth.posId ?? '',
+            ),
+          ).then((_) => PosMirrorService.current?.notifyDialog(null));
+        }),
+        tile(
+          Icons.local_shipping_outlined,
+          'เบิกสินค้าเข้ารถ',
           null,
           () => showDialog(
             context: context,
@@ -1175,6 +1196,34 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
           SizedBox(width: gap),
           _HeaderIconButton(
             icon: Icons.request_page_outlined,
+            isCompact: widget.isCompact,
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (_) => const RequisitionDialog(),
+              );
+            },
+          ),
+        ],
+        if (auth.isPOSOperator && !auth.isVanStaff) ...[
+          SizedBox(width: gap),
+          _HeaderIconButton(
+            icon: Icons.calculate_outlined,
+            isCompact: widget.isCompact,
+            onTap: () {
+              PosMirrorService.current?.notifyDialog('daily_close');
+              showDialog(
+                context: context,
+                builder: (context) => DailyCloseDialog(
+                  branchId: auth.branchId ?? '',
+                  posId: auth.posId ?? '',
+                ),
+              ).then((_) => PosMirrorService.current?.notifyDialog(null));
+            },
+          ),
+          SizedBox(width: gap),
+          _HeaderIconButton(
+            icon: Icons.local_shipping_outlined,
             isCompact: widget.isCompact,
             onTap: () {
               showDialog(

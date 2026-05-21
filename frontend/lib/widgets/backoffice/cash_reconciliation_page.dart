@@ -60,12 +60,13 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
         limit: 200,
       );
       final closes = all
-          .where((c) =>
-              (c['status'] as String?) == 'pending_reconciliation')
+          .where((c) => (c['status'] as String?) == 'pending_reconciliation')
           .toList();
       if (mounted) setState(() => _pendingCloses = closes);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _loadingPending = false);
     }
@@ -115,14 +116,15 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
           _notesController.clear();
         });
         _fetchAll();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ยืนยันการรับเงินสำเร็จ')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('ยืนยันการรับเงินสำเร็จ')));
       }
     } catch (e) {
       if (mounted) {
         setState(
-            () => _submitError = e.toString().replaceFirst('Exception: ', ''));
+          () => _submitError = e.toString().replaceFirst('Exception: ', ''),
+        );
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -147,16 +149,15 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
         if (_error != null)
           Padding(
             padding: const EdgeInsets.all(8),
-            child: Text(_error!,
-                style: const TextStyle(color: AppColors.danger)),
+            child: Text(
+              _error!,
+              style: const TextStyle(color: AppColors.danger),
+            ),
           ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
-            children: [
-              _buildPendingTab(),
-              _buildHistoryTab(),
-            ],
+            children: [_buildPendingTab(), _buildHistoryTab()],
           ),
         ),
       ],
@@ -169,8 +170,10 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
     }
     if (_pendingCloses.isEmpty) {
       return const Center(
-        child: Text('ไม่มีรายการรอยืนยัน',
-            style: TextStyle(color: AppColors.muted)),
+        child: Text(
+          'ไม่มีรายการรอยืนยัน',
+          style: TextStyle(color: AppColors.muted),
+        ),
       );
     }
     return Row(
@@ -191,9 +194,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
                 onTap: () {
                   setState(() {
                     _selectedClose = close;
-                    _actualAmountController.text =
-                        (close['netAmount'] ?? close['net_amount'] ?? '0')
-                            .toString();
+                    _actualAmountController.text = _expectedAmount(
+                      close,
+                    ).toStringAsFixed(2);
                     _notesController.clear();
                     _submitError = null;
                   });
@@ -205,9 +208,7 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
                         ? AppColors.primary.withValues(alpha: 0.08)
                         : AppColors.surface,
                     border: Border.all(
-                      color: isSelected
-                          ? AppColors.primary
-                          : AppColors.border,
+                      color: isSelected ? AppColors.primary : AppColors.border,
                     ),
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -217,19 +218,25 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
                       Text(
                         'สาขา: ${close['branchId'] ?? close['branch_id'] ?? '-'}  POS: ${close['posId'] ?? close['pos_id'] ?? '-'}',
                         style: const TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 13),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         'วันที่: ${close['closeDate'] ?? close['close_date'] ?? '-'}',
                         style: const TextStyle(
-                            color: AppColors.muted, fontSize: 12),
+                          color: AppColors.muted,
+                          fontSize: 12,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'ยอดสุทธิ: ฿${_fmt(close['netAmount'] ?? close['net_amount'])}',
+                        'ยอดส่งโกดัง: ฿${_fmt(_expectedAmount(close))}',
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                     ],
                   ),
@@ -242,8 +249,10 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
         Expanded(
           child: _selectedClose == null
               ? const Center(
-                  child: Text('เลือกรายการทางซ้ายเพื่อยืนยันการรับเงิน',
-                      style: TextStyle(color: AppColors.muted)),
+                  child: Text(
+                    'เลือกรายการทางซ้ายเพื่อยืนยันการรับเงิน',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
                 )
               : _buildConfirmForm(),
         ),
@@ -253,34 +262,86 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
 
   Widget _buildConfirmForm() {
     final close = _selectedClose!;
-    final expected =
-        double.tryParse((close['netAmount'] ?? close['net_amount'] ?? '0').toString()) ??
-            0.0;
+    final expected = _expectedAmount(close);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('ยืนยันการรับเงิน',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          const Text(
+            'ยืนยันการรับเงิน',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 16),
-          _infoRow('สาขา',
-              '${close['branchId'] ?? close['branch_id'] ?? '-'}'),
+          _infoRow('สาขา', '${close['branchId'] ?? close['branch_id'] ?? '-'}'),
           _infoRow('POS', '${close['posId'] ?? close['pos_id'] ?? '-'}'),
-          _infoRow('วันที่', '${close['closeDate'] ?? close['close_date'] ?? '-'}'),
-          _infoRow('ยอดขายรวม',
-              '฿${_fmt(close['totalSales'] ?? close['total_sales'])}'),
-          _infoRow('เงินสด',
-              '฿${_fmt(close['totalCash'] ?? close['total_cash'])}'),
-          _infoRow('โอนเงิน',
-              '฿${_fmt(close['totalTransfer'] ?? close['total_transfer'])}'),
-          _infoRow('ยอดคืนสินค้า',
-              '฿${_fmt(close['totalReturns'] ?? close['total_returns'])}'),
+          _infoRow(
+            'วันที่',
+            '${close['closeDate'] ?? close['close_date'] ?? '-'}',
+          ),
+          _infoRow(
+            'ยอดขายรวม',
+            '฿${_fmt(close['totalSales'] ?? close['total_sales'])}',
+          ),
+          _infoRow(
+            'เงินสด',
+            '฿${_fmt(close['totalCash'] ?? close['total_cash'])}',
+          ),
+          _infoRow(
+            'โอนเงิน',
+            '฿${_fmt(close['totalTransfer'] ?? close['total_transfer'])}',
+          ),
+          _infoRow(
+            'เงินเซ็น',
+            '฿${_fmt(close['totalCreditTerm'] ?? close['total_credit_term'])}',
+          ),
+          _infoRow(
+            'ยอดคืนสินค้า',
+            '฿${_fmt(close['totalReturns'] ?? close['total_returns'])}',
+          ),
+          const Divider(height: 18),
+          _optionalInfoRow(
+            'น้ำมัน',
+            close['fuelAmount'] ?? close['fuel_amount'],
+          ),
+          _optionalInfoRow(
+            'อาหาร',
+            close['foodAmount'] ?? close['food_amount'],
+          ),
+          _optionalInfoRow(
+            'ยอดโอนที่แจ้ง',
+            close['transferAmount'] ?? close['transfer_amount'],
+          ),
+          _optionalInfoRow(
+            'รายการพิเศษ',
+            close['specialAmount'] ?? close['special_amount'],
+          ),
+          _optionalInfoRow(
+            'ลดปลาย',
+            close['tailDiscountAmount'] ?? close['tail_discount_amount'],
+          ),
+          _optionalInfoRow(
+            'สรุปยอด',
+            close['finalSummaryAmount'] ?? close['final_summary_amount'],
+          ),
+          if ((close['specialNote'] ?? close['special_note'] ?? '')
+              .toString()
+              .trim()
+              .isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                'หมายเหตุรายการพิเศษ:\n${close['specialNote'] ?? close['special_note']}',
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
           const Divider(height: 24),
-          _infoRow('ยอดที่ต้องรับ (expected)',
-              '฿${_fmt(expected)}',
-              bold: true),
+          _infoRow(
+            'ยอดที่ต้องรับ (expected)',
+            '฿${_fmt(expected)}',
+            bold: true,
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _actualAmountController,
@@ -302,8 +363,10 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
           ),
           if (_submitError != null) ...[
             const SizedBox(height: 8),
-            Text(_submitError!,
-                style: const TextStyle(color: AppColors.danger, fontSize: 13)),
+            Text(
+              _submitError!,
+              style: const TextStyle(color: AppColors.danger, fontSize: 13),
+            ),
           ],
           const SizedBox(height: 20),
           SizedBox(
@@ -315,7 +378,9 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Text('ยืนยันรับเงิน'),
             ),
@@ -331,8 +396,10 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
     }
     if (_reconciliations.isEmpty) {
       return const Center(
-        child: Text('ยังไม่มีประวัติการยืนยัน',
-            style: TextStyle(color: AppColors.muted)),
+        child: Text(
+          'ยังไม่มีประวัติการยืนยัน',
+          style: TextStyle(color: AppColors.muted),
+        ),
       );
     }
     return ListView.separated(
@@ -342,9 +409,15 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
       itemBuilder: (context, i) {
         final r = _reconciliations[i];
         final expected =
-            double.tryParse((r['expectedAmount'] ?? r['expected_amount'] ?? '0').toString()) ?? 0;
+            double.tryParse(
+              (r['expectedAmount'] ?? r['expected_amount'] ?? '0').toString(),
+            ) ??
+            0;
         final actual =
-            double.tryParse((r['actualAmount'] ?? r['actual_amount'] ?? '0').toString()) ?? 0;
+            double.tryParse(
+              (r['actualAmount'] ?? r['actual_amount'] ?? '0').toString(),
+            ) ??
+            0;
         final diff = actual - expected;
         return Container(
           padding: const EdgeInsets.all(14),
@@ -362,12 +435,16 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
                     Text(
                       'สาขา: ${r['branchId'] ?? r['branch_id'] ?? '-'}  POS: ${r['posId'] ?? r['pos_id'] ?? '-'}',
                       style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 13),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
                     Text(
                       'วันที่: ${r['closeDate'] ?? r['close_date'] ?? '-'}',
-                      style:
-                          const TextStyle(color: AppColors.muted, fontSize: 12),
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
@@ -375,15 +452,19 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('Expected: ฿${_fmt(expected)}',
-                      style: const TextStyle(fontSize: 12)),
-                  Text('Actual: ฿${_fmt(actual)}',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 13)),
                   Text(
-                    diff >= 0
-                        ? '+฿${_fmt(diff)}'
-                        : '-฿${_fmt(diff.abs())}',
+                    'Expected: ฿${_fmt(expected)}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  Text(
+                    'Actual: ฿${_fmt(actual)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    diff >= 0 ? '+฿${_fmt(diff)}' : '-฿${_fmt(diff.abs())}',
                     style: TextStyle(
                       color: diff >= 0 ? Colors.green : AppColors.danger,
                       fontWeight: FontWeight.bold,
@@ -406,17 +487,41 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
         children: [
           SizedBox(
             width: 160,
-            child: Text(label,
-                style: const TextStyle(color: AppColors.muted, fontSize: 13)),
+            child: Text(
+              label,
+              style: const TextStyle(color: AppColors.muted, fontSize: 13),
+            ),
           ),
-          Text(value,
-              style: TextStyle(
-                fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-                fontSize: 13,
-              )),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+              fontSize: 13,
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Widget _optionalInfoRow(String label, dynamic value) {
+    if (value == null || value.toString().trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return _infoRow(label, '฿${_fmt(value)}');
+  }
+
+  double _expectedAmount(Map<String, dynamic> close) {
+    final finalSummary =
+        close['finalSummaryAmount'] ?? close['final_summary_amount'];
+    if (finalSummary != null && finalSummary.toString().trim().isNotEmpty) {
+      final parsed = double.tryParse(finalSummary.toString());
+      if (parsed != null) return parsed;
+    }
+    return double.tryParse(
+          (close['netAmount'] ?? close['net_amount'] ?? '0').toString(),
+        ) ??
+        0.0;
   }
 
   String _fmt(dynamic v) {

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"strings"
 )
 
 type posRepositoryPG struct {
@@ -18,13 +19,13 @@ func NewPOSRepository(db *sql.DB) POSRepository {
 
 func (r *posRepositoryPG) GetByID(ctx context.Context, id string) (*POS, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT "pos_id", "branch_id", "pos_name", "pos_secret", "is_active"
+		SELECT "pos_id", "branch_id", "pos_name", "pos_secret", "is_active", COALESCE("vehicle_store_id", '')
 		FROM "pos_setting"
 		WHERE "pos_id" = $1
 	`, id)
 
 	var p POS
-	err := row.Scan(&p.POSID, &p.BranchID, &p.POSName, &p.POSSecret, &p.IsActive)
+	err := row.Scan(&p.POSID, &p.BranchID, &p.POSName, &p.POSSecret, &p.IsActive, &p.VehicleStoreID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -37,7 +38,7 @@ func (r *posRepositoryPG) GetByID(ctx context.Context, id string) (*POS, error) 
 
 func (r *posRepositoryPG) List(ctx context.Context, limit, offset int) ([]POS, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT "pos_id", "branch_id", "pos_name", "pos_secret", "is_active"
+		SELECT "pos_id", "branch_id", "pos_name", "pos_secret", "is_active", COALESCE("vehicle_store_id", '')
 		FROM "pos_setting"
 		ORDER BY "pos_id"
 		LIMIT $1 OFFSET $2
@@ -50,7 +51,7 @@ func (r *posRepositoryPG) List(ctx context.Context, limit, offset int) ([]POS, e
 	var posList []POS
 	for rows.Next() {
 		var p POS
-		if err := rows.Scan(&p.POSID, &p.BranchID, &p.POSName, &p.POSSecret, &p.IsActive); err != nil {
+		if err := rows.Scan(&p.POSID, &p.BranchID, &p.POSName, &p.POSSecret, &p.IsActive, &p.VehicleStoreID); err != nil {
 			return nil, err
 		}
 		posList = append(posList, p)
@@ -110,12 +111,43 @@ func (r *posRepositoryPG) Create(ctx context.Context, pos *POS) error {
 		}
 		pos.POSSecret = secret
 	}
+	if strings.TrimSpace(pos.VehicleStoreID) == "" {
+		pos.VehicleStoreID = "vehicle_" + strings.TrimSpace(pos.POSID)
+	}
 
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active")
-		VALUES ($1, $2, $3, $4, $5)
-	`, pos.POSID, pos.BranchID, pos.POSName, pos.POSSecret, pos.IsActive)
-	return err
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
+		VALUES ($1, $2, $3, $4, false)
+		ON CONFLICT ("id") DO NOTHING
+	`, pos.VehicleStoreID, pos.BranchID, pos.POSName+" Vehicle Store", pos.POSName+" รถ")
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
+		VALUES ($1, $2, false)
+		ON CONFLICT ("branch_id", "store_id") DO NOTHING
+	`, pos.BranchID, pos.VehicleStoreID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active", "vehicle_store_id")
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, pos.POSID, pos.BranchID, pos.POSName, pos.POSSecret, pos.IsActive, pos.VehicleStoreID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (r *posRepositoryPG) Delete(ctx context.Context, id string) error {
@@ -150,4 +182,3 @@ func (r *posRepositoryPG) ToggleActive(ctx context.Context, id string) error {
 	`, id)
 	return err
 }
-

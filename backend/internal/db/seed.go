@@ -133,6 +133,7 @@ func SeedCoreData(db *sql.DB) error {
 	}
 
 	cashierPerms := []string{
+		"perm.branch.read",
 		"perm.parts.read",
 		"perm.addresses.read", // needed for POS add-item flow (stock lookup) and Addresses page
 		"perm.bills.read",
@@ -140,6 +141,10 @@ func SeedCoreData(db *sql.DB) error {
 		"perm.promotions.read",
 		"perm.qr_image.read",
 		"perm.members.read",
+		"perm.transfers.read",
+		"perm.transfers.write",
+		"perm.daily_close.read",
+		"perm.daily_close.write",
 	}
 	for _, pid := range cashierPerms {
 		if _, err := tx.Exec(`
@@ -287,6 +292,27 @@ func SeedCoreData(db *sql.DB) error {
 		return err
 	}
 
+	// store_master (updated to include branch_id). The POS vehicle store is the
+	// stock source used by sales from this POS.
+	if _, err := tx.Exec(`
+		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
+		VALUES
+			('main', '00000', 'Main Store', 'คลังหลัก', true),
+			('vehicle_POS001', '00000', 'POS 1 Vehicle Store', 'POS 1 รถ', false)
+	`); err != nil {
+		return err
+	}
+
+	// branch_store (link branch to stores)
+	if _, err := tx.Exec(`
+		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
+		VALUES
+			('00000', 'main', true),
+			('00000', 'vehicle_POS001', false)
+	`); err != nil {
+		return err
+	}
+
 	// POS setting (default POS). The pos_secret comes from the POS_SECRET env var
 	// if set (so .env on the Windows POS controls it and Flutter --dart-define can
 	// match), otherwise we fall back to a fresh random 32-byte hex for dev.
@@ -300,25 +326,9 @@ func SeedCoreData(db *sql.DB) error {
 	}
 
 	if _, err := tx.Exec(`
-		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active")
-		VALUES ($1, $2, $3, $4, $5)
-	`, "POS001", "00000", "POS 1", posSecret, true); err != nil {
-		return err
-	}
-
-	// store_master (updated to include branch_id)
-	if _, err := tx.Exec(`
-		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
-		VALUES ('main', '00000', 'Main Store', 'คลังหลัก', true)
-	`); err != nil {
-		return err
-	}
-
-	// branch_store (link branch to store)
-	if _, err := tx.Exec(`
-		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
-		VALUES ('00000', 'main', true)
-	`); err != nil {
+		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active", "vehicle_store_id")
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, "POS001", "00000", "POS 1", posSecret, true, "vehicle_POS001"); err != nil {
 		return err
 	}
 

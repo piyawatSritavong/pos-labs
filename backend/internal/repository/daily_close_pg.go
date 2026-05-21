@@ -44,7 +44,8 @@ func (r *dailyCloseRepositoryPG) GetSummary(ctx context.Context, branchID, posID
 			COALESCE(COUNT(*), 0),
 			COALESCE(SUM("total_amount"), 0),
 			COALESCE(SUM(CASE WHEN "payment_method" = 'cash' THEN "total_amount" ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN "payment_method" != 'cash' THEN "total_amount" ELSE 0 END), 0)
+			COALESCE(SUM(CASE WHEN "payment_method" IN ('bank', 'transfer', 'qr', 'qr_code') THEN "total_amount" ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN "payment_method" = 'credit_term' THEN "total_amount" ELSE 0 END), 0)
 		FROM "bill_master"
 		WHERE "branch_id" = $1
 		  AND "pos_id" = $2
@@ -55,6 +56,7 @@ func (r *dailyCloseRepositoryPG) GetSummary(ctx context.Context, branchID, posID
 		&summary.TotalSales,
 		&summary.TotalCash,
 		&summary.TotalTransfer,
+		&summary.TotalCreditTerm,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bill summary: %w", err)
@@ -84,9 +86,15 @@ func (r *dailyCloseRepositoryPG) Create(ctx context.Context, dc *DailyClose) err
 		INSERT INTO "daily_close"(
 			"id", "branch_id", "pos_id", "closed_by",
 			"close_date", "total_sales", "total_cash", "total_transfer",
-			"total_bills", "total_returns", "net_amount",
-			"status", "notes", "created_at"
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			"total_credit_term", "total_bills", "total_returns", "net_amount",
+			"status", "notes", "fuel_amount", "food_amount", "transfer_amount",
+			"special_amount", "tail_discount_amount", "final_summary_amount",
+			"special_note", "created_at"
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8,
+			$9, $10, $11, $12, $13, $14, $15, $16,
+			$17, $18, $19, $20, $21, $22
+		)
 	`,
 		dc.ID,
 		dc.BranchID,
@@ -96,11 +104,19 @@ func (r *dailyCloseRepositoryPG) Create(ctx context.Context, dc *DailyClose) err
 		dc.TotalSales,
 		dc.TotalCash,
 		dc.TotalTransfer,
+		dc.TotalCreditTerm,
 		dc.TotalBills,
 		dc.TotalReturns,
 		dc.NetAmount,
 		dc.Status,
 		dc.Notes,
+		nullableFloat(dc.FuelAmount),
+		nullableFloat(dc.FoodAmount),
+		nullableFloat(dc.TransferAmount),
+		nullableFloat(dc.SpecialAmount),
+		nullableFloat(dc.TailDiscountAmount),
+		nullableFloat(dc.FinalSummaryAmount),
+		dc.SpecialNote,
 		dc.CreatedAt,
 	)
 	return err
@@ -111,8 +127,10 @@ func (r *dailyCloseRepositoryPG) GetByID(ctx context.Context, id string) (*Daily
 		SELECT
 			"id", "branch_id", "pos_id", "closed_by",
 			"close_date", "total_sales", "total_cash", "total_transfer",
-			"total_bills", "total_returns", "net_amount",
-			"status", "notes", "created_at"
+			"total_credit_term", "total_bills", "total_returns", "net_amount",
+			"status", "notes", "fuel_amount", "food_amount", "transfer_amount",
+			"special_amount", "tail_discount_amount", "final_summary_amount",
+			COALESCE("special_note", ''), "created_at"
 		FROM "daily_close"
 		WHERE "id" = $1
 	`, id)
@@ -132,8 +150,10 @@ func (r *dailyCloseRepositoryPG) List(ctx context.Context, limit, offset int, br
 		SELECT
 			"id", "branch_id", "pos_id", "closed_by",
 			"close_date", "total_sales", "total_cash", "total_transfer",
-			"total_bills", "total_returns", "net_amount",
-			"status", "notes", "created_at"
+			"total_credit_term", "total_bills", "total_returns", "net_amount",
+			"status", "notes", "fuel_amount", "food_amount", "transfer_amount",
+			"special_amount", "tail_discount_amount", "final_summary_amount",
+			COALESCE("special_note", ''), "created_at"
 		FROM "daily_close"
 	`
 	args := make([]interface{}, 0)
@@ -209,6 +229,8 @@ type dailyCloseScanner interface {
 func scanDailyClose(scanner dailyCloseScanner) (*DailyClose, error) {
 	var dc DailyClose
 	var closeDate time.Time
+	var fuelAmount, foodAmount, transferAmount sql.NullFloat64
+	var specialAmount, tailDiscountAmount, finalSummaryAmount sql.NullFloat64
 
 	err := scanner.Scan(
 		&dc.ID,
@@ -219,11 +241,19 @@ func scanDailyClose(scanner dailyCloseScanner) (*DailyClose, error) {
 		&dc.TotalSales,
 		&dc.TotalCash,
 		&dc.TotalTransfer,
+		&dc.TotalCreditTerm,
 		&dc.TotalBills,
 		&dc.TotalReturns,
 		&dc.NetAmount,
 		&dc.Status,
 		&dc.Notes,
+		&fuelAmount,
+		&foodAmount,
+		&transferAmount,
+		&specialAmount,
+		&tailDiscountAmount,
+		&finalSummaryAmount,
+		&dc.SpecialNote,
 		&dc.CreatedAt,
 	)
 	if err != nil {
@@ -234,5 +264,36 @@ func scanDailyClose(scanner dailyCloseScanner) (*DailyClose, error) {
 	}
 
 	dc.CloseDate = closeDate
+	if fuelAmount.Valid {
+		v := fuelAmount.Float64
+		dc.FuelAmount = &v
+	}
+	if foodAmount.Valid {
+		v := foodAmount.Float64
+		dc.FoodAmount = &v
+	}
+	if transferAmount.Valid {
+		v := transferAmount.Float64
+		dc.TransferAmount = &v
+	}
+	if specialAmount.Valid {
+		v := specialAmount.Float64
+		dc.SpecialAmount = &v
+	}
+	if tailDiscountAmount.Valid {
+		v := tailDiscountAmount.Float64
+		dc.TailDiscountAmount = &v
+	}
+	if finalSummaryAmount.Valid {
+		v := finalSummaryAmount.Float64
+		dc.FinalSummaryAmount = &v
+	}
 	return &dc, nil
+}
+
+func nullableFloat(v *float64) interface{} {
+	if v == nil {
+		return nil
+	}
+	return *v
 }

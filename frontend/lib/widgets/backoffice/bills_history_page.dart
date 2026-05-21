@@ -84,7 +84,7 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
 
   String _buildSubtitle(Map<String, dynamic> bill) {
     final dateTime = bill['dateTime']?.toString() ?? '';
-    final method = bill['paymentMethod']?.toString() ?? '';
+    final method = _paymentLabel(bill['paymentMethod']?.toString() ?? '');
     final total = bill['totalAmount']?.toString() ?? '';
     String memberText = '';
     final member = bill['member'];
@@ -109,6 +109,26 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
       if (memberText.isNotEmpty) memberText,
       if (total.isNotEmpty) '฿$total',
     ].join('  •  ');
+  }
+
+  String _paymentLabel(String method) {
+    switch (method.toLowerCase().trim()) {
+      case 'cash':
+        return 'เงินสด';
+      case 'bank':
+      case 'transfer':
+      case 'qr':
+      case 'qr_code':
+        return 'โอน';
+      case 'credit_term':
+        return 'เงินเซ็น';
+      case 'exchange':
+        return 'แลกเปลี่ยน';
+      case '':
+        return '';
+      default:
+        return method;
+    }
   }
 
   Widget _buildStatusBadge(String status) {
@@ -139,7 +159,10 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
       child: Text(
         upper,
         style: TextStyle(
-            color: text, fontSize: 11, fontWeight: FontWeight.bold),
+          color: text,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -311,7 +334,9 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
         'total_amount',
         'total',
       ]);
-      final paymentMethod = fullBill['paymentMethod']?.toString() ?? '-';
+      final paymentMethod = _paymentLabel(
+        fullBill['paymentMethod']?.toString() ?? '-',
+      );
 
       List<dynamic> items = [];
       if (fullBill['items'] is List) {
@@ -476,8 +501,7 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
                                   b['billId']?.toString() ??
                                   b['id']?.toString() ??
                                   '';
-                              final status =
-                                  b['status']?.toString() ?? '';
+                              final status = b['status']?.toString() ?? '';
 
                               final subtitle = _buildSubtitle(b);
 

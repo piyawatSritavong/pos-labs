@@ -27,15 +27,27 @@ services:
     container_name: pos-labs-backend
     environment:
       ENV: ${ENV:-development}
+      APP_ENV: ${APP_ENV:-development}
       PORT: ${PORT:-8080}
+      DATABASE_URL: ${DATABASE_URL:-}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${POSTGRES_USER:-posuser}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-pospass}
       DB_NAME: ${POSTGRES_DB:-poslabs}
       DB_SSLMODE: disable
+      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-10}
+      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
+      DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me}
       STATIC_FILES_PATH: static
+      SERVE_STATIC: ${SERVE_STATIC:-true}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
+      AUTO_SEED_CORE: ${AUTO_SEED_CORE:-true}
+      AUTO_SEED_MOCK: ${AUTO_SEED_MOCK:-true}
+      AUTO_ENSURE_BARCODES: ${AUTO_ENSURE_BARCODES:-true}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-false}
     ports:
       - "${PORT:-8080}:8080"
     depends_on:

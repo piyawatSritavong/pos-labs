@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: posdemo-api
+    runtime: go
+    rootDir: backend
+    buildCommand: go build -o app ./cmd/api
+    startCommand: ./app
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SERVE_STATIC
+        value: "false"
+      - key: AUTO_MIGRATE
+        value: "false"
+      - key: AUTO_SEED_CORE
+        value: "false"
+      - key: AUTO_ENSURE_BARCODES
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: POS_SECRET
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: RECEIPT_PRINTER_ENABLED
+        value: "false"
+      - key: CASH_DRAWER_ENABLED
+        value: "false"

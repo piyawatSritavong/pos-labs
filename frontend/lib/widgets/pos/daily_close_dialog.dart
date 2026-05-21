@@ -31,12 +31,22 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
   Map<String, dynamic>? _closeResult;
 
   final _notesController = TextEditingController();
+  final _fuelController = TextEditingController();
+  final _foodController = TextEditingController();
+  final _transferController = TextEditingController();
+  final _specialController = TextEditingController();
+  final _tailDiscountController = TextEditingController();
+  final _finalSummaryController = TextEditingController();
+  final _specialNoteController = TextEditingController();
   Timer? _broadcastTimer;
 
   @override
   void initState() {
     super.initState();
     _notesController.addListener(_scheduleBroadcast);
+    for (final controller in _expenseControllers) {
+      controller.addListener(_scheduleBroadcast);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadSummary());
   }
 
@@ -45,9 +55,23 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
     _broadcastTimer?.cancel();
     _notesController.removeListener(_scheduleBroadcast);
     _notesController.dispose();
+    for (final controller in _expenseControllers) {
+      controller.removeListener(_scheduleBroadcast);
+      controller.dispose();
+    }
     PosMirrorService.current?.notifyDialogState(null);
     super.dispose();
   }
+
+  List<TextEditingController> get _expenseControllers => [
+    _fuelController,
+    _foodController,
+    _transferController,
+    _specialController,
+    _tailDiscountController,
+    _finalSummaryController,
+    _specialNoteController,
+  ];
 
   void _scheduleBroadcast() {
     _broadcastTimer?.cancel();
@@ -61,10 +85,18 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
       'stage': _closed ? 'closed' : (_isLoadingSummary ? 'loading' : 'summary'),
       'alreadyClosed': summary['alreadyClosed'] == true,
       'notes': _notesController.text.trim(),
+      'fuelAmount': _parseOptionalAmount(_fuelController.text),
+      'foodAmount': _parseOptionalAmount(_foodController.text),
+      'transferAmount': _parseOptionalAmount(_transferController.text),
+      'specialAmount': _parseOptionalAmount(_specialController.text),
+      'tailDiscountAmount': _parseOptionalAmount(_tailDiscountController.text),
+      'finalSummaryAmount': _parseOptionalAmount(_finalSummaryController.text),
+      'specialNote': _specialNoteController.text.trim(),
       'summary': {
         'totalSales': _toDouble(summary['totalSales']),
         'totalCash': _toDouble(summary['totalCash']),
         'totalTransfer': _toDouble(summary['totalTransfer']),
+        'totalCreditTerm': _toDouble(summary['totalCreditTerm']),
         'totalBills': summary['totalBills'] ?? 0,
         'totalReturns': _toDouble(summary['totalReturns']),
         'netAmount': _toDouble(summary['netAmount']),
@@ -152,6 +184,13 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
         branchId: widget.branchId,
         posId: widget.posId,
         notes: _notesController.text.trim(),
+        fuelAmount: _parseOptionalAmount(_fuelController.text),
+        foodAmount: _parseOptionalAmount(_foodController.text),
+        transferAmount: _parseOptionalAmount(_transferController.text),
+        specialAmount: _parseOptionalAmount(_specialController.text),
+        tailDiscountAmount: _parseOptionalAmount(_tailDiscountController.text),
+        finalSummaryAmount: _parseOptionalAmount(_finalSummaryController.text),
+        specialNote: _specialNoteController.text.trim(),
       );
       if (mounted) {
         setState(() {
@@ -177,6 +216,12 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
     return double.tryParse(v.toString()) ?? 0;
   }
 
+  double? _parseOptionalAmount(String raw) {
+    final cleaned = raw.replaceAll(',', '').trim();
+    if (cleaned.isEmpty) return null;
+    return double.tryParse(cleaned);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -199,8 +244,7 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
                 children: [
                   const Text(
                     'ปิดยอดประจำวัน',
-                    style: TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   const Spacer(),
                   IconButton(
@@ -217,10 +261,10 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
                   child: _isLoadingSummary
                       ? const Center(child: CircularProgressIndicator())
                       : _error != null && !_closed
-                          ? _buildError()
-                          : _closed
-                              ? _buildSuccess()
-                              : _buildSummaryForm(),
+                      ? _buildError()
+                      : _closed
+                      ? _buildSuccess()
+                      : _buildSummaryForm(),
                 ),
               ),
             ],
@@ -243,8 +287,7 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
             style: const TextStyle(color: AppColors.danger),
           ),
           const SizedBox(height: 12),
-          OutlinedButton(
-              onPressed: _loadSummary, child: const Text('ลองใหม่')),
+          OutlinedButton(onPressed: _loadSummary, child: const Text('ลองใหม่')),
         ],
       ),
     );
@@ -266,7 +309,8 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
                 color: AppColors.accent.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                    color: AppColors.accent.withValues(alpha: 0.4)),
+                  color: AppColors.accent.withValues(alpha: 0.4),
+                ),
               ),
               child: const Row(
                 children: [
@@ -276,8 +320,9 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
                     child: Text(
                       'ปิดยอดแล้ววันนี้',
                       style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.accent),
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.accent,
+                      ),
                     ),
                   ),
                 ],
@@ -291,8 +336,7 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   _error!,
-                  style: const TextStyle(
-                      color: AppColors.danger, fontSize: 13),
+                  style: const TextStyle(color: AppColors.danger, fontSize: 13),
                 ),
               ),
             TextField(
@@ -305,6 +349,8 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
               maxLines: 2,
             ),
             const SizedBox(height: 12),
+            _buildExpenseSection(),
+            const SizedBox(height: 12),
             ElevatedButton(
               onPressed: _isClosing ? null : _doClose,
               child: _isClosing
@@ -312,7 +358,9 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
                       height: 18,
                       width: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Text('ปิดยอด'),
             ),
@@ -325,27 +373,34 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
   Widget _buildSummaryTable(Map<String, dynamic> summary) {
     final rows = [
       _SummaryRow(
-          'ยอดขายรวม',
-          '฿${_toDouble(summary['totalSales']).toStringAsFixed(2)}',
-          bold: true),
+        'ยอดขายรวม',
+        '฿${_toDouble(summary['totalSales']).toStringAsFixed(2)}',
+        bold: true,
+      ),
       _SummaryRow(
-          'เงินสด',
-          '฿${_toDouble(summary['totalCash']).toStringAsFixed(2)}'),
+        'เงินสด',
+        '฿${_toDouble(summary['totalCash']).toStringAsFixed(2)}',
+      ),
       _SummaryRow(
-          'โอนเงิน/QR',
-          '฿${_toDouble(summary['totalTransfer']).toStringAsFixed(2)}'),
+        'โอนเงิน/QR',
+        '฿${_toDouble(summary['totalTransfer']).toStringAsFixed(2)}',
+      ),
       _SummaryRow(
-          'จำนวนบิล',
-          '${(summary['totalBills'] ?? 0)} ใบ'),
+        'เงินเซ็น',
+        '฿${_toDouble(summary['totalCreditTerm']).toStringAsFixed(2)}',
+      ),
+      _SummaryRow('จำนวนบิล', '${(summary['totalBills'] ?? 0)} ใบ'),
       _SummaryRow(
-          'ยอดคืนสินค้า',
-          '฿${_toDouble(summary['totalReturns']).toStringAsFixed(2)}',
-          color: AppColors.danger),
+        'ยอดคืนสินค้า',
+        '฿${_toDouble(summary['totalReturns']).toStringAsFixed(2)}',
+        color: AppColors.danger,
+      ),
       _SummaryRow(
-          'ยอดสุทธิ',
-          '฿${_toDouble(summary['netAmount']).toStringAsFixed(2)}',
-          bold: true,
-          color: AppColors.primary),
+        'ยอดสุทธิ',
+        '฿${_toDouble(summary['netAmount']).toStringAsFixed(2)}',
+        bold: true,
+        color: AppColors.primary,
+      ),
     ];
 
     return Container(
@@ -357,34 +412,98 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
       ),
       child: Column(
         children: rows
-            .map((r) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        r.label,
-                        style: TextStyle(
-                          color: r.bold ? AppColors.text : AppColors.muted,
-                          fontWeight: r.bold
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
+            .map(
+              (r) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      r.label,
+                      style: TextStyle(
+                        color: r.bold ? AppColors.text : AppColors.muted,
+                        fontWeight: r.bold ? FontWeight.w700 : FontWeight.w500,
                       ),
-                      Text(
-                        r.value,
-                        style: TextStyle(
-                          color: r.color ??
-                              (r.bold ? AppColors.text : AppColors.text),
-                          fontWeight: r.bold
-                              ? FontWeight.w700
-                              : FontWeight.w600,
-                        ),
+                    ),
+                    Text(
+                      r.value,
+                      style: TextStyle(
+                        color:
+                            r.color ??
+                            (r.bold ? AppColors.text : AppColors.text),
+                        fontWeight: r.bold ? FontWeight.w700 : FontWeight.w600,
                       ),
-                    ],
-                  ),
-                ))
+                    ),
+                  ],
+                ),
+              ),
+            )
             .toList(),
+      ),
+    );
+  }
+
+  Widget _buildExpenseSection() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'ข้อมูลเพิ่มเติม / ค่าใช้จ่าย',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _amountField(_fuelController, 'น้ำมัน', 'เช่น 2000'),
+              _amountField(_foodController, 'อาหาร', 'เช่น 150'),
+              _amountField(_transferController, 'ยอดโอน', 'เช่น 9900'),
+              _amountField(_specialController, 'รายการพิเศษ', 'เช่น 180'),
+              _amountField(_tailDiscountController, 'ลดปลาย', 'เช่น 18'),
+              _amountField(_finalSummaryController, 'สรุปยอด', 'เช่น 18492'),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _specialNoteController,
+            decoration: const InputDecoration(
+              labelText: 'หมายเหตุรายการพิเศษ (ไม่บังคับ)',
+              hintText: 'เช่น บูท 1x20 = 20\nรวม 180',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            maxLines: 4,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _amountField(
+    TextEditingController controller,
+    String label,
+    String hint,
+  ) {
+    return SizedBox(
+      width: 200,
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: '$label (ไม่บังคับ)',
+          hintText: hint,
+          border: const OutlineInputBorder(),
+          isDense: true,
+          prefixText: '฿ ',
+        ),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
       ),
     );
   }
@@ -397,15 +516,15 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
         children: [
           const Row(
             children: [
-              Icon(Icons.check_circle_outline,
-                  color: Colors.green, size: 28),
+              Icon(Icons.check_circle_outline, color: Colors.green, size: 28),
               SizedBox(width: 8),
               Text(
                 'ปิดยอดสำเร็จ',
                 style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green),
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
               ),
             ],
           ),

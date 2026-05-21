@@ -1,16 +1,9 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
 
 class ApiUsersService {
-  // ตรวจสอบว่าแอปกำลังรันอยู่ในโหมด Release (Production) หรือไม่
-  static const bool _isProduction = bool.fromEnvironment('dart.vm.product');
-  // บน Flutter Web ใช้ relative URL (same-origin) ให้เรียก API ผ่าน host เดียวกับหน้าเว็บ
-  static const String baseUrl = kIsWeb
-      ? ''
-      : (_isProduction
-            ? 'http://54.169.213.40:8080'
-            : 'http://localhost:8080');
+  static String get baseUrl => ApiConfig.apiBaseUrl;
 
   // Helper: ดึง List<Map> จาก response ที่อาจเป็นหลายรูปแบบ
   static List<Map<String, dynamic>> _extractListFromResponse(
@@ -82,9 +75,9 @@ class ApiUsersService {
     int limit = 20,
     int offset = 0,
   }) async {
-    final uri = Uri.parse('$baseUrl/users').replace(
-      queryParameters: {'limit': '$limit', 'offset': '$offset'},
-    );
+    final uri = Uri.parse(
+      '$baseUrl/users',
+    ).replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
     final response = await http.get(
       uri,
       headers: {
@@ -93,7 +86,9 @@ class ApiUsersService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to load users: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to load users: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractListFromResponse(decoded, '/users');
@@ -112,7 +107,9 @@ class ApiUsersService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to load user: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to load user: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/users/:id');
@@ -144,7 +141,9 @@ class ApiUsersService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception('Failed to create user: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to create user: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/users');
@@ -184,7 +183,9 @@ class ApiUsersService {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to update user: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to update user: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/users/:id');
@@ -203,7 +204,9 @@ class ApiUsersService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to delete user: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to delete user: ${response.statusCode} ${response.body}',
+      );
     }
   }
 }

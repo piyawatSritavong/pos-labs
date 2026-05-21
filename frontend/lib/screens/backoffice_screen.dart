@@ -15,6 +15,7 @@ import 'package:frontend/widgets/backoffice/members_page.dart';
 import 'package:frontend/widgets/backoffice/user_branches_page.dart';
 import 'package:frontend/widgets/backoffice/user_page.dart';
 import 'package:frontend/widgets/backoffice/inventory_transfer_page.dart';
+import 'package:frontend/widgets/backoffice/pos_restock_requests_page.dart';
 import 'package:frontend/widgets/backoffice/cash_reconciliation_page.dart';
 import 'package:frontend/widgets/backoffice/stock_variance_page.dart';
 import 'package:frontend/widgets/backoffice/support_pos_page.dart';
@@ -424,6 +425,13 @@ class _BackofficeShellState extends State<_BackofficeShell> {
       subtitle: 'โอนย้ายสินค้า HQ → รถ',
     ),
     _SidebarItem(
+      label: 'ใบเบิกสินค้าเข้ารถ',
+      page: 'POS Restock Requests',
+      icon: Icons.assignment_turned_in_outlined,
+      pageIndex: 18,
+      subtitle: 'ตรวจเอกสารเบิกสินค้าและยืนยันโอนเข้ารถ',
+    ),
+    _SidebarItem(
       label: 'Cash Recon',
       page: 'Cash Reconciliation',
       icon: Icons.account_balance_wallet_outlined,
@@ -467,9 +475,11 @@ class _BackofficeShellState extends State<_BackofficeShell> {
     StockVariancePage(),
     SupportPosPage(),
     BarcodePrintPage(), // index 17 — admin-only (hidden for hq_manager)
+    PosRestockRequestsPage(),
   ];
 
-  int _currentPageIndex = 0; // default to Users page (adjusted by role in didChangeDependencies)
+  int _currentPageIndex =
+      0; // default to Users page (adjusted by role in didChangeDependencies)
   bool _pageInitialized = false;
 
   @override
@@ -612,10 +622,8 @@ class _BackofficeSidebar extends StatelessWidget {
                 child: Image.asset(
                   'assets/images/logoJaiHeng.jpg',
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.dashboard_customize,
-                    color: cs.primary,
-                  ),
+                  errorBuilder: (_, __, ___) =>
+                      Icon(Icons.dashboard_customize, color: cs.primary),
                 ),
               ),
               const SizedBox(width: 12),
@@ -674,13 +682,17 @@ class _BackofficeSidebar extends StatelessWidget {
                           if (item.icon != null)
                             Icon(
                               item.icon,
-                              color: isActive ? cs.primary : cs.onSurfaceVariant,
+                              color: isActive
+                                  ? cs.primary
+                                  : cs.onSurfaceVariant,
                             ),
                           if (item.icon != null) const SizedBox(width: 12),
                           Text(
                             item.label,
                             style: TextStyle(
-                              color: isActive ? cs.primary : cs.onSurfaceVariant,
+                              color: isActive
+                                  ? cs.primary
+                                  : cs.onSurfaceVariant,
                               fontWeight: isActive
                                   ? FontWeight.bold
                                   : FontWeight.w500,
@@ -733,10 +745,7 @@ class _BackofficeTopBar extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 4.0),
                   child: Text(
                     subtitle!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: cs.onSurfaceVariant,
-                    ),
+                    style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
                   ),
                 ),
             ],

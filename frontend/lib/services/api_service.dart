@@ -1,17 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // ตรวจสอบว่าแอปกำลังรันอยู่ในโหมด Release (Production) หรือไม่
-  static const bool _isProduction = bool.fromEnvironment('dart.vm.product');
-  // บน Flutter Web ใช้ relative URL (same-origin) เพื่อให้เรียก API จาก backend
-  // เดียวกับที่ host หน้า web (เช่น Windows POS: http://127.0.0.1:8080)
-  // บน desktop/mobile ใช้ค่า absolute เดิม
-  static const String baseUrl = kIsWeb
-      ? ''
-      : (_isProduction ? 'http://54.169.213.40:8080' : 'http://localhost:8080');
+  static String get baseUrl => ApiConfig.apiBaseUrl;
 
   static const String _branchId = '00000';
   static const String _posId = 'POS001';

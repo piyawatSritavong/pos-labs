@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg := config.Load().WithCloudDefaults()
 	if err := app.RunServer(cfg); err != nil {
 		log.Fatalf("server stopped with error: %v", err)
 	}

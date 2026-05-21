@@ -43,11 +43,13 @@ mkdir -p "$DIST_DIR/static" "$DIST_DIR/logs"
 # backend/migrations/0010_real_seed_data.up.sql). Override by exporting
 # POS_SECRET before running this script.
 POS_SECRET_FOR_BUILD="${POS_SECRET:-windows-pos-default-secret}"
-echo "[2/5] Building Flutter Web (release, POS_SECRET=$POS_SECRET_FOR_BUILD) ..."
+API_BASE_URL_FOR_BUILD="${API_BASE_URL:-http://127.0.0.1:8080}"
+echo "[2/5] Building Flutter Web (release, API_BASE_URL=$API_BASE_URL_FOR_BUILD, POS_SECRET=$POS_SECRET_FOR_BUILD) ..."
 (
     cd "$FRONTEND_DIR"
     flutter pub get
     if ! flutter build web --release \
+        --dart-define=API_BASE_URL="$API_BASE_URL_FOR_BUILD" \
         --dart-define=POS_SECRET="$POS_SECRET_FOR_BUILD"; then
         echo
         echo "[ERROR] flutter build web failed."

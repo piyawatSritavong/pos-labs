@@ -540,6 +540,7 @@ The Flutter app sends a `POS_SECRET` to the backend on each login. Both ends **m
 
 - **Backend side**: `pos_setting.pos_secret` in the DB (set by migration `0010_real_seed_data.up.sql` to `windows-pos-default-secret`)
 - **Frontend side**: compiled into the Flutter Web bundle via `--dart-define=POS_SECRET=...` when the build script runs
+- **Frontend API URL**: compiled via `--dart-define=API_BASE_URL=...`; Windows default is `http://127.0.0.1:8080`
 
 If they don't match → login returns `invalid_pos_secret`.
 
@@ -552,6 +553,12 @@ bash scripts/build-pos-windows.sh
 ```
 
 (The build script defaults to that value.)
+
+If you changed the backend port, rebuild with the matching API URL:
+
+```bash
+API_BASE_URL="http://127.0.0.1:8090" bash scripts/build-pos-windows.sh
+```
 
 ### Changing to a custom secret
 

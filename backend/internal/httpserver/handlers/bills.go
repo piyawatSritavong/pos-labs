@@ -47,6 +47,37 @@ func (h *BillsHandler) getBranchAndPOSFromContext(c *gin.Context) (branchID, pos
 	return branchID, posID, nil
 }
 
+func (h *BillsHandler) getVehicleStoreID(ctx context.Context, posID string) string {
+	if h.pos == nil || strings.TrimSpace(posID) == "" {
+		return ""
+	}
+	pos, err := h.pos.GetByID(ctx, posID)
+	if err != nil || pos == nil {
+		return ""
+	}
+	return strings.TrimSpace(pos.VehicleStoreID)
+}
+
+func salesAddressForPOS(addresses []repository.PartAddress, vehicleStoreID string) (repository.PartAddress, bool) {
+	if strings.TrimSpace(vehicleStoreID) != "" {
+		for _, addr := range addresses {
+			if addr.StoreID == vehicleStoreID {
+				return addr, true
+			}
+		}
+		return repository.PartAddress{}, false
+	}
+	for _, addr := range addresses {
+		if addr.IsDefault {
+			return addr, true
+		}
+	}
+	if len(addresses) > 0 {
+		return addresses[0], true
+	}
+	return repository.PartAddress{}, false
+}
+
 // validateBillAccess validates that a bill belongs to the session's branch and POS
 func (h *BillsHandler) validateBillAccess(ctx context.Context, billID, branchID, posID string) error {
 	bill, err := h.bills.GetByID(ctx, billID)
@@ -823,6 +854,10 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_address_code", "message": "Address code does not exist for this part"})
 		return
 	}
+	if vehicleStoreID := h.getVehicleStoreID(ctx, posID); vehicleStoreID != "" && selectedAddress.StoreID != vehicleStoreID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_address_code", "message": "Part must be sold from this POS vehicle store"})
+		return
+	}
 
 	// Check and reduce inventory before adding to bill
 	decreased, err := h.addresses.DecreaseInventory(ctx, req.AddressCode, req.Qty)
@@ -971,23 +1006,12 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 		return
 	}
 
-	// Find default address (SQL already orders by is_default DESC, so first address should be default)
-	// But we verify and require a default store to be configured
-	var selectedAddress repository.PartAddress
-	hasDefault := false
-	for _, addr := range addresses {
-		if addr.IsDefault {
-			selectedAddress = addr
-			hasDefault = true
-			break
-		}
-	}
-
-	// If no default store is configured, return error so frontend can use add-item endpoint
-	if !hasDefault {
+	vehicleStoreID := h.getVehicleStoreID(ctx, posID)
+	selectedAddress, hasSalesAddress := salesAddressForPOS(addresses, vehicleStoreID)
+	if !hasSalesAddress {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "no_default_store",
-			"message": "Part exists in multiple stores but no default store is configured. Please use add-item endpoint to select a specific store address.",
+			"error":   "no_vehicle_stock",
+			"message": "Part does not exist in this POS vehicle store.",
 		})
 		return
 	}
@@ -2874,7 +2898,7 @@ func paymentLabelTH(method string) string {
 	case "bank", "transfer":
 		return "โอน"
 	case "credit", "credit_term":
-		return "เครดิต"
+		return "เงินเซ็น"
 	case "cheque", "check":
 		return "เช็ค"
 	case "debit":

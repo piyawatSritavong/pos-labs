@@ -116,6 +116,9 @@ func (h *CashReconciliationHandler) Create(c *gin.Context) {
 	}
 
 	expectedAmount := dailyClose.NetAmount
+	if dailyClose.FinalSummaryAmount != nil {
+		expectedAmount = *dailyClose.FinalSummaryAmount
+	}
 	difference := req.ActualAmount - expectedAmount
 
 	cr := &repository.CashReconciliation{

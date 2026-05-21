@@ -1,0 +1,11 @@
+{
+  "buildCommand": "bash scripts/vercel-build.sh",
+  "outputDirectory": "build/web",
+  "installCommand": "echo \"Flutter SDK is installed by scripts/vercel-build.sh\"",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

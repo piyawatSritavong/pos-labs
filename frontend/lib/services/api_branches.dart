@@ -1,17 +1,10 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
 
 class ApiBranchesService {
-  // ตรวจสอบว่าแอปกำลังรันอยู่ในโหมด Release (Production) หรือไม่
-  static const bool _isProduction = bool.fromEnvironment('dart.vm.product');
-  // บน Flutter Web ใช้ relative URL (same-origin) ให้เรียก API ผ่าน host เดียวกับหน้าเว็บ
-  static const String baseUrl = kIsWeb
-      ? ''
-      : (_isProduction
-            ? 'http://54.169.213.40:8080'
-            : 'http://localhost:8080');
-  
+  static String get baseUrl => ApiConfig.apiBaseUrl;
+
   // Helper: ดึง List<Map> จาก response ที่อาจเป็นหลายรูปแบบ
   static List<Map<String, dynamic>> _extractListFromResponse(
     dynamic decoded,
@@ -83,9 +76,9 @@ class ApiBranchesService {
     int limit = 50,
     int offset = 0,
   }) async {
-    final uri = Uri.parse('$baseUrl/branches').replace(
-      queryParameters: {'limit': '$limit', 'offset': '$offset'},
-    );
+    final uri = Uri.parse(
+      '$baseUrl/branches',
+    ).replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
     final response = await http.get(
       uri,
       headers: {
@@ -94,7 +87,9 @@ class ApiBranchesService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to load branches: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to load branches: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractListFromResponse(decoded, '/branches');
@@ -114,7 +109,9 @@ class ApiBranchesService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to load branch: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to load branch: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/branches/:id');
@@ -149,7 +146,9 @@ class ApiBranchesService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception('Failed to create branch: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to create branch: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/branches');
@@ -183,7 +182,9 @@ class ApiBranchesService {
       }),
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to update branch: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to update branch: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/branches/:id');
@@ -203,7 +204,9 @@ class ApiBranchesService {
       },
     );
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete branch: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to delete branch: ${response.statusCode} ${response.body}',
+      );
     }
   }
 }

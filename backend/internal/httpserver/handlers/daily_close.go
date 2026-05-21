@@ -26,20 +26,28 @@ func NewDailyCloseHandler(closes repository.DailyCloseRepository, branches repos
 
 func buildDailyCloseOutput(dc *repository.DailyClose) gin.H {
 	return gin.H{
-		"id":            dc.ID,
-		"branchId":      dc.BranchID,
-		"posId":         dc.PosID,
-		"closedBy":      dc.ClosedBy,
-		"closeDate":     dc.CloseDate.Format("2006-01-02"),
-		"totalSales":    dc.TotalSales,
-		"totalCash":     dc.TotalCash,
-		"totalTransfer": dc.TotalTransfer,
-		"totalBills":    dc.TotalBills,
-		"totalReturns":  dc.TotalReturns,
-		"netAmount":     dc.NetAmount,
-		"status":        dc.Status,
-		"notes":         dc.Notes,
-		"createdAt":     dc.CreatedAt.Format(time.RFC3339),
+		"id":                 dc.ID,
+		"branchId":           dc.BranchID,
+		"posId":              dc.PosID,
+		"closedBy":           dc.ClosedBy,
+		"closeDate":          dc.CloseDate.Format("2006-01-02"),
+		"totalSales":         dc.TotalSales,
+		"totalCash":          dc.TotalCash,
+		"totalTransfer":      dc.TotalTransfer,
+		"totalCreditTerm":    dc.TotalCreditTerm,
+		"totalBills":         dc.TotalBills,
+		"totalReturns":       dc.TotalReturns,
+		"netAmount":          dc.NetAmount,
+		"status":             dc.Status,
+		"notes":              dc.Notes,
+		"fuelAmount":         dc.FuelAmount,
+		"foodAmount":         dc.FoodAmount,
+		"transferAmount":     dc.TransferAmount,
+		"specialAmount":      dc.SpecialAmount,
+		"tailDiscountAmount": dc.TailDiscountAmount,
+		"finalSummaryAmount": dc.FinalSummaryAmount,
+		"specialNote":        dc.SpecialNote,
+		"createdAt":          dc.CreatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -125,16 +133,17 @@ func (h *DailyCloseHandler) GetSummary(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"branchId":      branchID,
-			"posId":         posID,
-			"closeDate":     today.Format("2006-01-02"),
-			"totalSales":    summary.TotalSales,
-			"totalCash":     summary.TotalCash,
-			"totalTransfer": summary.TotalTransfer,
-			"totalBills":    summary.TotalBills,
-			"totalReturns":  summary.TotalReturns,
-			"netAmount":     summary.NetAmount,
-			"alreadyClosed": alreadyClosed,
+			"branchId":        branchID,
+			"posId":           posID,
+			"closeDate":       today.Format("2006-01-02"),
+			"totalSales":      summary.TotalSales,
+			"totalCash":       summary.TotalCash,
+			"totalTransfer":   summary.TotalTransfer,
+			"totalCreditTerm": summary.TotalCreditTerm,
+			"totalBills":      summary.TotalBills,
+			"totalReturns":    summary.TotalReturns,
+			"netAmount":       summary.NetAmount,
+			"alreadyClosed":   alreadyClosed,
 		},
 	})
 }
@@ -148,9 +157,16 @@ func (h *DailyCloseHandler) Create(c *gin.Context) {
 	}
 
 	var req struct {
-		BranchID string `json:"branchId" binding:"required"`
-		PosID    string `json:"posId" binding:"required"`
-		Notes    string `json:"notes"`
+		BranchID           string   `json:"branchId" binding:"required"`
+		PosID              string   `json:"posId" binding:"required"`
+		Notes              string   `json:"notes"`
+		FuelAmount         *float64 `json:"fuelAmount"`
+		FoodAmount         *float64 `json:"foodAmount"`
+		TransferAmount     *float64 `json:"transferAmount"`
+		SpecialAmount      *float64 `json:"specialAmount"`
+		TailDiscountAmount *float64 `json:"tailDiscountAmount"`
+		FinalSummaryAmount *float64 `json:"finalSummaryAmount"`
+		SpecialNote        string   `json:"specialNote"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -190,20 +206,28 @@ func (h *DailyCloseHandler) Create(c *gin.Context) {
 	}
 
 	dc := &repository.DailyClose{
-		ID:            closeID,
-		BranchID:      branchID,
-		PosID:         posID,
-		ClosedBy:      user.ID,
-		CloseDate:     today,
-		TotalSales:    summary.TotalSales,
-		TotalCash:     summary.TotalCash,
-		TotalTransfer: summary.TotalTransfer,
-		TotalBills:    summary.TotalBills,
-		TotalReturns:  summary.TotalReturns,
-		NetAmount:     summary.NetAmount,
-		Status:        "pending_reconciliation",
-		Notes:         req.Notes,
-		CreatedAt:     time.Now().UTC(),
+		ID:                 closeID,
+		BranchID:           branchID,
+		PosID:              posID,
+		ClosedBy:           user.ID,
+		CloseDate:          today,
+		TotalSales:         summary.TotalSales,
+		TotalCash:          summary.TotalCash,
+		TotalTransfer:      summary.TotalTransfer,
+		TotalCreditTerm:    summary.TotalCreditTerm,
+		TotalBills:         summary.TotalBills,
+		TotalReturns:       summary.TotalReturns,
+		NetAmount:          summary.NetAmount,
+		Status:             "pending_reconciliation",
+		Notes:              req.Notes,
+		FuelAmount:         req.FuelAmount,
+		FoodAmount:         req.FoodAmount,
+		TransferAmount:     req.TransferAmount,
+		SpecialAmount:      req.SpecialAmount,
+		TailDiscountAmount: req.TailDiscountAmount,
+		FinalSummaryAmount: req.FinalSummaryAmount,
+		SpecialNote:        req.SpecialNote,
+		CreatedAt:          time.Now().UTC(),
 	}
 
 	if err := h.closes.Create(c.Request.Context(), dc); err != nil {

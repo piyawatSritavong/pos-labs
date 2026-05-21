@@ -13,6 +13,15 @@ func Connect(cfg config.Config) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.DBMaxOpenConns > 0 {
+		db.SetMaxOpenConns(cfg.DBMaxOpenConns)
+	}
+	if cfg.DBMaxIdleConns > 0 {
+		db.SetMaxIdleConns(cfg.DBMaxIdleConns)
+	}
+	if cfg.DBConnMaxLifetime > 0 {
+		db.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
+	}
 
 	if err := db.Ping(); err != nil {
 		return nil, err
@@ -25,5 +34,3 @@ func Connect(cfg config.Config) (*sql.DB, error) {
 
 	return db, nil
 }
-
-

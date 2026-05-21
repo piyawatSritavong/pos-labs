@@ -6,29 +6,38 @@ import (
 )
 
 type DailyClose struct {
-	ID            string
-	BranchID      string
-	PosID         string
-	ClosedBy      string
-	CloseDate     time.Time
-	TotalSales    float64
-	TotalCash     float64
-	TotalTransfer float64
-	TotalBills    int
-	TotalReturns  float64
-	NetAmount     float64
-	Status        string // "pending_reconciliation", "reconciled"
-	Notes         string
-	CreatedAt     time.Time
+	ID                 string
+	BranchID           string
+	PosID              string
+	ClosedBy           string
+	CloseDate          time.Time
+	TotalSales         float64
+	TotalCash          float64
+	TotalTransfer      float64
+	TotalCreditTerm    float64
+	TotalBills         int
+	TotalReturns       float64
+	NetAmount          float64
+	Status             string // "pending_reconciliation", "reconciled"
+	Notes              string
+	FuelAmount         *float64
+	FoodAmount         *float64
+	TransferAmount     *float64
+	SpecialAmount      *float64
+	TailDiscountAmount *float64
+	FinalSummaryAmount *float64
+	SpecialNote        string
+	CreatedAt          time.Time
 }
 
 type DailySummary struct {
-	TotalSales    float64
-	TotalCash     float64
-	TotalTransfer float64
-	TotalBills    int
-	TotalReturns  float64
-	NetAmount     float64
+	TotalSales      float64
+	TotalCash       float64
+	TotalTransfer   float64
+	TotalCreditTerm float64
+	TotalBills      int
+	TotalReturns    float64
+	NetAmount       float64
 }
 
 type DailyCloseRepository interface {

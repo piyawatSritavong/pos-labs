@@ -3,6 +3,7 @@ import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'package:flutter/foundation.dart';
+import 'package:frontend/config/api_config.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -215,43 +216,14 @@ class PosMirrorService {
   }
 }
 
-/// Builds the WebSocket URL for the POS mirror broadcaster.
-/// Uses ws:// for http:// base URLs (dev), wss:// for https:// (prod).
-///
-/// บน Flutter Web ใช้ same-origin (Uri.base) — Go backend serve ทั้ง Web และ
-/// WebSocket จาก host เดียวกัน (เช่น Windows POS: http://127.0.0.1:8080)
-/// บน desktop/mobile ใช้ค่า hardcoded เดิม
 String buildPosMirrorWsUrl(String token) {
-  String baseUrl;
-  if (kIsWeb) {
-    final origin = Uri.base;
-    baseUrl = '${origin.scheme}://${origin.authority}';
-  } else {
-    baseUrl = 'http://localhost:8080';
-  }
-  final wsBase = baseUrl
-      .replaceFirst('https://', 'wss://')
-      .replaceFirst('http://', 'ws://');
-  return '$wsBase/ws/pos-mirror?token=$token';
+  return ApiConfig.wsUrl('/ws/pos-mirror', {'token': token});
 }
 
 String buildCustomerDisplayWsUrl() {
-  String baseUrl;
-  if (kIsWeb) {
-    final origin = Uri.base;
-    baseUrl = '${origin.scheme}://${origin.authority}';
-  } else {
-    baseUrl = 'http://localhost:8080';
-  }
-  final wsBase = baseUrl
-      .replaceFirst('https://', 'wss://')
-      .replaceFirst('http://', 'ws://');
-  final query = Uri(
-    queryParameters: {
-      'branchId': ApiService.defaultBranchId,
-      'posId': ApiService.defaultPosId,
-      'posSecret': ApiService.posSecret,
-    },
-  ).query;
-  return '$wsBase/ws/customer-display?$query';
+  return ApiConfig.wsUrl('/ws/customer-display', {
+    'branchId': ApiService.defaultBranchId,
+    'posId': ApiService.defaultPosId,
+    'posSecret': ApiService.posSecret,
+  });
 }

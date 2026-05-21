@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"crypto/sha1"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -45,13 +47,17 @@ func (r *inventoryTransferRepositoryPG) Create(ctx context.Context, transfer *In
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO "inventory_transfer"(
-			"id", "from_branch_id", "to_branch_id", "created_by",
+			"id", "from_branch_id", "to_branch_id", "from_store_id", "to_store_id",
+			"transfer_mode", "created_by",
 			"status", "notes", "created_at"
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		) VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, $8, $9, $10)
 	`,
 		transfer.ID,
 		transfer.FromBranchID,
 		transfer.ToBranchID,
+		transfer.FromStoreID,
+		transfer.ToStoreID,
+		transferModeOrStandard(transfer.TransferMode),
 		transfer.CreatedBy,
 		transfer.Status,
 		transfer.Notes,
@@ -78,11 +84,15 @@ func (r *inventoryTransferRepositoryPG) Create(ctx context.Context, transfer *In
 func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) (*InventoryTransfer, []InventoryTransferItem, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
-			"id", "from_branch_id", "to_branch_id", "created_by",
+			"id", "from_branch_id", "to_branch_id",
+			COALESCE("from_store_id", ''), COALESCE("to_store_id", ''),
+			COALESCE("transfer_mode", 'standard'), "created_by",
 			"status", "notes", "created_at",
+			"submitted_at", "submitted_by",
 			"approved_at", "approved_by",
 			"dispatched_at", "dispatched_by",
-			"received_at", "received_by"
+			"received_at", "received_by",
+			"completed_at", "completed_by"
 		FROM "inventory_transfer"
 		WHERE "id" = $1
 	`, id)
@@ -96,6 +106,7 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 		SELECT
 			iti."transfer_id", iti."part_code",
 			iti."requested_qty", iti."dispatched_qty", iti."received_qty",
+			COALESCE(pm."bar_code", '') AS bar_code,
 			COALESCE(pm."name", '') AS part_name,
 			COALESCE(pm."name_th", '') AS part_name_th,
 			COALESCE(pm."unit_id", '') AS unit
@@ -119,6 +130,7 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 			&item.RequestedQty,
 			&dispatchedQty,
 			&receivedQty,
+			&item.BarCode,
 			&item.PartName,
 			&item.PartNameTH,
 			&item.Unit,
@@ -142,7 +154,7 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 	return transfer, items, nil
 }
 
-func (r *inventoryTransferRepositoryPG) List(ctx context.Context, limit, offset int, status, fromBranchID, toBranchID *string) ([]InventoryTransfer, error) {
+func (r *inventoryTransferRepositoryPG) List(ctx context.Context, limit, offset int, status, fromBranchID, toBranchID, transferMode, createdBy *string) ([]InventoryTransfer, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -152,11 +164,15 @@ func (r *inventoryTransferRepositoryPG) List(ctx context.Context, limit, offset 
 
 	query := `
 		SELECT
-			"id", "from_branch_id", "to_branch_id", "created_by",
+			"id", "from_branch_id", "to_branch_id",
+			COALESCE("from_store_id", ''), COALESCE("to_store_id", ''),
+			COALESCE("transfer_mode", 'standard'), "created_by",
 			"status", "notes", "created_at",
+			"submitted_at", "submitted_by",
 			"approved_at", "approved_by",
 			"dispatched_at", "dispatched_by",
-			"received_at", "received_by"
+			"received_at", "received_by",
+			"completed_at", "completed_by"
 		FROM "inventory_transfer"
 	`
 	args := make([]interface{}, 0)
@@ -176,6 +192,16 @@ func (r *inventoryTransferRepositoryPG) List(ctx context.Context, limit, offset 
 	if toBranchID != nil && strings.TrimSpace(*toBranchID) != "" {
 		conditions = append(conditions, fmt.Sprintf(`"to_branch_id" = $%d`, argIndex))
 		args = append(args, strings.TrimSpace(*toBranchID))
+		argIndex++
+	}
+	if transferMode != nil && strings.TrimSpace(*transferMode) != "" {
+		conditions = append(conditions, fmt.Sprintf(`"transfer_mode" = $%d`, argIndex))
+		args = append(args, strings.TrimSpace(*transferMode))
+		argIndex++
+	}
+	if createdBy != nil && strings.TrimSpace(*createdBy) != "" {
+		conditions = append(conditions, fmt.Sprintf(`"created_by" = $%d`, argIndex))
+		args = append(args, strings.TrimSpace(*createdBy))
 		argIndex++
 	}
 
@@ -207,15 +233,48 @@ func (r *inventoryTransferRepositoryPG) List(ctx context.Context, limit, offset 
 	return transfers, nil
 }
 
+func (r *inventoryTransferRepositoryPG) UpdateItems(ctx context.Context, transferID string, items []InventoryTransferItem) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM "inventory_transfer_item"
+		WHERE "transfer_id" = $1
+	`, transferID)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range items {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO "inventory_transfer_item"(
+				"transfer_id", "part_code", "requested_qty"
+			) VALUES ($1, $2, $3)
+		`, transferID, strings.TrimSpace(item.PartCode), item.RequestedQty)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (r *inventoryTransferRepositoryPG) UpdateStatus(ctx context.Context, id, status, userID string, timestamp time.Time) error {
 	var query string
 	switch status {
+	case "review":
+		query = `UPDATE "inventory_transfer" SET "status"=$1, "submitted_at"=$2, "submitted_by"=$3 WHERE "id"=$4`
 	case "approved":
 		query = `UPDATE "inventory_transfer" SET "status"=$1, "approved_at"=$2, "approved_by"=$3 WHERE "id"=$4`
 	case "dispatched":
 		query = `UPDATE "inventory_transfer" SET "status"=$1, "dispatched_at"=$2, "dispatched_by"=$3 WHERE "id"=$4`
 	case "received":
 		query = `UPDATE "inventory_transfer" SET "status"=$1, "received_at"=$2, "received_by"=$3 WHERE "id"=$4`
+	case "completed":
+		query = `UPDATE "inventory_transfer" SET "status"=$1, "completed_at"=$2, "completed_by"=$3 WHERE "id"=$4`
 	default:
 		// cancelled or other statuses without timestamps
 		_, err := r.db.ExecContext(ctx, `UPDATE "inventory_transfer" SET "status"=$1 WHERE "id"=$2`, status, id)
@@ -298,6 +357,203 @@ func (r *inventoryTransferRepositoryPG) UpdateItemsReceived(ctx context.Context,
 	return tx.Commit()
 }
 
+func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, transferID, userID string, timestamp time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var transfer InventoryTransfer
+	err = tx.QueryRowContext(ctx, `
+		SELECT
+			"id", "from_branch_id", "to_branch_id",
+			COALESCE("from_store_id", ''), COALESCE("to_store_id", ''),
+			COALESCE("transfer_mode", 'standard'), "created_by",
+			"status", "notes", "created_at"
+		FROM "inventory_transfer"
+		WHERE "id" = $1
+		FOR UPDATE
+	`, transferID).Scan(
+		&transfer.ID,
+		&transfer.FromBranchID,
+		&transfer.ToBranchID,
+		&transfer.FromStoreID,
+		&transfer.ToStoreID,
+		&transfer.TransferMode,
+		&transfer.CreatedBy,
+		&transfer.Status,
+		&transfer.Notes,
+		&transfer.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
+	}
+	if transfer.TransferMode != "pos_restock" {
+		return fmt.Errorf("invalid_transfer_mode")
+	}
+	if transfer.Status != "review" {
+		return fmt.Errorf("invalid_status")
+	}
+	if strings.TrimSpace(transfer.FromStoreID) == "" || strings.TrimSpace(transfer.ToStoreID) == "" {
+		return fmt.Errorf("missing_store")
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT "part_code", "requested_qty"
+		FROM "inventory_transfer_item"
+		WHERE "transfer_id" = $1
+		ORDER BY "part_code"
+	`, transferID)
+	if err != nil {
+		return err
+	}
+
+	type moveItem struct {
+		partCode       string
+		requestedQty   int
+		sourceAddrCode string
+		availableQty   int
+	}
+	moveItems := make([]moveItem, 0)
+	for rows.Next() {
+		var item moveItem
+		if err := rows.Scan(&item.partCode, &item.requestedQty); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		moveItems = append(moveItems, item)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(moveItems) == 0 {
+		return fmt.Errorf("missing_items")
+	}
+
+	shortages := make([]InventoryShortage, 0)
+	for i := range moveItems {
+		err := tx.QueryRowContext(ctx, `
+			SELECT "code", COALESCE("qty", 0)
+			FROM "address_master"
+			WHERE "store_id" = $1 AND "part_code" = $2
+			ORDER BY "code"
+			LIMIT 1
+			FOR UPDATE
+		`, transfer.FromStoreID, moveItems[i].partCode).Scan(
+			&moveItems[i].sourceAddrCode,
+			&moveItems[i].availableQty,
+		)
+		if err != nil {
+			if err != sql.ErrNoRows {
+				return err
+			}
+			moveItems[i].availableQty = 0
+		}
+		if moveItems[i].availableQty < moveItems[i].requestedQty {
+			shortages = append(shortages, InventoryShortage{
+				PartCode:     moveItems[i].partCode,
+				RequestedQty: moveItems[i].requestedQty,
+				AvailableQty: moveItems[i].availableQty,
+				MissingQty:   moveItems[i].requestedQty - moveItems[i].availableQty,
+			})
+		}
+	}
+	if len(shortages) > 0 {
+		return &InsufficientStockError{Shortages: shortages}
+	}
+
+	for _, item := range moveItems {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE "inventory_transfer_item"
+			SET "dispatched_qty" = $1, "received_qty" = $1
+			WHERE "transfer_id" = $2 AND "part_code" = $3
+		`, item.requestedQty, transferID, item.partCode)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			UPDATE "address_master"
+			SET "qty" = "qty" - $1
+			WHERE "code" = $2
+		`, item.requestedQty, item.sourceAddrCode)
+		if err != nil {
+			return err
+		}
+
+		var destAddrCode string
+		err = tx.QueryRowContext(ctx, `
+			SELECT "code"
+			FROM "address_master"
+			WHERE "store_id" = $1 AND "part_code" = $2
+			ORDER BY "code"
+			LIMIT 1
+			FOR UPDATE
+		`, transfer.ToStoreID, item.partCode).Scan(&destAddrCode)
+		if err != nil {
+			if err != sql.ErrNoRows {
+				return err
+			}
+			destAddrCode = vehicleAddressCode(transfer.ToStoreID, item.partCode)
+			_, err = tx.ExecContext(ctx, `
+				INSERT INTO "address_master"(
+					"code", "part_code", "store_id", "shelf",
+					"qty", "min", "max", "rop", "remarks"
+				) VALUES ($1, $2, $3, 'รถ', $4, 0, 0, 0, 'สร้างจากใบเบิกสินค้าเข้ารถ')
+			`, destAddrCode, item.partCode, transfer.ToStoreID, item.requestedQty)
+			if err != nil {
+				return err
+			}
+		} else {
+			_, err = tx.ExecContext(ctx, `
+				UPDATE "address_master"
+				SET "qty" = "qty" + $1
+				WHERE "code" = $2
+			`, item.requestedQty, destAddrCode)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE "inventory_transfer"
+		SET "status" = 'completed',
+		    "approved_at" = $1, "approved_by" = $2,
+		    "dispatched_at" = $1, "dispatched_by" = $2,
+		    "received_at" = $1, "received_by" = $2,
+		    "completed_at" = $1, "completed_by" = $2
+		WHERE "id" = $3
+	`, timestamp, userID, transferID)
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO "inventory_transfer_audit"("transfer_id", "action", "actor_id", "notes", "created_at")
+		VALUES ($1, 'approved', $2, '', $3), ($1, 'completed', $2, '', $3)
+	`, transferID, userID, timestamp); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (r *inventoryTransferRepositoryPG) LogAudit(ctx context.Context, transferID, action, actorID, notes string) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO "inventory_transfer_audit"("transfer_id", "action", "actor_id", "notes")
+		VALUES ($1, $2, NULLIF($3, ''), $4)
+	`, transferID, action, actorID, notes)
+	return err
+}
+
 // adjustAddressQtyTx updates address_master qty for the default store of branchID within a transaction.
 // If 0 rows affected (part not stocked at that branch), silently skip.
 func (r *inventoryTransferRepositoryPG) adjustAddressQtyTx(ctx context.Context, tx *sql.Tx, branchID, partCode string, delta int) error {
@@ -315,29 +571,48 @@ func (r *inventoryTransferRepositoryPG) adjustAddressQtyTx(ctx context.Context, 
 	return err
 }
 
+func transferModeOrStandard(mode string) string {
+	if strings.TrimSpace(mode) == "" {
+		return "standard"
+	}
+	return strings.TrimSpace(mode)
+}
+
+func vehicleAddressCode(storeID, partCode string) string {
+	sum := sha1.Sum([]byte(storeID + ":" + partCode))
+	return "VEH" + strings.ToUpper(hex.EncodeToString(sum[:10]))
+}
+
 type inventoryTransferScanner interface {
 	Scan(dest ...interface{}) error
 }
 
 func scanInventoryTransfer(scanner inventoryTransferScanner) (*InventoryTransfer, error) {
 	var t InventoryTransfer
-	var approvedAt, dispatchedAt, receivedAt sql.NullTime
-	var approvedBy, dispatchedBy, receivedBy sql.NullString
+	var submittedAt, approvedAt, dispatchedAt, receivedAt, completedAt sql.NullTime
+	var submittedBy, approvedBy, dispatchedBy, receivedBy, completedBy sql.NullString
 
 	err := scanner.Scan(
 		&t.ID,
 		&t.FromBranchID,
 		&t.ToBranchID,
+		&t.FromStoreID,
+		&t.ToStoreID,
+		&t.TransferMode,
 		&t.CreatedBy,
 		&t.Status,
 		&t.Notes,
 		&t.CreatedAt,
+		&submittedAt,
+		&submittedBy,
 		&approvedAt,
 		&approvedBy,
 		&dispatchedAt,
 		&dispatchedBy,
 		&receivedAt,
 		&receivedBy,
+		&completedAt,
+		&completedBy,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -346,6 +621,12 @@ func scanInventoryTransfer(scanner inventoryTransferScanner) (*InventoryTransfer
 		return nil, err
 	}
 
+	if submittedAt.Valid {
+		t.SubmittedAt = &submittedAt.Time
+	}
+	if submittedBy.Valid {
+		t.SubmittedBy = submittedBy.String
+	}
 	if approvedAt.Valid {
 		t.ApprovedAt = &approvedAt.Time
 	}
@@ -363,6 +644,12 @@ func scanInventoryTransfer(scanner inventoryTransferScanner) (*InventoryTransfer
 	}
 	if receivedBy.Valid {
 		t.ReceivedBy = receivedBy.String
+	}
+	if completedAt.Valid {
+		t.CompletedAt = &completedAt.Time
+	}
+	if completedBy.Valid {
+		t.CompletedBy = completedBy.String
 	}
 
 	return &t, nil

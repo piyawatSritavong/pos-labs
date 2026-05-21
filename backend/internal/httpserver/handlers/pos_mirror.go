@@ -3,19 +3,16 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"backend/internal/config"
 	"backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
-
-// upgrader allows all origins in development. Tighten CheckOrigin for production.
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
 
 // broadcaster represents a Van Staff POS connection sending state.
 type broadcaster struct {
@@ -136,18 +133,22 @@ func (h *PosMirrorHub) publishPOSState(posKey string, state []byte) {
 
 // PosMirrorHandler handles WebSocket upgrade and lifecycle for the POS mirror feature.
 type PosMirrorHandler struct {
-	hub      *PosMirrorHub
-	sessions repository.SessionRepository
-	users    repository.UserRepository
-	pos      repository.POSRepository
+	hub            *PosMirrorHub
+	sessions       repository.SessionRepository
+	users          repository.UserRepository
+	pos            repository.POSRepository
+	cfg            config.Config
+	allowedOrigins []string
 }
 
-func NewPosMirrorHandler(sessions repository.SessionRepository, users repository.UserRepository, pos repository.POSRepository) *PosMirrorHandler {
+func NewPosMirrorHandler(sessions repository.SessionRepository, users repository.UserRepository, pos repository.POSRepository, cfg config.Config) *PosMirrorHandler {
 	return &PosMirrorHandler{
-		hub:      newPosMirrorHub(),
-		sessions: sessions,
-		users:    users,
-		pos:      pos,
+		hub:            newPosMirrorHub(),
+		sessions:       sessions,
+		users:          users,
+		pos:            pos,
+		cfg:            cfg,
+		allowedOrigins: parseOriginList(cfg.CORSAllowedOrigins),
 	}
 }
 
@@ -173,7 +174,7 @@ func (h *PosMirrorHandler) HandleWS(c *gin.Context) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrade(c)
 	if err != nil {
 		return
 	}
@@ -210,7 +211,7 @@ func (h *PosMirrorHandler) HandleCustomerDisplayWS(c *gin.Context) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrade(c)
 	if err != nil {
 		return
 	}
@@ -268,6 +269,47 @@ func (h *PosMirrorHandler) TestState(c *gin.Context) {
 	}
 	h.hub.publishPOSState(posMirrorKey(branchID, posID), data)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "branchId": branchID, "posId": posID})
+}
+
+func (h *PosMirrorHandler) upgrade(c *gin.Context) (*websocket.Conn, error) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: h.checkOrigin,
+	}
+	return upgrader.Upgrade(c.Writer, c.Request, nil)
+}
+
+func (h *PosMirrorHandler) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	for _, allowedOrigin := range h.allowedOrigins {
+		if origin == allowedOrigin {
+			return true
+		}
+	}
+	if !h.cfg.IsProduction() {
+		return strings.HasPrefix(origin, "http://localhost:") ||
+			strings.HasPrefix(origin, "http://127.0.0.1:") ||
+			strings.HasPrefix(origin, "https://localhost:") ||
+			strings.HasPrefix(origin, "https://127.0.0.1:")
+	}
+	return false
+}
+
+func parseOriginList(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		origin := strings.TrimSpace(part)
+		if origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }
 
 // runBroadcaster registers a Van Staff connection and forwards its state updates.

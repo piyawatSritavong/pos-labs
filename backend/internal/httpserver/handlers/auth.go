@@ -140,7 +140,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 		// Development fallback:
 		// frontend default sends "default_if_needed" when POS_SECRET is not set.
-		allowDevDefaultSecret := (os.Getenv("ENV") != "production") && req.POSSecret == "default_if_needed"
+		appEnv := os.Getenv("APP_ENV")
+		if appEnv == "" {
+			appEnv = os.Getenv("ENV")
+		}
+		allowDevDefaultSecret := (appEnv != "production") && req.POSSecret == "default_if_needed"
 
 		// Validate posSecret matches
 		if pos.POSSecret != req.POSSecret && req.POSSecret != posSecretEnv && !allowDevDefaultSecret {

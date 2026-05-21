@@ -57,10 +57,11 @@ func (h *POSHandler) List(c *gin.Context) {
 	out := make([]gin.H, 0, len(posList))
 	for _, p := range posList {
 		out = append(out, gin.H{
-			"posId":    p.POSID,
-			"branchId": p.BranchID,
-			"posName":  p.POSName,
-			"isActive": p.IsActive,
+			"posId":          p.POSID,
+			"branchId":       p.BranchID,
+			"posName":        p.POSName,
+			"isActive":       p.IsActive,
+			"vehicleStoreId": p.VehicleStoreID,
 			// posSecret is not returned in list
 		})
 	}
@@ -88,10 +89,11 @@ func (h *POSHandler) Get(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"posId":    pos.POSID,
-		"branchId": pos.BranchID,
-		"posName":  pos.POSName,
-		"isActive": pos.IsActive,
+		"posId":          pos.POSID,
+		"branchId":       pos.BranchID,
+		"posName":        pos.POSName,
+		"isActive":       pos.IsActive,
+		"vehicleStoreId": pos.VehicleStoreID,
 		// posSecret is not returned in GET
 	})
 }
@@ -122,10 +124,11 @@ func (h *POSHandler) Create(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"posId":    pos.POSID,
-		"branchId": pos.BranchID,
-		"posName":  pos.POSName,
-		"isActive": pos.IsActive,
+		"posId":          pos.POSID,
+		"branchId":       pos.BranchID,
+		"posName":        pos.POSName,
+		"isActive":       pos.IsActive,
+		"vehicleStoreId": pos.VehicleStoreID,
 		// posSecret is not returned in response (use GET /pos/:id/secret to retrieve)
 	})
 }
@@ -158,10 +161,11 @@ func (h *POSHandler) ToggleActivate(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"posId":    pos.POSID,
-		"branchId": pos.BranchID,
-		"posName":  pos.POSName,
-		"isActive": pos.IsActive,
+		"posId":          pos.POSID,
+		"branchId":       pos.BranchID,
+		"posName":        pos.POSName,
+		"isActive":       pos.IsActive,
+		"vehicleStoreId": pos.VehicleStoreID,
 	})
 }
 

@@ -5,11 +5,12 @@ import (
 )
 
 type POS struct {
-	POSID     string
-	BranchID  string
-	POSName   string
-	POSSecret string
-	IsActive  bool
+	POSID          string
+	BranchID       string
+	POSName        string
+	POSSecret      string
+	IsActive       bool
+	VehicleStoreID string
 }
 
 type POSRepository interface {
@@ -21,4 +22,3 @@ type POSRepository interface {
 	RefreshSecret(ctx context.Context, id string) (string, error)
 	ToggleActive(ctx context.Context, id string) error
 }
-

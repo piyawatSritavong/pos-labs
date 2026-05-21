@@ -2641,10 +2641,6 @@ class _PaymentMethodDialogState extends State<_PaymentMethodDialog> {
                         ),
                       ),
                     ),
-                    /*
-                    Credit term payment is hidden for this POS deployment.
-                    Keep the implementation here so it can be restored later
-                    without changing backend payment contracts.
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton(
@@ -2665,11 +2661,9 @@ class _PaymentMethodDialogState extends State<_PaymentMethodDialog> {
                         ),
                       ),
                     ),
-                    */
                   ],
                 ),
-                // Credit term fields stay disabled while the "เงินเซ็น" button is hidden.
-                if (false && _selectedKind == _PaymentKind.creditTerm) ...[
+                if (_selectedKind == _PaymentKind.creditTerm) ...[
                   const SizedBox(height: 16),
                   InkWell(
                     onTap: () => _pickDate(
