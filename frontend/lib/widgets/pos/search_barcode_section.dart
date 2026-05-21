@@ -83,6 +83,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
       name: json['nameTh'] ?? json['name_th'] ?? json['name'] ?? '',
       price: _toDouble(json['price'] ?? json['unitPrice']),
       code: json['code']?.toString() ?? '',
+      receiptName: json['receiptName']?.toString(),
       defaultAddressCode: defaultAddressCode,
       barcode: barcode,
     );

@@ -570,6 +570,7 @@ class PartsManagementSection extends StatelessWidget {
                                   columns: const [
                                     DataColumn(label: Text('รหัสสินค้า')),
                                     DataColumn(label: Text('ชื่อสินค้า')),
+                                    DataColumn(label: Text('ชื่อบนใบเสร็จ')),
                                     DataColumn(label: Text('Barcode')),
                                     DataColumn(label: Text('หน่วย')),
                                     DataColumn(label: Text('ราคาขาย')),
@@ -585,6 +586,8 @@ class PartsManagementSection extends StatelessWidget {
                                                 : p['name'])
                                             ?.toString() ??
                                         '';
+                                    final receiptName =
+                                        p['receiptName']?.toString() ?? '';
                                     // Backend returns camelCase `barCode` (not `barcode`).
                                     final barcode =
                                         p['barCode']?.toString() ?? '';
@@ -618,6 +621,7 @@ class PartsManagementSection extends StatelessWidget {
                                       cells: [
                                         DataCell(Text(code)),
                                         DataCell(Text(name)),
+                                        DataCell(Text(receiptName)),
                                         DataCell(Text(barcode)),
                                         DataCell(Text(unit)),
                                         DataCell(Text('฿$priceText')),

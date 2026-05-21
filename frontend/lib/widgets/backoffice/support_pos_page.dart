@@ -17,7 +17,9 @@ String _buildWatcherWsUrl(String token) {
   } else {
     baseUrl = 'http://localhost:8080';
   }
-  final wsBase = baseUrl.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
+  final wsBase = baseUrl
+      .replaceFirst('https://', 'wss://')
+      .replaceFirst('http://', 'ws://');
   return '$wsBase/ws/pos-mirror?token=$token';
 }
 
@@ -100,22 +102,25 @@ class _SupportPosPageState extends State<SupportPosPage> {
         constraints: const BoxConstraints(maxWidth: 380),
         child: Card(
           elevation: 2,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.lock_outline,
-                    size: 40, color: AppColors.primary),
+                const Icon(
+                  Icons.lock_outline,
+                  size: 40,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(height: 16),
                 const Text(
                   'กรุณายืนยันตัวตน',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -143,7 +148,9 @@ class _SupportPosPageState extends State<SupportPosPage> {
                           height: 18,
                           width: 18,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Text('ยืนยัน'),
                 ),
@@ -180,7 +187,8 @@ class _SupportPosPageState extends State<SupportPosPage> {
     final data = jsonDecode(raw as String) as Map<String, dynamic>;
     switch (data['type']) {
       case 'online_list':
-        final list = (data['broadcasters'] as List?)
+        final list =
+            (data['broadcasters'] as List?)
                 ?.whereType<Map<String, dynamic>>()
                 .toList() ??
             [];
@@ -229,8 +237,10 @@ class _SupportPosPageState extends State<SupportPosPage> {
         if (_error != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: Text(_error!,
-                style: const TextStyle(color: AppColors.danger, fontSize: 13)),
+            child: Text(
+              _error!,
+              style: const TextStyle(color: AppColors.danger, fontSize: 13),
+            ),
           ),
         Expanded(
           child: Row(
@@ -255,8 +265,10 @@ class _SupportPosPageState extends State<SupportPosPage> {
       ),
       child: Row(
         children: [
-          const Text('Support POS — Monitor',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const Text(
+            'Support POS — Monitor',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -284,7 +296,9 @@ class _SupportPosPageState extends State<SupportPosPage> {
                 Text(
                   'Online (${_onlineBroadcasters.length})',
                   style: const TextStyle(
-                      fontWeight: FontWeight.w600, fontSize: 13),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -293,8 +307,10 @@ class _SupportPosPageState extends State<SupportPosPage> {
           if (_onlineBroadcasters.isEmpty)
             const Expanded(
               child: Center(
-                child: Text('ไม่มีพนักงานออนไลน์',
-                    style: TextStyle(color: AppColors.muted, fontSize: 13)),
+                child: Text(
+                  'ไม่มีพนักงานออนไลน์',
+                  style: TextStyle(color: AppColors.muted, fontSize: 13),
+                ),
               ),
             )
           else
@@ -312,27 +328,37 @@ class _SupportPosPageState extends State<SupportPosPage> {
                     onTap: () => _watchStaff(id, name),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
                       color: isSelected
                           ? AppColors.primary.withValues(alpha: 0.08)
                           : null,
                       child: Row(
                         children: [
-                          const Icon(Icons.circle,
-                              color: Colors.green, size: 8),
+                          const Icon(
+                            Icons.circle,
+                            color: Colors.green,
+                            size: 8,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(name,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: isSelected
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                )),
+                            child: Text(
+                              name,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
                           ),
                           if (isSelected)
-                            const Icon(Icons.chevron_right,
-                                size: 16, color: AppColors.primary),
+                            const Icon(
+                              Icons.chevron_right,
+                              size: 16,
+                              color: AppColors.primary,
+                            ),
                         ],
                       ),
                     ),
@@ -348,8 +374,10 @@ class _SupportPosPageState extends State<SupportPosPage> {
   Widget _buildMirrorPanel() {
     if (_watchingId == null) {
       return const Center(
-        child: Text('เลือกพนักงานเพื่อดูหน้าจอ POS',
-            style: TextStyle(color: AppColors.muted)),
+        child: Text(
+          'เลือกพนักงานเพื่อดูหน้าจอ POS',
+          style: TextStyle(color: AppColors.muted),
+        ),
       );
     }
     return _POSMirrorView(
@@ -422,16 +450,20 @@ class _POSMirrorView extends StatelessWidget {
               color: Colors.red,
               borderRadius: BorderRadius.circular(4),
             ),
-            child: const Text('LIVE',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold)),
+            child: const Text(
+              'LIVE',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           const SizedBox(width: 10),
-          Text(staffName,
-              style:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          Text(
+            staffName,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          ),
           const Spacer(),
           if (lastUpdated != null)
             Text(
@@ -451,8 +483,10 @@ class _POSMirrorView extends StatelessWidget {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 12),
-            Text('รอข้อมูลจากพนักงาน...',
-                style: TextStyle(color: AppColors.muted)),
+            Text(
+              'รอข้อมูลจากพนักงาน...',
+              style: TextStyle(color: AppColors.muted),
+            ),
           ],
         ),
       );
@@ -461,7 +495,8 @@ class _POSMirrorView extends StatelessWidget {
     final activeDialog = state!['activeDialog'] as String?;
     final lastBarcode = state!['lastBarcode'] as String?;
     final lastAction = state!['lastAction'] as String?;
-    final items = (state!['items'] as List?)
+    final items =
+        (state!['items'] as List?)
             ?.whereType<Map<String, dynamic>>()
             .toList() ??
         [];
@@ -511,7 +546,9 @@ class _POSMirrorView extends StatelessWidget {
                       alignment: Alignment.center,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 32, vertical: 20),
+                          horizontal: 32,
+                          vertical: 20,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
@@ -533,7 +570,9 @@ class _POSMirrorView extends StatelessWidget {
                                   : 'รอรับเงินสด\n฿${_fmt(_toDouble(state!['cashAmount']))}',
                               textAlign: TextAlign.center,
                               style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.bold),
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ],
                         ),
@@ -550,14 +589,20 @@ class _POSMirrorView extends StatelessWidget {
                       child: const Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.check_circle_outline,
-                              color: Colors.white, size: 64),
+                          Icon(
+                            Icons.check_circle_outline,
+                            color: Colors.white,
+                            size: 64,
+                          ),
                           SizedBox(height: 12),
-                          Text('ชำระเงินสำเร็จ',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold)),
+                          Text(
+                            'ชำระเงินสำเร็จ',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -577,7 +622,9 @@ class _POSMirrorView extends StatelessWidget {
                     child: Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 10),
+                          horizontal: 20,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.78),
                           borderRadius: BorderRadius.circular(999),
@@ -595,9 +642,10 @@ class _POSMirrorView extends StatelessWidget {
                               _dialogLabels[activeDialog] ??
                                   'กำลังใช้งาน: $activeDialog',
                               style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13),
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                             ),
                           ],
                         ),
@@ -613,6 +661,7 @@ class _POSMirrorView extends StatelessWidget {
       ),
     );
   }
+
   // ── Cart panel — CartSummarySection replica ─────────────────────────────
   Widget _buildCartPanel({
     required List<Map<String, dynamic>> items,
@@ -641,15 +690,13 @@ class _POSMirrorView extends StatelessWidget {
             children: [
               const Text(
                 'ตะกร้าสินค้า',
-                style:
-                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Container(
                   height: 44,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     color: AppColors.bg,
                     borderRadius: BorderRadius.circular(8),
@@ -659,28 +706,33 @@ class _POSMirrorView extends StatelessWidget {
                   child: member != null
                       ? Row(
                           children: [
-                            const Icon(Icons.person,
-                                size: 14, color: AppColors.primary),
+                            const Icon(
+                              Icons.person,
+                              size: 14,
+                              color: AppColors.primary,
+                            ),
                             const SizedBox(width: 6),
                             Text(
                               '${member['code'] ?? ''} ${member['name'] ?? ''}',
                               style: const TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13),
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
                             ),
                           ],
                         )
-                      : const Text('เบอร์โทรสมาชิก',
+                      : const Text(
+                          'เบอร์โทรสมาชิก',
                           style: TextStyle(
-                              color: AppColors.muted, fontSize: 13)),
+                            color: AppColors.muted,
+                            fontSize: 13,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: null,
-                child: const Text('ผูกสมาชิก'),
-              ),
+              OutlinedButton(onPressed: null, child: const Text('ผูกสมาชิก')),
             ],
           ),
           if (billId != null && billId.isNotEmpty) ...[
@@ -697,12 +749,13 @@ class _POSMirrorView extends StatelessWidget {
                 final useSplit = constraints.maxWidth >= 760;
                 final itemList = _buildItemList(items, lastAction);
                 final pricing = _buildPricingPanel(
-                    subtotal: subtotal,
-                    discount: discount,
-                    tax: tax,
-                    taxRate: taxRate,
-                    total: total,
-                    lastAction: lastAction);
+                  subtotal: subtotal,
+                  discount: discount,
+                  tax: tax,
+                  taxRate: taxRate,
+                  total: total,
+                  lastAction: lastAction,
+                );
                 if (useSplit) {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -719,8 +772,7 @@ class _POSMirrorView extends StatelessWidget {
                     Expanded(child: itemList),
                     const SizedBox(height: 12),
                     ConstrainedBox(
-                      constraints:
-                          const BoxConstraints(maxHeight: 320),
+                      constraints: const BoxConstraints(maxHeight: 320),
                       child: pricing,
                     ),
                   ],
@@ -748,43 +800,60 @@ class _POSMirrorView extends StatelessWidget {
             children: [
               const Expanded(
                 flex: 6,
-                child: Text('ชื่อ',
-                    style: TextStyle(
-                        color: AppColors.muted,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12)),
+                child: Text(
+                  'ชื่อ',
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
               ),
               const Expanded(
                 flex: 3,
-                child: Text('จำนวน',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: AppColors.muted,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12)),
+                child: Text(
+                  'จำนวน',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
               ),
               const Expanded(
                 flex: 3,
-                child: Text('ราคา',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                        color: AppColors.muted,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12)),
+                child: Text(
+                  'ราคา',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
               ),
               if (isQtyAction) ...[
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.red.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
+                    border: Border.all(
+                      color: Colors.red.withValues(alpha: 0.4),
+                    ),
                   ),
                   child: Text(
                     lastAction == 'qty_add' ? '+จำนวน' : '-จำนวน',
                     style: const TextStyle(
-                        color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold),
+                      color: Colors.red,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
@@ -796,8 +865,10 @@ class _POSMirrorView extends StatelessWidget {
           Expanded(
             child: items.isEmpty
                 ? const Center(
-                    child: Text('ยังไม่มีสินค้าในตะกร้า',
-                        style: TextStyle(color: AppColors.muted)),
+                    child: Text(
+                      'ยังไม่มีสินค้าในตะกร้า',
+                      style: TextStyle(color: AppColors.muted),
+                    ),
                   )
                 : ListView.builder(
                     itemCount: items.length,
@@ -808,8 +879,7 @@ class _POSMirrorView extends StatelessWidget {
                       final qty = item['qty'] ?? 0;
                       final lineTotal = _toDouble(item['lineTotal']);
                       return Padding(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 8),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Row(
                           children: [
                             Expanded(
@@ -819,20 +889,26 @@ class _POSMirrorView extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.w600),
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                             Expanded(
                               flex: 3,
-                              child: Text('$qty',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600)),
+                              child: Text(
+                                '$qty',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
                             Expanded(
                               flex: 3,
-                              child: Text('฿${_fmt(lineTotal)}',
-                                  textAlign: TextAlign.right),
+                              child: Text(
+                                '฿${_fmt(lineTotal)}',
+                                textAlign: TextAlign.right,
+                              ),
                             ),
                           ],
                         ),
@@ -861,16 +937,20 @@ class _POSMirrorView extends StatelessWidget {
         children: [
           _totalRow('ราคารวม', '฿${_fmt(subtotal)}'),
           const SizedBox(height: 4),
-          _totalRow('ส่วนลด', '- ฿${_fmt(discount)}',
-              color: discount > 0 ? AppColors.danger : null),
+          _totalRow(
+            'ส่วนลด',
+            '- ฿${_fmt(discount)}',
+            color: discount > 0 ? AppColors.danger : null,
+          ),
           const SizedBox(height: 4),
           _totalRow('ภาษี ($taxRate%)', '฿${_fmt(tax)}'),
           gap,
           Row(
             children: [
-              const Text('ส่วนลด',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 13)),
+              const Text(
+                'ส่วนลด',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
               const Spacer(),
               for (final entry in [
                 ('5%', 'discount_5'),
@@ -878,24 +958,28 @@ class _POSMirrorView extends StatelessWidget {
                 ('15%', 'discount_15'),
                 ('20%', 'discount_20'),
               ]) ...[
-                Builder(builder: (context) {
-                  final isActive = lastAction == entry.$2;
-                  return OutlinedButton(
-                    onPressed: null,
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      minimumSize: const Size(0, 28),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      textStyle: const TextStyle(fontSize: 11),
-                      foregroundColor: isActive ? Colors.red : null,
-                      side: isActive
-                          ? const BorderSide(color: Colors.red, width: 2)
-                          : null,
-                    ),
-                    child: Text(entry.$1),
-                  );
-                }),
+                Builder(
+                  builder: (context) {
+                    final isActive = lastAction == entry.$2;
+                    return OutlinedButton(
+                      onPressed: null,
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        minimumSize: const Size(0, 28),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        textStyle: const TextStyle(fontSize: 11),
+                        foregroundColor: isActive ? Colors.red : null,
+                        side: isActive
+                            ? const BorderSide(color: Colors.red, width: 2)
+                            : null,
+                      ),
+                      child: Text(entry.$1),
+                    );
+                  },
+                ),
                 const SizedBox(width: 4),
               ],
             ],
@@ -906,8 +990,7 @@ class _POSMirrorView extends StatelessWidget {
               Expanded(
                 child: Container(
                   height: 36,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     color: AppColors.bg,
                     borderRadius: BorderRadius.circular(8),
@@ -917,48 +1000,48 @@ class _POSMirrorView extends StatelessWidget {
                   child: Text(
                     discount > 0 ? _fmt(discount) : 'ส่วนลด',
                     style: TextStyle(
-                        color: discount > 0
-                            ? AppColors.text
-                            : AppColors.muted,
-                        fontSize: 13),
+                      color: discount > 0 ? AppColors.text : AppColors.muted,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               Container(
                 height: 36,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
                   color: AppColors.bg,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: AppColors.border),
                 ),
                 alignment: Alignment.center,
-                child: const Text('%',
-                    style: TextStyle(fontSize: 13)),
+                child: const Text('%', style: TextStyle(fontSize: 13)),
               ),
             ],
           ),
           gap,
           Container(
-            padding: const EdgeInsets.symmetric(
-                vertical: 10, horizontal: 14),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
             decoration: BoxDecoration(
               color: AppColors.primary.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
               children: [
-                const Text('รวมสุทธิ',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16)),
+                const Text(
+                  'รวมสุทธิ',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
                 const Spacer(),
-                Text('฿${_fmt(total)}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: AppColors.primary)),
+                Text(
+                  '฿${_fmt(total)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: AppColors.primary,
+                  ),
+                ),
               ],
             ),
           ),
@@ -971,17 +1054,18 @@ class _POSMirrorView extends StatelessWidget {
                 disabledBackgroundColor: lastAction == 'pay'
                     ? AppColors.primary.withValues(alpha: 0.85)
                     : AppColors.primary.withValues(alpha: 0.4),
-                disabledForegroundColor:
-                    Colors.white.withValues(alpha: 0.7),
+                disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
                 side: lastAction == 'pay'
                     ? const BorderSide(color: Colors.red, width: 2)
                     : null,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
-              child: const Text('ชำระเงิน',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold)),
+              child: const Text(
+                'ชำระเงิน',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
             ),
           ),
           gap,
@@ -993,8 +1077,7 @@ class _POSMirrorView extends StatelessWidget {
                   style: lastAction == 'hold'
                       ? OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
-                          side: const BorderSide(
-                              color: Colors.red, width: 2),
+                          side: const BorderSide(color: Colors.red, width: 2),
                         )
                       : null,
                   child: const Text('พักบิล'),
@@ -1007,13 +1090,11 @@ class _POSMirrorView extends StatelessWidget {
                   style: lastAction == 'clear'
                       ? OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
-                          side: const BorderSide(
-                              color: Colors.red, width: 2),
+                          side: const BorderSide(color: Colors.red, width: 2),
                         )
                       : OutlinedButton.styleFrom(
                           foregroundColor: AppColors.danger,
-                          side: const BorderSide(
-                              color: AppColors.danger),
+                          side: const BorderSide(color: AppColors.danger),
                         ),
                   child: const Text('ล้างบิล'),
                 ),
@@ -1045,11 +1126,17 @@ class _POSMirrorView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(staffName,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w600, fontSize: 13)),
-              const Text('POS Mirror',
-                  style: TextStyle(color: AppColors.muted, fontSize: 11)),
+              Text(
+                staffName,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const Text(
+                'POS Mirror',
+                style: TextStyle(color: AppColors.muted, fontSize: 11),
+              ),
             ],
           ),
           const SizedBox(width: 12),
@@ -1059,7 +1146,9 @@ class _POSMirrorView extends StatelessWidget {
             child: Text(
               staffName.isNotEmpty ? staffName[0].toUpperCase() : '?',
               style: const TextStyle(
-                  color: AppColors.primary, fontWeight: FontWeight.bold),
+                color: AppColors.primary,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -1071,8 +1160,7 @@ class _POSMirrorView extends StatelessWidget {
     final hasValue = lastBarcode != null && lastBarcode.isNotEmpty;
     return Expanded(
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
           color: AppColors.bg,
           borderRadius: BorderRadius.circular(999),
@@ -1083,10 +1171,11 @@ class _POSMirrorView extends StatelessWidget {
             const Icon(Icons.search, color: AppColors.muted, size: 18),
             const SizedBox(width: 8),
             Text(
-              hasValue ? lastBarcode : 'พิมค้นหาสินค้า',
+              hasValue ? lastBarcode : 'เลือกสินค้า',
               style: TextStyle(
-                  color: hasValue ? AppColors.text : AppColors.muted,
-                  fontSize: 14),
+                color: hasValue ? AppColors.text : AppColors.muted,
+                fontSize: 14,
+              ),
             ),
           ],
         ),
@@ -1112,9 +1201,7 @@ class _POSMirrorView extends StatelessWidget {
         return Container(
           margin: const EdgeInsets.only(right: 6),
           decoration: BoxDecoration(
-            color: isActive
-                ? Colors.red.withValues(alpha: 0.12)
-                : AppColors.bg,
+            color: isActive ? Colors.red.withValues(alpha: 0.12) : AppColors.bg,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: isActive ? Colors.red : AppColors.border,
@@ -1157,8 +1244,9 @@ class _POSMirrorView extends StatelessWidget {
               child: Text(
                 hasValue ? lastBarcode : 'สแกนบาร์โค้ด...',
                 style: TextStyle(
-                    color: hasValue ? AppColors.text : AppColors.muted,
-                    fontSize: 14),
+                  color: hasValue ? AppColors.text : AppColors.muted,
+                  fontSize: 14,
+                ),
               ),
             ),
           ),
@@ -1169,12 +1257,13 @@ class _POSMirrorView extends StatelessWidget {
               onPressed: null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.accent,
-                disabledBackgroundColor:
-                    AppColors.accent.withValues(alpha: 0.6),
-                disabledForegroundColor:
-                    Colors.white.withValues(alpha: 0.8),
+                disabledBackgroundColor: AppColors.accent.withValues(
+                  alpha: 0.6,
+                ),
+                disabledForegroundColor: Colors.white.withValues(alpha: 0.8),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               icon: const Icon(Icons.qr_code_scanner, size: 18),
               label: const Text('SCAN'),
@@ -1187,7 +1276,9 @@ class _POSMirrorView extends StatelessWidget {
 
   // ── Dialog overlay ───────────────────────────────────────────────────────
   Widget _buildDialogOverlay(
-      String? dialogKey, Map<String, dynamic> dialogState) {
+    String? dialogKey,
+    Map<String, dynamic> dialogState,
+  ) {
     final type = dialogKey ?? dialogState['type'] as String? ?? '';
     final icon = _dialogIcons[type] ?? Icons.touch_app;
     final label = _dialogLabels[type] ?? 'กำลังใช้งาน: $type';
@@ -1196,8 +1287,7 @@ class _POSMirrorView extends StatelessWidget {
       color: Colors.black.withValues(alpha: 0.50),
       child: Center(
         child: ConstrainedBox(
-          constraints:
-              const BoxConstraints(maxWidth: 600, maxHeight: 700),
+          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 700),
           child: Container(
             margin: const EdgeInsets.all(24),
             decoration: BoxDecoration(
@@ -1211,30 +1301,37 @@ class _POSMirrorView extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                   child: Row(
                     children: [
                       Icon(icon, size: 20, color: AppColors.primary),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(label,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15)),
+                        child: Text(
+                          label,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.red,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Text('LIVE',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold)),
+                        child: const Text(
+                          'LIVE',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -1275,8 +1372,9 @@ class _POSMirrorView extends StatelessWidget {
       default:
         return Center(
           child: Text(
-              'ไม่ทราบประเภท: ${dialogState['type']}',
-              style: const TextStyle(color: AppColors.muted)),
+            'ไม่ทราบประเภท: ${dialogState['type']}',
+            style: const TextStyle(color: AppColors.muted),
+          ),
         );
     }
   }
@@ -1287,12 +1385,12 @@ class _POSMirrorView extends StatelessWidget {
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.check_circle_outline,
-              color: Colors.green, size: 48),
+          const Icon(Icons.check_circle_outline, color: Colors.green, size: 48),
           const SizedBox(height: 8),
-          Text('ลงทะเบียนสำเร็จ: ${s['name'] ?? ''}',
-              style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w600)),
+          Text(
+            'ลงทะเบียนสำเร็จ: ${s['name'] ?? ''}',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
         ],
       );
     }
@@ -1307,8 +1405,10 @@ class _POSMirrorView extends StatelessWidget {
         _readonlyField('อีเมล', s['email']?.toString() ?? ''),
         if (stage == 'error') ...[
           const SizedBox(height: 8),
-          const Text('เกิดข้อผิดพลาด',
-              style: TextStyle(color: AppColors.danger)),
+          const Text(
+            'เกิดข้อผิดพลาด',
+            style: TextStyle(color: AppColors.danger),
+          ),
         ],
       ],
     );
@@ -1319,14 +1419,14 @@ class _POSMirrorView extends StatelessWidget {
       children: [
         SizedBox(
           width: 80,
-          child: Text(label,
-              style: const TextStyle(
-                  color: AppColors.muted, fontSize: 13)),
+          child: Text(
+            label,
+            style: const TextStyle(color: AppColors.muted, fontSize: 13),
+          ),
         ),
         Expanded(
           child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: AppColors.bg,
               borderRadius: BorderRadius.circular(8),
@@ -1335,10 +1435,9 @@ class _POSMirrorView extends StatelessWidget {
             child: Text(
               value.isEmpty ? '-' : value,
               style: TextStyle(
-                  color: value.isEmpty
-                      ? AppColors.muted
-                      : AppColors.text,
-                  fontSize: 13),
+                color: value.isEmpty ? AppColors.muted : AppColors.text,
+                fontSize: 13,
+              ),
             ),
           ),
         ),
@@ -1347,14 +1446,15 @@ class _POSMirrorView extends StatelessWidget {
   }
 
   Widget _buildStockContent(Map<String, dynamic> s) {
-    final items = (s['items'] as List?)
-            ?.whereType<Map<String, dynamic>>()
-            .toList() ??
-        [];
+    final items =
+        (s['items'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
     if (items.isEmpty) {
       return const Center(
-          child: Text('สต็อกเพียงพอทุกสินค้า',
-              style: TextStyle(color: AppColors.muted)));
+        child: Text(
+          'สต็อกเพียงพอทุกสินค้า',
+          style: TextStyle(color: AppColors.muted),
+        ),
+      );
     }
     return ListView.separated(
       itemCount: items.length,
@@ -1362,7 +1462,8 @@ class _POSMirrorView extends StatelessWidget {
       itemBuilder: (_, i) {
         final item = items[i];
         final totalQty = _toDouble(item['totalQty']);
-        final addresses = (item['addresses'] as List?)
+        final addresses =
+            (item['addresses'] as List?)
                 ?.whereType<Map<String, dynamic>>()
                 .toList() ??
             [];
@@ -1377,33 +1478,39 @@ class _POSMirrorView extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                    '${item['partName'] ?? item['partCode'] ?? '-'}',
-                    style:
-                        const TextStyle(fontWeight: FontWeight.w600)),
+                  '${item['partName'] ?? item['partCode'] ?? '-'}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 3),
+                  horizontal: 10,
+                  vertical: 3,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.danger.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                    '${totalQty.toStringAsFixed(0)} ชิ้น',
-                    style: const TextStyle(
-                        color: AppColors.danger,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12)),
+                  '${totalQty.toStringAsFixed(0)} ชิ้น',
+                  style: const TextStyle(
+                    color: AppColors.danger,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
               ),
               if (addresses.isNotEmpty) ...[
                 const SizedBox(width: 8),
                 Text(
-                    addresses
-                        .map((a) =>
-                            '${a['label'] ?? '-'}: ${_toDouble(a['qty']).toStringAsFixed(0)}')
-                        .join(', '),
-                    style: const TextStyle(
-                        color: AppColors.muted, fontSize: 11)),
+                  addresses
+                      .map(
+                        (a) =>
+                            '${a['label'] ?? '-'}: ${_toDouble(a['qty']).toStringAsFixed(0)}',
+                      )
+                      .join(', '),
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                ),
               ],
             ],
           ),
@@ -1413,14 +1520,15 @@ class _POSMirrorView extends StatelessWidget {
   }
 
   Widget _buildBillLogContent(Map<String, dynamic> s) {
-    final bills = (s['bills'] as List?)
-            ?.whereType<Map<String, dynamic>>()
-            .toList() ??
-        [];
+    final bills =
+        (s['bills'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
     if (bills.isEmpty) {
       return const Center(
-          child: Text('วันนี้ยังไม่มีบิล',
-              style: TextStyle(color: AppColors.muted)));
+        child: Text(
+          'วันนี้ยังไม่มีบิล',
+          style: TextStyle(color: AppColors.muted),
+        ),
+      );
     }
     return ListView.separated(
       itemCount: bills.length,
@@ -1428,8 +1536,7 @@ class _POSMirrorView extends StatelessWidget {
       itemBuilder: (_, i) {
         final bill = bills[i];
         return Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: AppColors.bg,
             borderRadius: BorderRadius.circular(8),
@@ -1438,16 +1545,20 @@ class _POSMirrorView extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: Text('${bill['id'] ?? '-'}',
-                    style:
-                        const TextStyle(fontWeight: FontWeight.w600)),
+                child: Text(
+                  '${bill['id'] ?? '-'}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
-              Text('${bill['itemCount'] ?? 0} รายการ',
-                  style: const TextStyle(
-                      color: AppColors.muted, fontSize: 12)),
+              Text(
+                '${bill['itemCount'] ?? 0} รายการ',
+                style: const TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
               const SizedBox(width: 12),
-              Text('฿${_fmt(_toDouble(bill['total']))}',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                '฿${_fmt(_toDouble(bill['total']))}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ],
           ),
         );
@@ -1456,16 +1567,17 @@ class _POSMirrorView extends StatelessWidget {
   }
 
   Widget _buildHoldBillContent(Map<String, dynamic> s) {
-    final bills = (s['bills'] as List?)
-            ?.whereType<Map<String, dynamic>>()
-            .toList() ??
-        [];
+    final bills =
+        (s['bills'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
     final action = s['action'] as String?;
     final targetId = s['targetBillId'] as String?;
     if (bills.isEmpty) {
       return const Center(
-          child: Text('ไม่มีบิลที่ถูกพักไว้',
-              style: TextStyle(color: AppColors.muted)));
+        child: Text(
+          'ไม่มีบิลที่ถูกพักไว้',
+          style: TextStyle(color: AppColors.muted),
+        ),
+      );
     }
     return ListView.separated(
       itemCount: bills.length,
@@ -1479,33 +1591,37 @@ class _POSMirrorView extends StatelessWidget {
           decoration: BoxDecoration(
             color: isTarget
                 ? (action == 'deleting'
-                    ? AppColors.danger.withValues(alpha: 0.08)
-                    : AppColors.primary.withValues(alpha: 0.08))
+                      ? AppColors.danger.withValues(alpha: 0.08)
+                      : AppColors.primary.withValues(alpha: 0.08))
                 : AppColors.bg,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-                color: isTarget
-                    ? (action == 'deleting'
+              color: isTarget
+                  ? (action == 'deleting'
                         ? AppColors.danger
                         : AppColors.primary)
-                    : AppColors.border),
+                  : AppColors.border,
+            ),
           ),
           child: Row(
             children: [
               Expanded(
-                child: Text('บิล $id',
-                    style:
-                        const TextStyle(fontWeight: FontWeight.w600)),
+                child: Text(
+                  'บิล $id',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
               Text(
-                  '${bill['itemCount'] ?? 0} รายการ • ฿${_fmt(_toDouble(bill['total']))}',
-                  style: const TextStyle(
-                      color: AppColors.muted, fontSize: 12)),
+                '${bill['itemCount'] ?? 0} รายการ • ฿${_fmt(_toDouble(bill['total']))}',
+                style: const TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
               if (isTarget && action != null) ...[
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 2),
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: action == 'deleting'
                         ? AppColors.danger
@@ -1513,13 +1629,12 @@ class _POSMirrorView extends StatelessWidget {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    action == 'deleting'
-                        ? 'กำลังลบ'
-                        : 'กำลังดึงกลับ',
+                    action == 'deleting' ? 'กำลังลบ' : 'กำลังดึงกลับ',
                     style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold),
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
@@ -1533,10 +1648,8 @@ class _POSMirrorView extends StatelessWidget {
   Widget _buildReturnContent(Map<String, dynamic> s) {
     final invoiceId = s['invoiceId'] as String? ?? '';
     final bill = s['bill'] as Map<String, dynamic>?;
-    final items = (s['items'] as List?)
-            ?.whereType<Map<String, dynamic>>()
-            .toList() ??
-        [];
+    final items =
+        (s['items'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1556,8 +1669,10 @@ class _POSMirrorView extends StatelessWidget {
             ),
           )
         else
-          Text('ค้นหาบิล: $invoiceId',
-              style: const TextStyle(color: AppColors.muted)),
+          Text(
+            'ค้นหาบิล: $invoiceId',
+            style: const TextStyle(color: AppColors.muted),
+          ),
         const SizedBox(height: 8),
         Flexible(
           child: ListView.separated(
@@ -1565,54 +1680,64 @@ class _POSMirrorView extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 4),
             itemBuilder: (_, i) {
               final item = items[i];
-              final selected =
-                  (item['selectedQty'] as num?)?.toInt() ?? 0;
+              final selected = (item['selectedQty'] as num?)?.toInt() ?? 0;
               return Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 8),
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: selected > 0
                       ? AppColors.danger.withValues(alpha: 0.06)
                       : AppColors.bg,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                      color: selected > 0
-                          ? AppColors.danger.withValues(alpha: 0.4)
-                          : AppColors.border),
+                    color: selected > 0
+                        ? AppColors.danger.withValues(alpha: 0.4)
+                        : AppColors.border,
+                  ),
                 ),
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(
-                          '${item['partName'] ?? item['partCode'] ?? '-'}',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13)),
-                    ),
-                    Text('${item['maxReturnable'] ?? 0} max',
+                        '${item['partName'] ?? item['partCode'] ?? '-'}',
                         style: const TextStyle(
-                            color: AppColors.muted, fontSize: 11)),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${item['maxReturnable'] ?? 0} max',
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 11,
+                      ),
+                    ),
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
-                        color: selected > 0
-                            ? AppColors.danger
-                            : AppColors.bg,
+                        color: selected > 0 ? AppColors.danger : AppColors.bg,
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
-                            color: selected > 0
-                                ? AppColors.danger
-                                : AppColors.border),
+                          color: selected > 0
+                              ? AppColors.danger
+                              : AppColors.border,
+                        ),
                       ),
-                      child: Text('$selected',
-                          style: TextStyle(
-                              color: selected > 0
-                                  ? Colors.white
-                                  : AppColors.muted,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13)),
+                      child: Text(
+                        '$selected',
+                        style: TextStyle(
+                          color: selected > 0 ? Colors.white : AppColors.muted,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -1626,15 +1751,13 @@ class _POSMirrorView extends StatelessWidget {
 
   Widget _buildPhysicalCountContent(Map<String, dynamic> s) {
     final stage = s['stage'] as String? ?? 'counting';
-    final items = (s['items'] as List?)
-            ?.whereType<Map<String, dynamic>>()
-            .toList() ??
-        [];
-    final varianceReport =
-        s['varianceReport'] as Map<String, dynamic>?;
+    final items =
+        (s['items'] as List?)?.whereType<Map<String, dynamic>>().toList() ?? [];
+    final varianceReport = s['varianceReport'] as Map<String, dynamic>?;
 
     if (stage == 'variance' && varianceReport != null) {
-      final varItems = (varianceReport['items'] as List?)
+      final varItems =
+          (varianceReport['items'] as List?)
               ?.whereType<Map<String, dynamic>>()
               .toList() ??
           items;
@@ -1647,17 +1770,24 @@ class _POSMirrorView extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.check_circle_outline,
-                  color: Colors.green, size: 20),
+              const Icon(
+                Icons.check_circle_outline,
+                color: Colors.green,
+                size: 20,
+              ),
               const SizedBox(width: 6),
-              const Text('ส่งยืนยันสำเร็จ',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green)),
+              const Text(
+                'ส่งยืนยันสำเร็จ',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
               const Spacer(),
-              Text('มีความต่าง $withVariance รายการ',
-                  style: const TextStyle(
-                      color: AppColors.danger, fontSize: 12)),
+              Text(
+                'มีความต่าง $withVariance รายการ',
+                style: const TextStyle(color: AppColors.danger, fontSize: 12),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -1670,13 +1800,15 @@ class _POSMirrorView extends StatelessWidget {
                 final variance = _toDouble(item['variance']);
                 return Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: variance < 0
                         ? AppColors.danger.withValues(alpha: 0.06)
                         : variance > 0
-                            ? Colors.green.withValues(alpha: 0.06)
-                            : AppColors.bg,
+                        ? Colors.green.withValues(alpha: 0.06)
+                        : AppColors.bg,
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: AppColors.border),
                   ),
@@ -1684,25 +1816,31 @@ class _POSMirrorView extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                            '${item['partName'] ?? item['partCode'] ?? '-'}',
-                            style: const TextStyle(fontSize: 13)),
+                          '${item['partName'] ?? item['partCode'] ?? '-'}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
                       Text(
-                          '${_toDouble(item['systemQty']).toStringAsFixed(0)} → ${_toDouble(item['countedQty']).toStringAsFixed(0)}',
-                          style: const TextStyle(
-                              color: AppColors.muted, fontSize: 11)),
+                        '${_toDouble(item['systemQty']).toStringAsFixed(0)} → ${_toDouble(item['countedQty']).toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 11,
+                        ),
+                      ),
                       const SizedBox(width: 6),
                       Text(
-                          (variance >= 0 ? '+' : '') +
-                              variance.toStringAsFixed(0),
-                          style: TextStyle(
-                              color: variance < 0
-                                  ? AppColors.danger
-                                  : variance > 0
-                                      ? Colors.green
-                                      : AppColors.muted,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12)),
+                        (variance >= 0 ? '+' : '') +
+                            variance.toStringAsFixed(0),
+                        style: TextStyle(
+                          color: variance < 0
+                              ? AppColors.danger
+                              : variance > 0
+                              ? Colors.green
+                              : AppColors.muted,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -1722,8 +1860,7 @@ class _POSMirrorView extends StatelessWidget {
         final counted = _toDouble(item['countedQty']);
         final diff = counted - system;
         return Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: AppColors.bg,
             borderRadius: BorderRadius.circular(6),
@@ -1733,35 +1870,36 @@ class _POSMirrorView extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                    '${item['partName'] ?? item['partCode'] ?? '-'}',
-                    style: const TextStyle(fontSize: 13)),
+                  '${item['partName'] ?? item['partCode'] ?? '-'}',
+                  style: const TextStyle(fontSize: 13),
+                ),
               ),
-              Text('ระบบ: ${system.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                      color: AppColors.muted, fontSize: 11)),
+              Text(
+                'ระบบ: ${system.toStringAsFixed(0)}',
+                style: const TextStyle(color: AppColors.muted, fontSize: 11),
+              ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: diff < 0
                       ? AppColors.danger.withValues(alpha: 0.1)
                       : AppColors.bg,
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(
-                      color: diff != 0
-                          ? (diff < 0
-                              ? AppColors.danger
-                              : Colors.green)
-                          : AppColors.border),
+                    color: diff != 0
+                        ? (diff < 0 ? AppColors.danger : Colors.green)
+                        : AppColors.border,
+                  ),
                 ),
-                child: Text(counted.toStringAsFixed(0),
-                    style: TextStyle(
-                        color: diff < 0
-                            ? AppColors.danger
-                            : AppColors.text,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12)),
+                child: Text(
+                  counted.toStringAsFixed(0),
+                  style: TextStyle(
+                    color: diff < 0 ? AppColors.danger : AppColors.text,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
               ),
             ],
           ),
@@ -1790,75 +1928,96 @@ class _POSMirrorView extends StatelessWidget {
                     : AppColors.accent.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                    color:
-                        closed ? Colors.green : AppColors.accent),
+                  color: closed ? Colors.green : AppColors.accent,
+                ),
               ),
               child: Text(
                 closed ? 'ปิดยอดสำเร็จ' : 'ปิดยอดแล้ววันนี้',
                 style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color:
-                        closed ? Colors.green : AppColors.accent),
+                  fontWeight: FontWeight.bold,
+                  color: closed ? Colors.green : AppColors.accent,
+                ),
               ),
             ),
-          _dialogSummaryRow('ยอดขายรวม',
-              '฿${_fmt(_toDouble(summary['totalSales']))}',
-              bold: true),
-          _dialogSummaryRow('เงินสด',
-              '฿${_fmt(_toDouble(summary['totalCash']))}'),
-          _dialogSummaryRow('โอนเงิน/QR',
-              '฿${_fmt(_toDouble(summary['totalTransfer']))}'),
           _dialogSummaryRow(
-              'จำนวนบิล', '${summary['totalBills'] ?? 0} ใบ'),
-          _dialogSummaryRow('ยอดคืนสินค้า',
-              '฿${_fmt(_toDouble(summary['totalReturns']))}',
-              color: AppColors.danger),
-          _dialogSummaryRow('ยอดสุทธิ',
-              '฿${_fmt(_toDouble(summary['netAmount']))}',
-              bold: true, color: AppColors.primary),
+            'ยอดขายรวม',
+            '฿${_fmt(_toDouble(summary['totalSales']))}',
+            bold: true,
+          ),
+          _dialogSummaryRow(
+            'เงินสด',
+            '฿${_fmt(_toDouble(summary['totalCash']))}',
+          ),
+          _dialogSummaryRow(
+            'โอนเงิน/QR',
+            '฿${_fmt(_toDouble(summary['totalTransfer']))}',
+          ),
+          _dialogSummaryRow('จำนวนบิล', '${summary['totalBills'] ?? 0} ใบ'),
+          _dialogSummaryRow(
+            'ยอดคืนสินค้า',
+            '฿${_fmt(_toDouble(summary['totalReturns']))}',
+            color: AppColors.danger,
+          ),
+          _dialogSummaryRow(
+            'ยอดสุทธิ',
+            '฿${_fmt(_toDouble(summary['netAmount']))}',
+            bold: true,
+            color: AppColors.primary,
+          ),
           if (notes.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text('หมายเหตุ: $notes',
-                style: const TextStyle(
-                    color: AppColors.muted, fontSize: 13)),
+            Text(
+              'หมายเหตุ: $notes',
+              style: const TextStyle(color: AppColors.muted, fontSize: 13),
+            ),
           ],
         ],
       ),
     );
   }
 
-  Widget _dialogSummaryRow(String label, String value,
-      {bool bold = false, Color? color}) {
+  Widget _dialogSummaryRow(
+    String label,
+    String value, {
+    bool bold = false,
+    Color? color,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label,
-              style: TextStyle(
-                  color: bold ? AppColors.text : AppColors.muted,
-                  fontWeight:
-                      bold ? FontWeight.w700 : FontWeight.w500)),
-          Text(value,
-              style: TextStyle(
-                  color: color ?? AppColors.text,
-                  fontWeight:
-                      bold ? FontWeight.w700 : FontWeight.w600)),
+          Text(
+            label,
+            style: TextStyle(
+              color: bold ? AppColors.text : AppColors.muted,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: color ?? AppColors.text,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildTransferReceiveContent(Map<String, dynamic> s) {
-    final transfers = (s['transfers'] as List?)
-            ?.whereType<Map<String, dynamic>>()
-            .toList() ??
+    final transfers =
+        (s['transfers'] as List?)?.whereType<Map<String, dynamic>>().toList() ??
         [];
     final expandedId = s['expandedId'] as String?;
     if (transfers.isEmpty) {
       return const Center(
-          child: Text('ไม่มีสินค้ารอรับ',
-              style: TextStyle(color: AppColors.muted)));
+        child: Text(
+          'ไม่มีสินค้ารอรับ',
+          style: TextStyle(color: AppColors.muted),
+        ),
+      );
     }
     return ListView.separated(
       itemCount: transfers.length,
@@ -1868,7 +2027,8 @@ class _POSMirrorView extends StatelessWidget {
         final id = transfer['id']?.toString() ?? '';
         final fromBranch = transfer['fromBranch'] as String? ?? '-';
         final isExpanded = expandedId == id;
-        final items = (transfer['items'] as List?)
+        final items =
+            (transfer['items'] as List?)
                 ?.whereType<Map<String, dynamic>>()
                 .toList() ??
             [];
@@ -1879,9 +2039,10 @@ class _POSMirrorView extends StatelessWidget {
                 : AppColors.bg,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-                color: isExpanded
-                    ? AppColors.primary.withValues(alpha: 0.4)
-                    : AppColors.border),
+              color: isExpanded
+                  ? AppColors.primary.withValues(alpha: 0.4)
+                  : AppColors.border,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1892,10 +2053,12 @@ class _POSMirrorView extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                          'Transfer #$id • จาก $fromBranch',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13)),
+                        'Transfer #$id • จาก $fromBranch',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
                     ),
                     Icon(
                       isExpanded
@@ -1909,54 +2072,52 @@ class _POSMirrorView extends StatelessWidget {
               ),
               if (isExpanded && items.isNotEmpty)
                 Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: items.map((item) {
-                      final dispatched =
-                          _toDouble(item['dispatchedQty']);
-                      final received =
-                          _toDouble(item['receivedQty']);
+                      final dispatched = _toDouble(item['dispatchedQty']);
+                      final received = _toDouble(item['receivedQty']);
                       final diff = received - dispatched;
                       return Padding(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 3),
+                        padding: const EdgeInsets.symmetric(vertical: 3),
                         child: Row(
                           children: [
                             Expanded(
                               child: Text(
-                                  '${item['partName'] ?? item['partCode'] ?? '-'}',
-                                  style: const TextStyle(
-                                      fontSize: 12)),
+                                '${item['partName'] ?? item['partCode'] ?? '-'}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
                             ),
                             Text(
-                                '${dispatched.toStringAsFixed(0)} → ${received.toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                    color: AppColors.muted,
-                                    fontSize: 11)),
+                              '${dispatched.toStringAsFixed(0)} → ${received.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 11,
+                              ),
+                            ),
                             if (diff != 0) ...[
                               const SizedBox(width: 4),
                               Container(
-                                padding:
-                                    const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                        vertical: 1),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 1,
+                                ),
                                 decoration: BoxDecoration(
                                   color: diff < 0
                                       ? AppColors.danger
                                       : Colors.green,
-                                  borderRadius:
-                                      BorderRadius.circular(4),
+                                  borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                    (diff >= 0 ? '+' : '') +
-                                        diff.toStringAsFixed(0),
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight:
-                                            FontWeight.bold)),
+                                  (diff >= 0 ? '+' : '') +
+                                      diff.toStringAsFixed(0),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ],
                           ],
@@ -1973,21 +2134,28 @@ class _POSMirrorView extends StatelessWidget {
   }
 
   // ── Shared helpers ───────────────────────────────────────────────────────
-  Widget _totalRow(String label, String value,
-      {bool bold = false, Color? color, double fontSize = 13}) {
+  Widget _totalRow(
+    String label,
+    String value, {
+    bool bold = false,
+    Color? color,
+    double fontSize = 13,
+  }) {
     return Row(
       children: [
-        Text(label,
-            style: TextStyle(
-                color: AppColors.muted, fontSize: fontSize)),
+        Text(
+          label,
+          style: TextStyle(color: AppColors.muted, fontSize: fontSize),
+        ),
         const Spacer(),
-        Text(value,
-            style: TextStyle(
-              fontWeight:
-                  bold ? FontWeight.bold : FontWeight.normal,
-              color: color,
-              fontSize: fontSize,
-            )),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+            color: color,
+            fontSize: fontSize,
+          ),
+        ),
       ],
     );
   }
@@ -2007,4 +2175,3 @@ class _POSMirrorView extends StatelessWidget {
     return '${diff.inMinutes}m ที่แล้ว';
   }
 }
-

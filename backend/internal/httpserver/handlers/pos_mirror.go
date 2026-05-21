@@ -22,6 +22,9 @@ type broadcaster struct {
 	conn     *websocket.Conn
 	userID   string
 	userName string
+	branchID string
+	posID    string
+	posKey   string
 }
 
 // watcher represents a Super Admin connection receiving state.
@@ -31,19 +34,30 @@ type watcher struct {
 	targetUserID string
 }
 
+// customerDisplay represents the always-open browser on the second monitor.
+type customerDisplay struct {
+	conn   *websocket.Conn
+	connID string
+	posKey string
+}
+
 // PosMirrorHub manages all broadcaster and watcher connections.
 type PosMirrorHub struct {
-	mu           sync.RWMutex
-	broadcasters map[string]*broadcaster // keyed by userID
-	watchers     map[string]*watcher     // keyed by connID (random)
-	stateCache   map[string][]byte       // latest pos_state per userID
+	mu               sync.RWMutex
+	broadcasters     map[string]*broadcaster     // keyed by userID
+	watchers         map[string]*watcher         // keyed by connID (random)
+	customerDisplays map[string]*customerDisplay // keyed by connID
+	stateCache       map[string][]byte           // latest pos_state per userID
+	posStateCache    map[string][]byte           // latest pos_state per branchID:posID
 }
 
 func newPosMirrorHub() *PosMirrorHub {
 	return &PosMirrorHub{
-		broadcasters: make(map[string]*broadcaster),
-		watchers:     make(map[string]*watcher),
-		stateCache:   make(map[string][]byte),
+		broadcasters:     make(map[string]*broadcaster),
+		watchers:         make(map[string]*watcher),
+		customerDisplays: make(map[string]*customerDisplay),
+		stateCache:       make(map[string][]byte),
+		posStateCache:    make(map[string][]byte),
 	}
 }
 
@@ -93,18 +107,47 @@ func (h *PosMirrorHub) forwardToWatchers(userID string, enriched []byte) {
 	}
 }
 
+func posMirrorKey(branchID, posID string) string {
+	return branchID + ":" + posID
+}
+
+func (h *PosMirrorHub) forwardToCustomerDisplays(posKey string, enriched []byte) {
+	if posKey == ":" || posKey == "" {
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, display := range h.customerDisplays {
+		if display.posKey == posKey {
+			_ = display.conn.WriteMessage(websocket.TextMessage, enriched)
+		}
+	}
+}
+
+func (h *PosMirrorHub) publishPOSState(posKey string, state []byte) {
+	if posKey == ":" || posKey == "" {
+		return
+	}
+	h.mu.Lock()
+	h.posStateCache[posKey] = state
+	h.mu.Unlock()
+	h.forwardToCustomerDisplays(posKey, state)
+}
+
 // PosMirrorHandler handles WebSocket upgrade and lifecycle for the POS mirror feature.
 type PosMirrorHandler struct {
 	hub      *PosMirrorHub
 	sessions repository.SessionRepository
 	users    repository.UserRepository
+	pos      repository.POSRepository
 }
 
-func NewPosMirrorHandler(sessions repository.SessionRepository, users repository.UserRepository) *PosMirrorHandler {
+func NewPosMirrorHandler(sessions repository.SessionRepository, users repository.UserRepository, pos repository.POSRepository) *PosMirrorHandler {
 	return &PosMirrorHandler{
 		hub:      newPosMirrorHub(),
 		sessions: sessions,
 		users:    users,
+		pos:      pos,
 	}
 }
 
@@ -137,7 +180,7 @@ func (h *PosMirrorHandler) HandleWS(c *gin.Context) {
 
 	switch user.RoleID {
 	case "role.van_staff", "role.cashier":
-		h.runBroadcaster(conn, user)
+		h.runBroadcaster(conn, user, session.BranchID, session.POSID)
 	case "role.admin", "role.hq_manager":
 		h.runWatcher(conn, user)
 	default:
@@ -145,9 +188,99 @@ func (h *PosMirrorHandler) HandleWS(c *gin.Context) {
 	}
 }
 
+// HandleCustomerDisplayWS upgrades a customer-display browser connection.
+// It uses POS credentials instead of a cashier session so the second-monitor
+// kiosk can stay open without logging in.
+func (h *PosMirrorHandler) HandleCustomerDisplayWS(c *gin.Context) {
+	branchID := c.Query("branchId")
+	posID := c.Query("posId")
+	posSecret := c.Query("posSecret")
+	if branchID == "" || posID == "" || posSecret == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing_customer_display_credentials"})
+		return
+	}
+
+	pos, err := h.pos.GetByID(c.Request.Context(), posID)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_pos"})
+		return
+	}
+	if !pos.IsActive || pos.BranchID != branchID || pos.POSSecret != posSecret {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_pos_credentials"})
+		return
+	}
+
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	h.runCustomerDisplay(conn, posMirrorKey(branchID, posID))
+}
+
+// TestState publishes a synthetic state to customer displays for the caller's
+// POS session. It is useful on the Windows POS before running a real sale.
+func (h *PosMirrorHandler) TestState(c *gin.Context) {
+	branchIDVal, branchOK := c.Get("branch_id")
+	posIDVal, posOK := c.Get("pos_id")
+	branchID, _ := branchIDVal.(string)
+	posID, _ := posIDVal.(string)
+	if !branchOK || !posOK || branchID == "" || posID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_pos_context"})
+		return
+	}
+
+	state := map[string]interface{}{
+		"type":   "pos_state",
+		"billId": "DISPLAY-TEST",
+		"items": []map[string]interface{}{
+			{"partCode": "TEST001", "partName": "Customer display test item", "qty": 1, "unitPrice": 10.0, "lineTotal": 10.0},
+		},
+		"subtotal":       10.0,
+		"discount":       0.0,
+		"tax":            0.65,
+		"total":          10.0,
+		"member":         nil,
+		"taxRate":        7.0,
+		"isAwaitingCash": false,
+		"cashAmount":     0.0,
+		"isAwaitingQr":   false,
+		"showThankYou":   false,
+		"activeDialog":   "receipt",
+		"lastBarcode":    "TEST001",
+		"dialogState":    nil,
+		"lastAction":     "test_state",
+	}
+
+	if c.Request.ContentLength > 0 {
+		var req map[string]interface{}
+		if err := c.ShouldBindJSON(&req); err == nil && len(req) > 0 {
+			for k, v := range req {
+				state[k] = v
+			}
+			state["type"] = "pos_state"
+		}
+	}
+
+	data, err := json.Marshal(state)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_encode_state"})
+		return
+	}
+	h.hub.publishPOSState(posMirrorKey(branchID, posID), data)
+	c.JSON(http.StatusOK, gin.H{"ok": true, "branchId": branchID, "posId": posID})
+}
+
 // runBroadcaster registers a Van Staff connection and forwards its state updates.
-func (h *PosMirrorHandler) runBroadcaster(conn *websocket.Conn, user *repository.User) {
-	b := &broadcaster{conn: conn, userID: user.ID, userName: user.Name}
+func (h *PosMirrorHandler) runBroadcaster(conn *websocket.Conn, user *repository.User, branchID, posID string) {
+	posKey := posMirrorKey(branchID, posID)
+	b := &broadcaster{
+		conn:     conn,
+		userID:   user.ID,
+		userName: user.Name,
+		branchID: branchID,
+		posID:    posID,
+		posKey:   posKey,
+	}
 
 	h.hub.mu.Lock()
 	h.hub.broadcasters[user.ID] = b
@@ -190,9 +323,40 @@ func (h *PosMirrorHandler) runBroadcaster(conn *websocket.Conn, user *repository
 		// Cache and forward
 		h.hub.mu.Lock()
 		h.hub.stateCache[user.ID] = enriched
+		if posKey != ":" {
+			h.hub.posStateCache[posKey] = enriched
+		}
 		h.hub.mu.Unlock()
 
 		h.hub.forwardToWatchers(user.ID, enriched)
+		h.hub.forwardToCustomerDisplays(posKey, enriched)
+	}
+}
+
+func (h *PosMirrorHandler) runCustomerDisplay(conn *websocket.Conn, posKey string) {
+	connID := posKey + "-" + time.Now().Format("150405.000")
+	display := &customerDisplay{conn: conn, connID: connID, posKey: posKey}
+
+	h.hub.mu.Lock()
+	h.hub.customerDisplays[connID] = display
+	cached := h.hub.posStateCache[posKey]
+	h.hub.mu.Unlock()
+
+	if cached != nil {
+		_ = conn.WriteMessage(websocket.TextMessage, cached)
+	}
+
+	defer func() {
+		h.hub.mu.Lock()
+		delete(h.hub.customerDisplays, connID)
+		h.hub.mu.Unlock()
+		_ = conn.Close()
+	}()
+
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			break
+		}
 	}
 }
 

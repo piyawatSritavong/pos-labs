@@ -33,6 +33,7 @@ type BillDetail struct {
 	UnitLabel   string
 	UnitLabelTH string
 	Name        string
+	ReceiptName string
 	Cost        float64
 	Price       float64
 	Qty         int

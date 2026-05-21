@@ -177,7 +177,7 @@ func (r *reportRepositoryPG) GetAllParts(ctx context.Context) ([]PartMaster, err
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT 
 			"code", "bar_code", "category_id", "unit_id", "name", "name_th",
-			"details", "cost", "price", "image", "is_active"
+			COALESCE("receipt_name", ''), "details", "cost", "price", "image", "is_active"
 		FROM "part_master"
 		ORDER BY "code" ASC
 	`)
@@ -189,7 +189,7 @@ func (r *reportRepositoryPG) GetAllParts(ctx context.Context) ([]PartMaster, err
 	var parts []PartMaster
 	for rows.Next() {
 		var p PartMaster
-		var barCode, categoryID, unitID, nameTH, details, image sql.NullString
+		var barCode, categoryID, unitID, nameTH, receiptName, details, image sql.NullString
 		var cost sql.NullFloat64
 		var isActive sql.NullBool
 
@@ -200,6 +200,7 @@ func (r *reportRepositoryPG) GetAllParts(ctx context.Context) ([]PartMaster, err
 			&unitID,
 			&p.Name,
 			&nameTH,
+			&receiptName,
 			&details,
 			&cost,
 			&p.Price,
@@ -221,6 +222,9 @@ func (r *reportRepositoryPG) GetAllParts(ctx context.Context) ([]PartMaster, err
 		}
 		if nameTH.Valid {
 			p.NameTH = nameTH.String
+		}
+		if receiptName.Valid {
+			p.ReceiptName = receiptName.String
 		}
 		if details.Valid {
 			p.Details = details.String

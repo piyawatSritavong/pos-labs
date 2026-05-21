@@ -24,6 +24,8 @@ class AuthProvider extends ChangeNotifier {
   bool get isSuperAdmin => _roleId == 'role.admin';
   bool get isHQManager => _roleId == 'role.hq_manager';
   bool get isVanStaff => _roleId == 'role.van_staff';
+  bool get isCashier => _roleId == 'role.cashier';
+  bool get isPOSOperator => isVanStaff || isCashier;
   bool get hasBackofficeAccess => isSuperAdmin || isHQManager;
   bool get isCustomerDisplay => _isCustomerDisplay;
 

@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"backend/internal/config"
+	"backend/internal/printer"
+	"backend/internal/receiptname"
 	"backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +24,16 @@ type ReturnNotesHandler struct {
 	members  repository.MemberRepository
 	branches repository.BranchRepository
 	pos      repository.POSRepository
+	company  repository.CompanyRepository
+
+	PrinterTarget  string
+	PrinterEnabled bool
+	PrinterCharset byte
+	PrinterMode    string
+	OpenCashDrawer bool
+	DrawerKick     []byte
+	printMu        sync.Mutex
+	recentPrints   map[string]time.Time
 }
 
 func NewReturnNotesHandler(
@@ -29,14 +42,54 @@ func NewReturnNotesHandler(
 	members repository.MemberRepository,
 	branches repository.BranchRepository,
 	pos repository.POSRepository,
+	company repository.CompanyRepository,
 ) *ReturnNotesHandler {
 	return &ReturnNotesHandler{
-		returns:  returns,
-		bills:    bills,
-		members:  members,
-		branches: branches,
-		pos:      pos,
+		returns:        returns,
+		bills:          bills,
+		members:        members,
+		branches:       branches,
+		pos:            pos,
+		company:        company,
+		PrinterEnabled: true,
+		PrinterMode:    printer.ModeASCII,
+		recentPrints:   make(map[string]time.Time),
 	}
+}
+
+func (h *ReturnNotesHandler) beginPrint(idempotencyKey string) bool {
+	key := strings.TrimSpace(idempotencyKey)
+	if key == "" {
+		return true
+	}
+
+	h.printMu.Lock()
+	defer h.printMu.Unlock()
+
+	if h.recentPrints == nil {
+		h.recentPrints = make(map[string]time.Time)
+	}
+	now := time.Now()
+	for k, t := range h.recentPrints {
+		if now.Sub(t) > 15*time.Minute {
+			delete(h.recentPrints, k)
+		}
+	}
+	if _, exists := h.recentPrints[key]; exists {
+		return false
+	}
+	h.recentPrints[key] = now
+	return true
+}
+
+func (h *ReturnNotesHandler) completePrint(idempotencyKey string, success bool) {
+	key := strings.TrimSpace(idempotencyKey)
+	if key == "" || success {
+		return
+	}
+	h.printMu.Lock()
+	defer h.printMu.Unlock()
+	delete(h.recentPrints, key)
 }
 
 func (h *ReturnNotesHandler) buildMemberOutput(ctx *gin.Context, memberID string) interface{} {
@@ -73,6 +126,7 @@ func buildReturnNoteItemOutput(items []repository.ReturnNoteItem) []gin.H {
 			"unitLabel":       item.UnitLabel,
 			"unitLabelTh":     item.UnitLabelTH,
 			"name":            item.Name,
+			"receiptName":     item.ReceiptName,
 			"price":           item.Price,
 			"unitPrice":       item.Price,
 			"qty":             item.Qty,
@@ -384,6 +438,7 @@ func (h *ReturnNotesHandler) GetReferenceBill(c *gin.Context) {
 			"unitLabelTh":   detail.UnitLabelTH,
 			"name":          detail.Name,
 			"partName":      detail.Name,
+			"receiptName":   detail.ReceiptName,
 			"price":         detail.Price,
 			"unitPrice":     detail.Price,
 			"qty":           detail.Qty,
@@ -571,6 +626,7 @@ func (h *ReturnNotesHandler) Create(c *gin.Context) {
 			UnitLabel:        detail.UnitLabel,
 			UnitLabelTH:      detail.UnitLabelTH,
 			Name:             detail.Name,
+			ReceiptName:      detail.ReceiptName,
 			Price:            detail.Price,
 			Qty:              qty,
 			LineTotal:        lineTotal,
@@ -636,4 +692,295 @@ func (h *ReturnNotesHandler) Create(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, buildReturnNoteOutput(c, h, note, items))
+}
+
+// PrintReceipt sends the completed return/refund receipt for return note :id to
+// the configured 80mm thermal printer. It mirrors bill receipt printing but
+// reads from return_note tables so refund-only checkouts can produce paper too.
+func (h *ReturnNotesHandler) PrintReceipt(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_return_note_id"})
+		return
+	}
+
+	var req struct {
+		IdempotencyKey string `json:"idempotencyKey"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+			return
+		}
+	}
+
+	if !h.beginPrint(req.IdempotencyKey) {
+		c.JSON(http.StatusOK, gin.H{
+			"ok":           true,
+			"printed":      false,
+			"duplicate":    true,
+			"returnNoteId": id,
+			"target":       h.PrinterTarget,
+			"mode":         printer.NormalizePrintMode(h.PrinterMode),
+		})
+		return
+	}
+
+	if !h.PrinterEnabled {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_disabled",
+			"message": "set RECEIPT_PRINTER_ENABLED=true in .env",
+		})
+		return
+	}
+
+	if strings.TrimSpace(h.PrinterTarget) == "" {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_not_configured",
+			"message": "set RECEIPT_PRINTER_PORT=LPT1 in .env",
+		})
+		return
+	}
+
+	branchIDVal, branchExists := c.Get("branch_id")
+	posIDVal, posExists := c.Get("pos_id")
+	if !branchExists || !posExists {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_branch_or_pos"})
+		return
+	}
+	branchID, _ := branchIDVal.(string)
+	posID, _ := posIDVal.(string)
+
+	ctx := c.Request.Context()
+	note, items, err := h.returns.GetByID(ctx, id)
+	if err != nil {
+		h.completePrint(req.IdempotencyKey, false)
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "return_note_not_found"})
+			return
+		}
+		log.Printf("PrintReturnReceipt: GetByID failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_return_note"})
+		return
+	}
+	if note.BranchID != branchID || note.POSID != posID {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "return_note_access_denied",
+			"message": "Return note does not belong to your current branch and POS",
+		})
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(note.Status)) != "completed" {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         "return_note_not_completed",
+			"message":       "Return receipt can only be printed after the return is completed.",
+			"currentStatus": note.Status,
+		})
+		return
+	}
+
+	company, err := h.company.Get(ctx)
+	if err != nil {
+		h.completePrint(req.IdempotencyKey, false)
+		log.Printf("PrintReturnReceipt: company.Get failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_company"})
+		return
+	}
+
+	params := h.buildReturnReceiptParams(note, items, company)
+	data := printer.BuildReceipt(params)
+	if err := printer.PrintRaw(h.PrinterTarget, data); err != nil {
+		h.completePrint(req.IdempotencyKey, false)
+		log.Printf("PrintReturnReceipt: printer.PrintRaw target=%q drawer=%t drawerCommand=%s failed: %v",
+			h.PrinterTarget, params.OpenDrawer, printer.HexCommand(h.DrawerKick), err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "failed_to_print",
+			"message": err.Error(),
+			"target":  h.PrinterTarget,
+		})
+		return
+	}
+
+	drawerSent := false
+	drawerMethod := ""
+	drawerBinPath := ""
+	drawerOutput := ""
+	shouldOpenDrawer := h.OpenCashDrawer && returnSettlementOpensDrawer(note.SettlementMode)
+	if shouldOpenDrawer {
+		result, err := printer.KickCashDrawer(h.PrinterTarget, h.DrawerKick)
+		drawerMethod = result.Method
+		drawerBinPath = result.BinPath
+		drawerOutput = result.Output
+		if err != nil {
+			h.completePrint(req.IdempotencyKey, false)
+			log.Printf("PrintReturnReceipt: drawer kick target=%q command=%s method=%s binPath=%q failed after receipt print: %v",
+				h.PrinterTarget, printer.HexCommand(h.DrawerKick), result.Method, result.BinPath, err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":             "failed_to_open_drawer",
+				"message":           err.Error(),
+				"printed":           true,
+				"drawerCommand":     printer.HexCommand(h.DrawerKick),
+				"drawerCommandSent": false,
+				"drawerMethod":      result.Method,
+				"drawerBinPath":     result.BinPath,
+				"drawerOutput":      result.Output,
+				"target":            h.PrinterTarget,
+				"bytes":             len(data),
+				"retryWarning":      "Return receipt was printed before the drawer error. Retrying may print another receipt.",
+			})
+			return
+		}
+		drawerSent = true
+		log.Printf("PrintReturnReceipt: drawer kick target=%q command=%s method=%s binPath=%q bytes=%d ok=true visualConfirmationRequired=true",
+			result.Target, printer.HexCommand(h.DrawerKick), result.Method, result.BinPath, result.Bytes)
+	}
+
+	h.completePrint(req.IdempotencyKey, true)
+	mode := printer.NormalizePrintMode(h.PrinterMode)
+	log.Printf("PrintReturnReceipt: returnNote=%s target=%q mode=%s bytes=%d drawer=%t drawerCommand=%s drawerMethod=%s",
+		note.ID, h.PrinterTarget, mode, len(data), drawerSent, printer.HexCommand(h.DrawerKick), drawerMethod)
+	c.JSON(http.StatusOK, gin.H{
+		"ok":                    true,
+		"printed":               true,
+		"duplicate":             false,
+		"returnNoteId":          note.ID,
+		"bytes":                 len(data),
+		"target":                h.PrinterTarget,
+		"mode":                  mode,
+		"drawerCommand":         printer.HexCommand(h.DrawerKick),
+		"drawerCommandSent":     drawerSent,
+		"drawerMethod":          drawerMethod,
+		"drawerBinPath":         drawerBinPath,
+		"drawerOutput":          drawerOutput,
+		"drawerOpenedConfirmed": false,
+	})
+}
+
+func (h *ReturnNotesHandler) buildReturnReceiptParams(
+	note *repository.ReturnNote,
+	items []repository.ReturnNoteItem,
+	company *repository.Company,
+) printer.ReceiptParams {
+	receiptItems := make([]printer.ReceiptItem, 0, len(items))
+	refundAmount := note.RefundAmount
+	for _, item := range items {
+		lineTotal := item.LineTotal
+		if lineTotal <= 0 {
+			lineTotal = item.Price * float64(item.Qty)
+		}
+		if refundAmount <= 0 {
+			refundAmount += lineTotal
+		}
+		itemName, itemNameSource := receiptname.SafeProductNameWithSource(receiptname.Product{
+			Code:        item.PartCode,
+			ReceiptName: item.ReceiptName,
+			Name:        item.Name,
+		})
+		if itemNameSource != "receipt_name" {
+			log.Printf("BuildReturnReceipt: returnNote=%s part=%s receiptNameSource=%s selected=%q",
+				note.ID, item.PartCode, itemNameSource, itemName)
+		}
+		receiptItems = append(receiptItems, printer.ReceiptItem{
+			Code:      item.PartCode,
+			Name:      itemName,
+			Qty:       item.Qty,
+			UnitPrice: item.Price,
+			LineTotal: -lineTotal,
+		})
+	}
+	if refundAmount < 0 {
+		refundAmount = -refundAmount
+	}
+
+	cashier := note.UpdatedBy
+	if cashier == "" {
+		cashier = note.CreatedBy
+	}
+
+	companyPhone := ""
+	if company.Phone != "" {
+		companyPhone = company.Phone
+	}
+	companyWebsite := ""
+	if company.Website != nil {
+		companyWebsite = *company.Website
+	}
+
+	total := -refundAmount
+	return printer.ReceiptParams{
+		CompanyNameTh:   firstNonEmpty(company.CompanyNameTH, company.CompanyName),
+		CompanyAddrTh:   firstNonEmpty(company.CompanyAddressTH, company.CompanyAddress),
+		TaxID:           company.TaxID,
+		Phone:           companyPhone,
+		Website:         companyWebsite,
+		ReceiptFooter:   company.ReceiptFooter,
+		Title:           returnReceiptTitleForMode(h.PrinterMode),
+		BillID:          note.ID,
+		CashierName:     cashier,
+		PaymentMethod:   returnSettlementLabelForMode(note.SettlementMode, h.PrinterMode),
+		Items:           receiptItems,
+		Subtotal:        total,
+		Discount:        0,
+		AmountAfterDisc: total,
+		TaxRatePercent:  0,
+		Tax:             0,
+		Total:           total,
+		HasReceived:     false,
+		HasChange:       false,
+		CodeTable:       h.PrinterCharset,
+		PrintMode:       h.PrinterMode,
+		OpenDrawer:      false,
+		DrawerKick:      h.DrawerKick,
+	}
+}
+
+func returnReceiptTitleForMode(mode string) string {
+	if printer.NormalizePrintMode(mode) == printer.ModeThaiCP874 {
+		return "ใบรับคืนสินค้า/คืนเงิน"
+	}
+	return "RETURN RECEIPT"
+}
+
+func returnSettlementLabelForMode(settlementMode, mode string) string {
+	if printer.NormalizePrintMode(mode) == printer.ModeThaiCP874 {
+		switch strings.ToLower(strings.TrimSpace(settlementMode)) {
+		case "cash_refund", "cash", "refund":
+			return "คืนเงินสด"
+		case "customer_credit", "credit":
+			return "เก็บเป็นเครดิตลูกค้า"
+		case "exchange":
+			return "แลกเปลี่ยนสินค้า"
+		case "":
+			return ""
+		default:
+			return settlementMode
+		}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(settlementMode)) {
+	case "cash_refund", "cash", "refund":
+		return "Cash refund"
+	case "customer_credit", "credit":
+		return "Customer credit"
+	case "exchange":
+		return "Exchange"
+	case "":
+		return ""
+	default:
+		return settlementMode
+	}
+}
+
+func returnSettlementOpensDrawer(settlementMode string) bool {
+	switch strings.ToLower(strings.TrimSpace(settlementMode)) {
+	case "cash_refund", "cash", "refund":
+		return true
+	default:
+		return false
+	}
 }

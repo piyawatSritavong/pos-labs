@@ -244,12 +244,13 @@ func SeedMockData(db *sql.DB) error {
 		if _, err := tx.Exec(`
 			INSERT INTO "part_master"(
 				"code", "bar_code", "category_id", "unit_id",
-				"name", "name_th", "details", "cost", "price", "image", "is_active"
+				"name", "name_th", "receipt_name", "details", "cost", "price", "image", "is_active"
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, 10.00, 15.00, '', true)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 10.00, 15.00, '', true)
 		`, code, barCode, categoryID, unitID,
 			fmt.Sprintf("Sample Part %02d", i),
 			fmt.Sprintf("สินค้า ตัวอย่าง %02d", i),
+			fmt.Sprintf("SAMPLE PART %02d", i),
 			"Development mock item"); err != nil {
 			return err
 		}
@@ -309,9 +310,9 @@ func SeedMockData(db *sql.DB) error {
 	if _, err := tx.Exec(`
 		INSERT INTO "part_master"(
 			"code", "bar_code", "category_id", "unit_id",
-			"name", "name_th", "details", "cost", "price", "image", "is_active"
+			"name", "name_th", "receipt_name", "details", "cost", "price", "image", "is_active"
 		)
-		VALUES ($1, $2, 'CAT001', 'pcs', 'Test Part No Default', 'สินค้าทดสอบไม่มีค่าเริ่มต้น', 'Test item for no default store scenario', 10.00, 15.00, '', true)
+		VALUES ($1, $2, 'CAT001', 'pcs', 'Test Part No Default', 'สินค้าทดสอบไม่มีค่าเริ่มต้น', 'TEST PART NO DEFAULT', 'Test item for no default store scenario', 10.00, 15.00, '', true)
 	`, testPartCode, testBarcode); err != nil {
 		return err
 	}
@@ -346,9 +347,9 @@ func SeedMockData(db *sql.DB) error {
 	if _, err := tx.Exec(`
 		INSERT INTO "part_master"(
 			"code", "bar_code", "category_id", "unit_id",
-			"name", "name_th", "details", "cost", "price", "image", "is_active"
+			"name", "name_th", "receipt_name", "details", "cost", "price", "image", "is_active"
 		)
-		VALUES ($1, $2, 'CAT001', 'pcs', 'Branch 2 Only Part', 'สินค้าสาขา 2 เท่านั้น', 'Test item that exists only in branch 00001', 10.00, 15.00, '', true)
+		VALUES ($1, $2, 'CAT001', 'pcs', 'Branch 2 Only Part', 'สินค้าสาขา 2 เท่านั้น', 'BRANCH 2 ONLY PART', 'Test item that exists only in branch 00001', 10.00, 15.00, '', true)
 	`, branch2OnlyPartCode, branch2OnlyBarcode); err != nil {
 		return err
 	}

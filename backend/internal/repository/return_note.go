@@ -35,6 +35,7 @@ type ReturnNoteItem struct {
 	UnitLabel        string
 	UnitLabelTH      string
 	Name             string
+	ReceiptName      string
 	Price            float64
 	Qty              int
 	LineTotal        float64

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:frontend/widgets/backoffice/addresses_page.dart';
+import 'package:frontend/widgets/backoffice/barcode_print_page.dart';
 import 'package:frontend/widgets/backoffice/bills_history_page.dart';
 import 'package:frontend/widgets/backoffice/branches_page.dart';
 import 'package:frontend/widgets/backoffice/company_page.dart';
@@ -121,7 +122,9 @@ class PartsProvider extends ChangeNotifier {
 
   Future<void> fetchParts(
     String token, {
-    int limit = 20,
+    // Default raised to 2000 so the Parts page shows the full real-data
+    // catalog (~1,566 rows) without pagination UI. Backend MaxLimit is 2000.
+    int limit = 2000,
     int offset = 0,
   }) async {
     isLoading = true;
@@ -376,6 +379,13 @@ class _BackofficeShellState extends State<_BackofficeShell> {
       pageIndex: 8,
       subtitle: 'Manage member profiles and points',
     ),
+    _SidebarItem(
+      label: 'พิมพ์บาร์โค้ด',
+      page: 'พิมพ์บาร์โค้ด',
+      icon: Icons.qr_code_2_outlined,
+      pageIndex: 17,
+      subtitle: 'เลือกสินค้าและจำนวน จากนั้นพิมพ์ลงกระดาษ A4',
+    ),
 
     _SidebarItem(label: 'OPERATIONS / REPORTS', isHeader: true),
     _SidebarItem(
@@ -456,6 +466,7 @@ class _BackofficeShellState extends State<_BackofficeShell> {
     CashReconciliationPage(),
     StockVariancePage(),
     SupportPosPage(),
+    BarcodePrintPage(), // index 17 — admin-only (hidden for hq_manager)
   ];
 
   int _currentPageIndex = 0; // default to Users page (adjusted by role in didChangeDependencies)
@@ -476,9 +487,10 @@ class _BackofficeShellState extends State<_BackofficeShell> {
 
   List<_SidebarItem> _getVisibleItems(AuthProvider auth) {
     if (auth.isSuperAdmin) return _sidebarItems;
-    // HQ Manager: hide User-Branches/Company/Branches/POS (1-4), Payment (12), SUPPORT (16)
+    // HQ Manager: hide User-Branches/Company/Branches/POS (1-4), Payment (12),
+    // SUPPORT (16), and "พิมพ์บาร์โค้ด" (17 — admin-only feature).
     // Users (0) stays visible so HQ Manager can manage Van Staff accounts
-    const hiddenPageIndices = {1, 2, 3, 4, 12, 16};
+    const hiddenPageIndices = {1, 2, 3, 4, 12, 16, 17};
     return _sidebarItems.where((item) {
       if (item.isHeader) {
         if (item.label == 'SUPPORT') return false;
@@ -588,6 +600,7 @@ class _BackofficeSidebar extends StatelessWidget {
         children: [
           Row(
             children: [
+              // ไจ๊เฮง brand logo. Falls back to icon if image fails to load.
               Container(
                 width: 44,
                 height: 44,
@@ -595,9 +608,14 @@ class _BackofficeSidebar extends StatelessWidget {
                   color: cs.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  Icons.dashboard_customize,
-                  color: cs.primary,
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset(
+                  'assets/images/logoJaiHeng.jpg',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.dashboard_customize,
+                    color: cs.primary,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),

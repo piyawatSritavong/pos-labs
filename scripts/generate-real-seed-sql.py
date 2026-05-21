@@ -14,7 +14,7 @@ The SQL adds:
   - 15 categories (CAT001-CAT015) from sheet "ประเภท"
   - 21 Thai units (id = Thai unit name) — added on top of the 7 default units
   - UPDATE pos_setting.pos_secret to 'windows-pos-default-secret' (match Flutter build)
-  - ~1,566 part_master rows (codes P0001+)
+  - ~1,566 part_master rows (codes P0001+) with ASCII receipt_name
   - ~1,566 address_master rows (ADDR0001+, store_id='main', qty=100)
 
 All INSERTs use ON CONFLICT DO NOTHING so the script is safe to re-run.
@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -63,6 +64,107 @@ CATEGORY_ENGLISH = {
     "CAT014": "Misc",
     "CAT015": "Small Parts",
 }
+
+CATEGORY_RECEIPT_PREFIX = {
+    "CAT001": "WOOD",
+    "CAT002": "TRIM",
+    "CAT003": "FRAME WOOD",
+    "CAT004": "LAMINATE",
+    "CAT005": "PAINT",
+    "CAT006": "CHEMICAL",
+    "CAT007": "SANDPAPER",
+    "CAT008": "FITTING",
+    "CAT009": "HARDWARE",
+    "CAT010": "FASTENER",
+    "CAT011": "TOOL",
+    "CAT012": "HANDLE",
+    "CAT013": "BULK",
+    "CAT014": "MISC",
+    "CAT015": "SMALL PART",
+}
+
+RECEIPT_PHRASE_MAP = [
+    ("ปาติเกิลเคลือบเมลามีน", "PARTICLE MELAMINE"),
+    ("เมลามีนขาว", "MELAMINE WHITE"),
+    ("เมลามีนดำ", "MELAMINE BLACK"),
+    ("ไม้อัดยาง", "PLYWOOD"),
+    ("ไม้อัดพื้นเตียง", "BED PLYWOOD"),
+    ("ไม้อัดดัดโค้ง", "BENDING PLYWOOD"),
+    ("ไม้อัดปิดผิวกระดาษ", "PAPER FACED PLYWOOD"),
+    ("ไม้อัดพาราประสาน", "RUBBERWOOD BOARD"),
+    ("ไม้อัดชานอ้อย", "BAGASSE BOARD"),
+    ("ไม้อัดฟิล์มดำ", "FILM FACED PLYWOOD"),
+    ("ไม้อัดบล๊อกบอร์ด", "BLOCKBOARD"),
+    ("ไม้อัดบล็อกบอร์ด", "BLOCKBOARD"),
+    ("ไม้อัดสัก", "TEAK PLYWOOD"),
+    ("ไม้อัด", "PLYWOOD"),
+    ("บอร์ดขาว", "WHITE BOARD"),
+    ("ไม้โครงเบญจพรรณ", "MIXED FRAME WOOD"),
+    ("ไม้โครงทุเรียน", "DURIAN FRAME WOOD"),
+    ("ไม้โครงสะเดา", "NEEM FRAME WOOD"),
+    ("ไม้โครง", "FRAME WOOD"),
+    ("ไม้คิ้ว", "TRIM"),
+    ("ลามิเนตสี", "LAMINATE"),
+    ("ลามิเนต", "LAMINATE"),
+    ("สีน้ำมัน", "OIL PAINT"),
+    ("สีทาเหล็กอเนกประสงค์", "METAL PAINT"),
+    ("สีทาเหล็ก", "METAL PAINT"),
+    ("สีสเปรย์", "SPRAY PAINT"),
+    ("สเปรย์กันสนิม", "RUST SPRAY"),
+    ("สเปรย์กันปลวก", "TERMITE SPRAY"),
+    ("แดป อคิลิค", "ACRYLIC SEALANT"),
+    ("อคิลิค", "ACRYLIC"),
+    ("อะคริลิค", "ACRYLIC"),
+    ("ซิลิโคน", "SILICONE"),
+    ("กาวตะปู", "NAIL GLUE"),
+    ("กาวยาง", "CONTACT ADHESIVE"),
+    ("กระดาษทราย", "SANDPAPER"),
+    ("รางลิ้นชักซอฟโคลส", "SOFT CLOSE SLIDE"),
+    ("รางลิ้นชัก", "DRAWER SLIDE"),
+    ("ก้านบิดประตู", "DOOR LEVER"),
+    ("ลูกบิดประตูแบบก้านโยก", "LEVER LOCK"),
+    ("ลูกบิดประตู", "DOOR KNOB"),
+    ("ลูกแม็กซ์", "STAPLES"),
+    ("สกรูเกลียว", "SCREW"),
+    ("สกรู", "SCREW"),
+    ("ตะปู", "NAIL"),
+    ("ดอกเราท์เตอร์", "ROUTER BIT"),
+    ("ดอกสว่าน", "DRILL BIT"),
+    ("ปุ่มจับ", "KNOB"),
+    ("มือจับ", "HANDLE"),
+    ("กลอนแบน", "BARREL BOLT"),
+    ("กลอน", "BOLT"),
+    ("บานพับถอดได้", "LIFT OFF HINGE"),
+    ("บานพับ", "HINGE"),
+    ("หมุดลอย", "STUD"),
+]
+
+RECEIPT_TOKEN_MAP = [
+    ("ตราภูเขา", "PHUKHAO"),
+    ("เกรด", ""),
+    ("ขนาด", ""),
+    ("ขายส่ง", "WHOLESALE"),
+    ("ไม้แบบ", "FORMWORK"),
+    ("ลาย", "PATTERN"),
+    ("ขาว", "WHITE"),
+    ("ดำ", "BLACK"),
+    ("แดง", "RED"),
+    ("น้ำเงิน", "BLUE"),
+    ("เขียว", "GREEN"),
+    ("เหลือง", "YELLOW"),
+    ("ทอง", "GOLD"),
+    ("เงิน", "SILVER"),
+    ("ด้าน", "MATT"),
+    ("เงา", "GLOSS"),
+    ("แป้นเหลี่ยม", "SQUARE PLATE"),
+    ("แป้นกลม", "ROUND PLATE"),
+    ("ซ้าย", "LEFT"),
+    ("ขวา", "RIGHT"),
+    ("แบ่ง", "BULK"),
+    ("สองตัว", "2PCS"),
+    ("ตัว", "PCS"),
+    ("ชุด", "SET"),
+]
 
 THAI_UNIT_TO_ENGLISH = {
     "แผ่น": "sheet",
@@ -110,6 +212,117 @@ def normalize_barcode(raw):
         return str(int(raw))
     s = str(raw).strip()
     return s or None
+
+
+def ascii_receipt_clean(value):
+    s = str(value or "").upper()
+    s = re.sub(r"[^A-Z0-9 ./()_\-*]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def shorten_receipt_name(value, max_len=32):
+    value = ascii_receipt_clean(value)
+    if len(value) <= max_len:
+        return value
+    out = []
+    size = 0
+    for word in value.split():
+        add = len(word) + (1 if out else 0)
+        if size + add > max_len:
+            break
+        out.append(word)
+        size += add
+    return " ".join(out) or value[:max_len].strip()
+
+
+def meaningful_receipt_name(value):
+    clean = ascii_receipt_clean(value)
+    letters = sum(1 for ch in clean if "A" <= ch <= "Z")
+    digits = sum(1 for ch in clean if "0" <= ch <= "9")
+    compact = clean.replace(" ", "")
+    if not clean or letters == 0:
+        return False
+    if len(compact) < 3:
+        return False
+    if letters < 2 and digits > 0:
+        return False
+    return True
+
+
+def receipt_name_for_product(name_th, category_id, code):
+    raw = str(name_th or "").strip()
+    work = raw
+    parts = []
+
+    for thai, english in RECEIPT_PHRASE_MAP:
+        if thai in work:
+            parts.append(english)
+            work = work.replace(thai, " ")
+            break
+
+    work = re.sub(r"เกรด\s*[A-Za-z0-9]+", " ", work)
+    work = re.sub(r"รหัส\s*[A-Za-z0-9._/-]+", " ", work)
+
+    for match in re.findall(r"[0-9]+(?:\s*[*]\s*[0-9]+(?:/[0-9]+)?)+", work):
+        parts.append(match.upper().replace(" ", ""))
+        work = work.replace(match, " ")
+    for match in re.findall(r"[0-9]+(?:-[0-9]+)?/[0-9]+(?:\s*[xX]\s*[0-9]+(?:-[0-9]+)?/[0-9]+)*", work):
+        parts.append(match.upper().replace(" ", ""))
+        work = work.replace(match, " ")
+
+    for match in re.findall(r"[A-Za-z][A-Za-z0-9'./_+-]*", work):
+        parts.append(match)
+        work = work.replace(match, " ")
+
+    # Keep model numbers from "รหัส 005", paint numbers, and dimensions.
+    for match in re.findall(r"รหัส\s*([A-Za-z0-9._/-]+)", raw):
+        parts.append(match)
+    for match in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*มิล", raw):
+        parts.append(f"{match}MM")
+    for match in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*นิ้ว", raw):
+        parts.append(f"{match}IN")
+    for match in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*เมตร", raw):
+        parts.append(f"{match}M")
+    for match in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*เซน", raw):
+        parts.append(f"{match}CM")
+    if re.search(r"1\s*หน้า", raw):
+        parts.append("1S")
+    if re.search(r"2\s*หน้า", raw):
+        parts.append("2S")
+    for match in re.findall(r"เกรด\s*([A-Za-z0-9]+)", raw):
+        parts.append(match)
+
+    for thai, english in RECEIPT_TOKEN_MAP:
+        existing_words = set(ascii_receipt_clean(" ".join(parts)).split())
+        if thai in raw and english and english not in existing_words:
+            parts.append(english)
+
+    if not parts:
+        parts.append(CATEGORY_RECEIPT_PREFIX.get(category_id, "PRODUCT"))
+        parts.append(code)
+
+    # Prefer the receipt-friendly order requested for melamine panels.
+    cleaned = []
+    for part in parts:
+        part = ascii_receipt_clean(part)
+        if part and part not in cleaned:
+            cleaned.append(part)
+
+    if cleaned and cleaned[0].startswith("MELAMINE"):
+        sizes = [p for p in cleaned[1:] if p.endswith("MM") or p.endswith("IN")]
+        sides = [p for p in cleaned[1:] if re.fullmatch(r"[12]S", p)]
+        colors = [p for p in cleaned[1:] if p in {"WHITE", "BLACK", "RED", "BLUE", "GREEN", "YELLOW", "PATTERN"}]
+        others = [p for p in cleaned[1:] if p not in set(sizes + sides + colors)]
+        cleaned = [cleaned[0]] + colors + sides + sizes + others
+
+    candidate = shorten_receipt_name(" ".join(cleaned))
+    if meaningful_receipt_name(candidate):
+        return candidate
+    fallback = shorten_receipt_name(f"{CATEGORY_RECEIPT_PREFIX.get(category_id, 'PRODUCT')} {code}")
+    if meaningful_receipt_name(fallback):
+        return fallback
+    return f"ITEM {code}"
 
 
 def read_products(xlsx_path: Path):
@@ -224,10 +437,18 @@ def build_up_sql(products):
     out.append("UPDATE \"part_master\"    SET \"bar_code\" = '' WHERE \"bar_code\" IS NULL;")
     out.append("UPDATE \"part_master\"    SET \"details\"  = '' WHERE \"details\"  IS NULL;")
     out.append("UPDATE \"part_master\"    SET \"cost\"     = 0  WHERE \"cost\"     IS NULL;")
+    out.append("UPDATE \"part_master\"    SET \"receipt_name\" = '' WHERE \"receipt_name\" IS NULL;")
     out.append("UPDATE \"address_master\" SET \"shelf\"    = '' WHERE \"shelf\"    IS NULL;")
     out.append(f"UPDATE \"address_master\" SET \"qty\"      = {DEFAULT_STARTING_QTY} WHERE \"qty\" IS NULL;")
     out.append("UPDATE \"address_master\" SET \"max\"      = 0  WHERE \"max\"      IS NULL;")
     out.append("UPDATE \"address_master\" SET \"remarks\"  = '' WHERE \"remarks\"  IS NULL;")
+    # Backfill empty bar_code with the part code itself (Code128 friendly).
+    # Mirrors backend migration 0012_generate_missing_barcodes.up.sql so older
+    # DBs that were seeded with bar_code='' get the same backfill when the
+    # operator re-runs load-real-data.bat.
+    out.append("UPDATE \"part_master\"    SET \"bar_code\" = \"code\"")
+    out.append("                            WHERE COALESCE(\"bar_code\", '') = ''")
+    out.append("                              AND \"code\" ~ '^P[0-9]+$';")
     out.append("")
 
     out.append("-- 1) role.cashier + pos1 user")
@@ -309,21 +530,30 @@ def build_up_sql(products):
     # repository code (PartSummary.BarCode / Address.Shelf / Max / Remarks) Scans
     # into plain string/int — NULL columns would cause sql.Scan to fail.
     out.append(f"-- 5) {len(products)} parts from xlsx Sheet สินค้า")
-    out.append("INSERT INTO \"part_master\" (\"code\", \"bar_code\", \"category_id\", \"unit_id\", \"name\", \"name_th\", \"details\", \"cost\", \"price\", \"image\", \"is_active\") VALUES")
+    out.append("-- receipt_name is uppercase ASCII for reliable LPT1 / Generic Text receipt printing.")
+    out.append("INSERT INTO \"part_master\" (\"code\", \"bar_code\", \"category_id\", \"unit_id\", \"name\", \"name_th\", \"receipt_name\", \"details\", \"cost\", \"price\", \"image\", \"is_active\") VALUES")
     part_lines = []
     for i, p in enumerate(products, start=1):
         code = f"P{i:04d}"
-        bc = sql_quote(p["bar_code"] or "")     # '' instead of NULL
+        # If xlsx has no barcode for this row, fall back to the part_code itself
+        # (rendered as Code128 in the Backoffice "พิมพ์บาร์โค้ด" page). This keeps
+        # bar_code uniformly non-empty so AddItemByBarcode + GetPartByBarcode work
+        # for every row from day one.
+        bc = sql_quote(p["bar_code"] or code)
         cat = sql_quote(p["category_id"])
         unit = sql_quote(p["unit_id"])
         name = sql_quote(p["name_th"])
+        receipt_name = sql_quote(receipt_name_for_product(p["name_th"], p["category_id"], code))
         details = sql_quote(p["details"] or "") # '' instead of NULL
         price = f"{p['price']:.2f}"
         part_lines.append(
-            f"    ({sql_quote(code)}, {bc}, {cat}, {unit}, {name}, {name}, {details}, 0, {price}, '', true)"
+            f"    ({sql_quote(code)}, {bc}, {cat}, {unit}, {name}, {name}, {receipt_name}, {details}, 0, {price}, '', true)"
         )
     out.append(",\n".join(part_lines))
-    out.append("ON CONFLICT (\"code\") DO NOTHING;")
+    out.append("ON CONFLICT (\"code\") DO UPDATE")
+    out.append("   SET \"receipt_name\" = EXCLUDED.\"receipt_name\"")
+    out.append(" WHERE COALESCE(\"part_master\".\"receipt_name\", '') = ''")
+    out.append("    OR \"part_master\".\"receipt_name\" = 'ITEM ' || \"part_master\".\"code\";")
     out.append("")
 
     out.append(f"-- 6) {len(products)} addresses (one per part, store_id='main')")

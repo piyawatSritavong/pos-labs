@@ -36,6 +36,12 @@ func main() {
 		}
 	}
 
+	// Backfill any parts that still have an empty bar_code so the Backoffice
+	// "พิมพ์บาร์โค้ด" page can render a Code128 for every row.
+	if err := db.EnsureBarcodes(sqlDB); err != nil {
+		log.Printf("failed to backfill barcodes: %v", err)
+	}
+
 	// Start background session cleanup
 	sessionRepo := repository.NewSessionRepository(sqlDB)
 	go func() {
@@ -55,14 +61,12 @@ func main() {
 	addr := ":" + cfg.Port
 	log.Printf("Starting backend server on %s", addr)
 	server := &http.Server{
-			Addr:         addr,
-			Handler:      engine,
-			ReadTimeout:  5 * time.Second,
-			WriteTimeout: 10 * time.Second,
+		Addr:         addr,
+		Handler:      engine,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 	if err := server.ListenAndServe(); err != nil {
-			log.Fatalf("server stopped with error: %v", err)
+		log.Fatalf("server stopped with error: %v", err)
 	}
 }
-
-

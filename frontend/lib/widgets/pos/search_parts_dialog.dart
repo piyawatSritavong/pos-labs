@@ -68,9 +68,9 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       }
     } catch (e) {
       if (showError && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('โหลดสินค้าไม่สำเร็จ: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('โหลดสินค้าไม่สำเร็จ: $e')));
       }
     } finally {
       if (mounted) {
@@ -113,9 +113,9 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         _pageController.jumpToPage(0);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ค้นหาไม่สำเร็จ: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ค้นหาไม่สำเร็จ: $e')));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -138,18 +138,21 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         break;
       }
     }
-    defaultAddress ??= rawAddresses.isNotEmpty && rawAddresses.first is Map<String, dynamic>
+    defaultAddress ??=
+        rawAddresses.isNotEmpty && rawAddresses.first is Map<String, dynamic>
         ? rawAddresses.first as Map<String, dynamic>
         : null;
 
     final defaultAddressCode =
-        defaultAddress?['addressCode']?.toString() ?? defaultAddress?['code']?.toString();
+        defaultAddress?['addressCode']?.toString() ??
+        defaultAddress?['code']?.toString();
 
     return Product(
       id: json['id']?.toString() ?? json['code']?.toString() ?? '',
       name: json['nameTh'] ?? json['name_th'] ?? json['name'] ?? '',
       price: _toDouble(json['price'] ?? json['unitPrice']),
       code: json['code']?.toString() ?? '',
+      receiptName: json['receiptName']?.toString(),
       defaultAddressCode: defaultAddressCode,
       barcode: json['barCode']?.toString() ?? json['barcode']?.toString(),
       addressCodeForAdd: json['addressCode']?.toString() ?? defaultAddressCode,
@@ -213,96 +216,102 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _products.isEmpty
-                      ? const _DialogEmptyState()
-                      : Column(
-                          children: [
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                              child: Row(
-                                children: [
-                                  const Text(
-                                    'รายการสินค้า',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    '${_products.length} รายการ',
-                                    style: const TextStyle(color: AppColors.muted),
-                                  ),
-                                ],
+                  ? const _DialogEmptyState()
+                  : Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              const Text(
+                                'รายการสินค้า',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                            Expanded(
-                              child: PageView.builder(
-                                controller: _pageController,
-                                physics: const BouncingScrollPhysics(),
-                                onPageChanged: (index) {
-                                  setState(() => _currentPage = index);
-                                },
-                                itemCount: pages.length,
-                                itemBuilder: (context, pageIndex) {
-                                  final pageItems = pages[pageIndex];
-                                  return GridView.builder(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 24,
-                                      vertical: 8,
-                                    ),
-                                    gridDelegate:
-                                        const SliverGridDelegateWithFixedCrossAxisCount(
+                              const Spacer(),
+                              Text(
+                                '${_products.length} รายการ',
+                                style: const TextStyle(color: AppColors.muted),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: PageView.builder(
+                            controller: _pageController,
+                            physics: const BouncingScrollPhysics(),
+                            onPageChanged: (index) {
+                              setState(() => _currentPage = index);
+                            },
+                            itemCount: pages.length,
+                            itemBuilder: (context, pageIndex) {
+                              final pageItems = pages[pageIndex];
+                              return GridView.builder(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 8,
+                                ),
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
                                       crossAxisCount: 3,
                                       mainAxisSpacing: 16,
                                       crossAxisSpacing: 16,
                                       childAspectRatio: 2.7,
                                     ),
-                                    itemCount: pageItems.length,
-                                    itemBuilder: (context, index) {
-                                      final product = pageItems[index];
-                                      return _DialogProductCard(
-                                        product: product,
-                                        onAdd: () => _handleAddProduct(product),
-                                      );
-                                    },
+                                itemCount: pageItems.length,
+                                itemBuilder: (context, index) {
+                                  final product = pageItems[index];
+                                  return _DialogProductCard(
+                                    product: product,
+                                    onAdd: () => _handleAddProduct(product),
                                   );
                                 },
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            if (hasPages)
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: List.generate(
-                                  pages.length,
-                                  (index) => GestureDetector(
-                                    onTap: () {
-                                      if (_pageController.hasClients) {
-                                        _pageController.animateToPage(
-                                          index,
-                                          duration: const Duration(milliseconds: 250),
-                                          curve: Curves.easeOut,
-                                        );
-                                      }
-                                    },
-                                    child: Container(
-                                      width: 12,
-                                      height: 12,
-                                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: index == safePageIndex
-                                            ? AppColors.primary
-                                            : AppColors.border,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (hasPages)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(
+                              pages.length,
+                              (index) => GestureDetector(
+                                onTap: () {
+                                  if (_pageController.hasClients) {
+                                    _pageController.animateToPage(
+                                      index,
+                                      duration: const Duration(
+                                        milliseconds: 250,
                                       ),
-                                    ),
+                                      curve: Curves.easeOut,
+                                    );
+                                  }
+                                },
+                                child: Container(
+                                  width: 12,
+                                  height: 12,
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: index == safePageIndex
+                                        ? AppColors.primary
+                                        : AppColors.border,
                                   ),
                                 ),
                               ),
-                            const SizedBox(height: 16),
-                          ],
-                        ),
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -323,7 +332,8 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
     }
 
     try {
-      if (product.addressCodeForAdd != null && product.addressCodeForAdd!.isNotEmpty) {
+      if (product.addressCodeForAdd != null &&
+          product.addressCodeForAdd!.isNotEmpty) {
         await bill.addItem(
           token: token,
           partCode: product.code,
@@ -331,10 +341,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
           qty: 1,
         );
       } else if (product.barcode != null && product.barcode!.isNotEmpty) {
-        await bill.addItemByBarcode(
-          token: token,
-          barcode: product.barcode!,
-        );
+        await bill.addItemByBarcode(token: token, barcode: product.barcode!);
       } else {
         messenger.showSnackBar(
           const SnackBar(
@@ -448,10 +455,7 @@ class _DialogEmptyState extends StatelessWidget {
         children: const [
           Icon(Icons.inventory_2_outlined, size: 56, color: AppColors.muted),
           SizedBox(height: 12),
-          Text(
-            'พิมค้นหาสินค้าเพื่อแสดงรายการ',
-            style: TextStyle(color: AppColors.muted),
-          ),
+          Text('เลือกสินค้า', style: TextStyle(color: AppColors.muted)),
         ],
       ),
     );

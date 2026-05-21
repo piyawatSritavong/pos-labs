@@ -40,9 +40,18 @@ class BillProvider extends ChangeNotifier {
   bool _showThankYouOverlay = false;
   bool get showThankYouOverlay => _showThankYouOverlay;
 
+  // The cashier's currently-open dialog name, propagated to the customer
+  // display via pos_mirror_state. Examples: 'receipt', 'hold_bill', 'return'.
+  // Null when no dialog is open. Consumed by customer_screen to render
+  // matching overlays (e.g. _ReceiptConfirmationOverlay when value == 'receipt').
+  String? _activeDialog;
+  String? get activeDialog => _activeDialog;
+
   bool isLoading = false;
   Map<String, dynamic>? _returnReferenceBill;
   final List<Map<String, dynamic>> _returnLines = [];
+  double? _mirroredReturnCreditAmount;
+  double? _mirroredNetSettlementAmount;
   Map<String, dynamic>? _assignedMember;
 
   String? get billId => _billId;
@@ -113,6 +122,9 @@ class BillProvider extends ChangeNotifier {
         (_toDouble(line['qty']) <= 0 ? 1 : _toDouble(line['qty']).toInt()),
   );
   double get returnCreditAmount {
+    if (_mirroredReturnCreditAmount != null) {
+      return _mirroredReturnCreditAmount!;
+    }
     double sum = 0;
     for (final line in _returnLines) {
       final amount = _toDouble(line['lineTotal'] ?? line['amount']);
@@ -121,7 +133,8 @@ class BillProvider extends ChangeNotifier {
     return sum;
   }
 
-  double get netSettlementAmount => _totalAmount - returnCreditAmount;
+  double get netSettlementAmount =>
+      _mirroredNetSettlementAmount ?? (_totalAmount - returnCreditAmount);
 
   // taxRate เอาไว้ให้ UI เดิมใช้ต่อ
   double get taxRate {
@@ -151,6 +164,8 @@ class BillProvider extends ChangeNotifier {
     );
     _items = _extractItems(bill);
     _backfillTotalsIfNeeded();
+    _mirroredReturnCreditAmount = null;
+    _mirroredNetSettlementAmount = null;
 
     // Restore cash-payment waiting state if present in payload
     _awaitingCashPayment = bill['awaitingCashPayment'] == true;
@@ -200,6 +215,8 @@ class BillProvider extends ChangeNotifier {
     _showThankYouOverlay = false;
     _returnReferenceBill = null;
     _returnLines.clear();
+    _mirroredReturnCreditAmount = null;
+    _mirroredNetSettlementAmount = null;
     _assignedMember = null;
     if (kIsWeb) {
       html.window.localStorage.remove('bill_state');
@@ -217,18 +234,34 @@ class BillProvider extends ChangeNotifier {
   /// Read-only — does not persist to localStorage.
   void updateFromMirrorState(Map<String, dynamic> state) {
     _items = List<Map<String, dynamic>>.from(
-      (state['items'] as List? ?? [])
-          .map((e) => Map<String, dynamic>.from(e as Map)),
+      (state['items'] as List? ?? []).map(
+        (e) => Map<String, dynamic>.from(e as Map),
+      ),
     );
     _purchaseAmount = _toDouble(state['subtotal']);
-    _totalDiscount  = _toDouble(state['discount']);
-    _vatAmount      = _toDouble(state['tax']);
-    _totalAmount    = _toDouble(state['total']);
+    _totalDiscount = _toDouble(state['discount']);
+    _vatAmount = _toDouble(state['tax']);
+    _totalAmount = _toDouble(state['total']);
+    _returnLines
+      ..clear()
+      ..addAll(
+        (state['returnItems'] as List? ?? []).whereType<Map>().map(
+          (e) => Map<String, dynamic>.from(e),
+        ),
+      );
+    _mirroredReturnCreditAmount = state.containsKey('returnCreditAmount')
+        ? _toDouble(state['returnCreditAmount'])
+        : null;
+    _mirroredNetSettlementAmount = state.containsKey('netSettlementAmount')
+        ? _toDouble(state['netSettlementAmount'])
+        : null;
     _awaitingCashPayment = state['isAwaitingCash'] == true;
-    _awaitingCashAmount  = _toDouble(state['cashAmount']);
-    _awaitingQrPayment   = state['isAwaitingQr'] == true;
+    _awaitingCashAmount = _toDouble(state['cashAmount']);
+    _awaitingQrPayment = state['isAwaitingQr'] == true;
     _showThankYouOverlay = state['showThankYou'] == true;
     _assignedMember = state['member'] as Map<String, dynamic>?;
+    // Mirror cashier's open-dialog state so customer overlays can react.
+    _activeDialog = state['activeDialog'] as String?;
     notifyListeners();
   }
 

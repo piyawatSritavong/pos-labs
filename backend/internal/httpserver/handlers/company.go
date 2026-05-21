@@ -28,17 +28,18 @@ func (h *CompanyHandler) Get(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"taxId":          company.TaxID,
-		"companyName":    company.CompanyName,
-		"companyNameTh":  company.CompanyNameTH,
-		"companyAddress": company.CompanyAddress,
+		"taxId":            company.TaxID,
+		"companyName":      company.CompanyName,
+		"companyNameTh":    company.CompanyNameTH,
+		"companyAddress":   company.CompanyAddress,
 		"companyAddressTh": company.CompanyAddressTH,
-		"phone":          company.Phone,
-		"email":          company.Email,
-		"website":        company.Website,
-		"logoUrl":        company.LogoURL,
-		"taxRate":        company.TaxRate,
-		"taxType":        company.TaxType,
+		"phone":            company.Phone,
+		"email":            company.Email,
+		"website":          company.Website,
+		"logoUrl":          company.LogoURL,
+		"taxRate":          company.TaxRate,
+		"taxType":          company.TaxType,
+		"receiptFooter":    company.ReceiptFooter,
 	})
 }
 
@@ -54,6 +55,8 @@ func (h *CompanyHandler) Update(c *gin.Context) {
 		LogoURL          *string `json:"logoUrl"`
 		TaxRate          float64 `json:"taxRate" binding:"required"`
 		TaxType          string  `json:"taxType" binding:"required"`
+		// Optional — if omitted by the client, the existing footer is preserved.
+		ReceiptFooter *string `json:"receiptFooter"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -61,7 +64,7 @@ func (h *CompanyHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// Get existing company to preserve tax_id
+	// Get existing company to preserve tax_id (and receipt_footer if not in request)
 	existing, err := h.company.Get(c.Request.Context())
 	if err != nil {
 		if repository.IsNotFoundError(err) {
@@ -70,6 +73,11 @@ func (h *CompanyHandler) Update(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_company"})
 		return
+	}
+
+	receiptFooter := existing.ReceiptFooter
+	if req.ReceiptFooter != nil {
+		receiptFooter = *req.ReceiptFooter
 	}
 
 	company := &repository.Company{
@@ -84,6 +92,7 @@ func (h *CompanyHandler) Update(c *gin.Context) {
 		LogoURL:          req.LogoURL,
 		TaxRate:          req.TaxRate,
 		TaxType:          req.TaxType,
+		ReceiptFooter:    receiptFooter,
 	}
 
 	if err := h.company.Update(c.Request.Context(), company); err != nil {
@@ -92,17 +101,17 @@ func (h *CompanyHandler) Update(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"taxId":          company.TaxID,
-		"companyName":    company.CompanyName,
-		"companyNameTh":  company.CompanyNameTH,
-		"companyAddress": company.CompanyAddress,
+		"taxId":            company.TaxID,
+		"companyName":      company.CompanyName,
+		"companyNameTh":    company.CompanyNameTH,
+		"companyAddress":   company.CompanyAddress,
 		"companyAddressTh": company.CompanyAddressTH,
-		"phone":          company.Phone,
-		"email":          company.Email,
-		"website":        company.Website,
-		"logoUrl":        company.LogoURL,
-		"taxRate":        company.TaxRate,
-		"taxType":        company.TaxType,
+		"phone":            company.Phone,
+		"email":            company.Email,
+		"website":          company.Website,
+		"logoUrl":          company.LogoURL,
+		"taxRate":          company.TaxRate,
+		"taxType":          company.TaxType,
+		"receiptFooter":    company.ReceiptFooter,
 	})
 }
-

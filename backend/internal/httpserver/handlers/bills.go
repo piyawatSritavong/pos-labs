@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"backend/internal/config"
+	"backend/internal/printer"
+	"backend/internal/receiptname"
 	"backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
@@ -111,6 +114,7 @@ func buildBillDetailOutput(details []repository.BillDetail) []gin.H {
 			"unitLabelTh": d.UnitLabelTH,
 			"name":        d.Name,
 			"partName":    d.Name,
+			"receiptName": d.ReceiptName,
 			"cost":        d.Cost,
 			"price":       d.Price,
 			"unitPrice":   d.Price,
@@ -282,19 +286,69 @@ type BillsHandler struct {
 	company    repository.CompanyRepository
 	promotions repository.PromotionRepository
 	addresses  repository.AddressRepository
+	// PrinterTarget is the resolved RECEIPT_PRINTER_TARGET (port name or share name).
+	// Empty disables PrintReceipt; the handler reports a clear error in that case.
+	PrinterTarget  string
+	PrinterEnabled bool
+	// PrinterCharset is the ESC t code page number sent before any text.
+	// 0 leaves the BuildReceipt default (21 = Thai CP874).
+	PrinterCharset byte
+	PrinterMode    string
+	OpenCashDrawer bool
+	DrawerKick     []byte
+	printMu        sync.Mutex
+	recentPrints   map[string]time.Time
 }
 
 func NewBillsHandler(bills repository.BillRepository, branches repository.BranchRepository, pos repository.POSRepository, parts repository.PartRepository, members repository.MemberRepository, company repository.CompanyRepository, promotions repository.PromotionRepository, addresses repository.AddressRepository) *BillsHandler {
 	return &BillsHandler{
-		bills:      bills,
-		branches:   branches,
-		pos:        pos,
-		parts:      parts,
-		members:    members,
-		company:    company,
-		promotions: promotions,
-		addresses:  addresses,
+		bills:          bills,
+		branches:       branches,
+		pos:            pos,
+		parts:          parts,
+		members:        members,
+		company:        company,
+		promotions:     promotions,
+		addresses:      addresses,
+		PrinterEnabled: true,
+		PrinterMode:    printer.ModeASCII,
+		recentPrints:   make(map[string]time.Time),
 	}
+}
+
+func (h *BillsHandler) beginPrint(idempotencyKey string) bool {
+	key := strings.TrimSpace(idempotencyKey)
+	if key == "" {
+		return true
+	}
+
+	h.printMu.Lock()
+	defer h.printMu.Unlock()
+
+	if h.recentPrints == nil {
+		h.recentPrints = make(map[string]time.Time)
+	}
+	now := time.Now()
+	for k, t := range h.recentPrints {
+		if now.Sub(t) > 15*time.Minute {
+			delete(h.recentPrints, k)
+		}
+	}
+	if _, exists := h.recentPrints[key]; exists {
+		return false
+	}
+	h.recentPrints[key] = now
+	return true
+}
+
+func (h *BillsHandler) completePrint(idempotencyKey string, success bool) {
+	key := strings.TrimSpace(idempotencyKey)
+	if key == "" || success {
+		return
+	}
+	h.printMu.Lock()
+	defer h.printMu.Unlock()
+	delete(h.recentPrints, key)
 }
 
 // Create creates a new empty bill with status "new".
@@ -816,10 +870,16 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 			UnitID:      partDetail.UnitID,
 			UnitLabel:   partDetail.UnitLabel,
 			UnitLabelTH: partDetail.UnitLabelTH,
-			Name:        partDetail.Name,
-			Cost:        partDetail.Cost,
-			Price:       partDetail.Price,
-			Qty:         req.Qty,
+			Name:        firstNonEmpty(partDetail.NameTH, partDetail.Name),
+			ReceiptName: receiptname.SafeProductName(receiptname.Product{
+				Code:        partDetail.Code,
+				ReceiptName: partDetail.ReceiptName,
+				Name:        partDetail.Name,
+				NameTH:      partDetail.NameTH,
+			}),
+			Cost:  partDetail.Cost,
+			Price: partDetail.Price,
+			Qty:   req.Qty,
 		}
 		if err := h.bills.AddItem(ctx, detail); err != nil {
 			h.restoreInventoryAfterFailedAdd(ctx, req.AddressCode, req.Qty)
@@ -978,10 +1038,16 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 			UnitID:      partDetail.UnitID,
 			UnitLabel:   partDetail.UnitLabel,
 			UnitLabelTH: partDetail.UnitLabelTH,
-			Name:        partDetail.Name,
-			Cost:        partDetail.Cost,
-			Price:       partDetail.Price,
-			Qty:         req.Qty,
+			Name:        firstNonEmpty(partDetail.NameTH, partDetail.Name),
+			ReceiptName: receiptname.SafeProductName(receiptname.Product{
+				Code:        partDetail.Code,
+				ReceiptName: partDetail.ReceiptName,
+				Name:        partDetail.Name,
+				NameTH:      partDetail.NameTH,
+			}),
+			Cost:  partDetail.Cost,
+			Price: partDetail.Price,
+			Qty:   req.Qty,
 		}
 		if err := h.bills.AddItem(ctx, detail); err != nil {
 			h.restoreInventoryAfterFailedAdd(ctx, selectedAddress.Code, req.Qty)
@@ -1842,6 +1908,7 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 				"unitLabel":   d.UnitLabel,
 				"unitLabelTh": d.UnitLabelTH,
 				"name":        d.Name,
+				"receiptName": d.ReceiptName,
 				"cost":        d.Cost,
 				"price":       d.Price,
 				"qty":         d.Qty,
@@ -1917,6 +1984,7 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 				"unitLabel":   d.UnitLabel,
 				"unitLabelTh": d.UnitLabelTH,
 				"name":        d.Name,
+				"receiptName": d.ReceiptName,
 				"cost":        d.Cost,
 				"price":       d.Price,
 				"qty":         d.Qty,
@@ -2011,6 +2079,7 @@ func (h *BillsHandler) SwitchBill(c *gin.Context) {
 			"unitLabel":   d.UnitLabel,
 			"unitLabelTh": d.UnitLabelTH,
 			"name":        d.Name,
+			"receiptName": d.ReceiptName,
 			"cost":        d.Cost,
 			"price":       d.Price,
 			"qty":         d.Qty,
@@ -2153,10 +2222,11 @@ func (h *BillsHandler) Cancel(c *gin.Context) {
 				"label":   d.UnitLabel,
 				"labelTh": d.UnitLabelTH,
 			},
-			"name":  d.Name,
-			"cost":  d.Cost,
-			"price": d.Price,
-			"qty":   d.Qty,
+			"name":        d.Name,
+			"receiptName": d.ReceiptName,
+			"cost":        d.Cost,
+			"price":       d.Price,
+			"qty":         d.Qty,
 		})
 	}
 
@@ -2371,4 +2441,449 @@ func (h *BillsHandler) Payment(c *gin.Context) {
 	}
 
 	h.respondWithFullBill(c, id)
+}
+
+// PrintReceipt sends the receipt for completed bill :id straight to the
+// configured 80mm thermal printer via raw ESC-POS. The checkout flow calls this
+// after payment succeeds. idempotencyKey suppresses duplicate browser clicks.
+func (h *BillsHandler) PrintReceipt(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_bill_id"})
+		return
+	}
+
+	var req struct {
+		IdempotencyKey string `json:"idempotencyKey"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+			return
+		}
+	}
+
+	if !h.beginPrint(req.IdempotencyKey) {
+		c.JSON(http.StatusOK, gin.H{
+			"ok":        true,
+			"printed":   false,
+			"duplicate": true,
+			"billId":    id,
+			"target":    h.PrinterTarget,
+			"mode":      printer.NormalizePrintMode(h.PrinterMode),
+		})
+		return
+	}
+
+	if !h.PrinterEnabled {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_disabled",
+			"message": "set RECEIPT_PRINTER_ENABLED=true in .env",
+		})
+		return
+	}
+
+	if strings.TrimSpace(h.PrinterTarget) == "" {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_not_configured",
+			"message": "set RECEIPT_PRINTER_PORT=LPT1 in .env",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	branchID, posID, err := h.getBranchAndPOSFromContext(c)
+	if err != nil {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	bill, details, discounts, err := h.bills.GetFullByID(ctx, id)
+	if err != nil {
+		h.completePrint(req.IdempotencyKey, false)
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		log.Printf("PrintReceipt: GetFullByID failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_bill"})
+		return
+	}
+	if bill.BranchID != branchID || bill.POSID != posID {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "bill_access_denied",
+			"message": "Bill does not belong to your current branch and POS",
+		})
+		return
+	}
+	if bill.Status != "completed" {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         "bill_not_completed",
+			"message":       "Receipt can only be printed after payment is completed.",
+			"currentStatus": bill.Status,
+		})
+		return
+	}
+
+	company, err := h.company.Get(ctx)
+	if err != nil {
+		h.completePrint(req.IdempotencyKey, false)
+		log.Printf("PrintReceipt: company.Get failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_company"})
+		return
+	}
+
+	params := h.buildReceiptParams(bill, details, discounts, company)
+	data := printer.BuildReceipt(params)
+
+	if err := printer.PrintRaw(h.PrinterTarget, data); err != nil {
+		h.completePrint(req.IdempotencyKey, false)
+		log.Printf("PrintReceipt: printer.PrintRaw target=%q drawer=%t drawerCommand=%s failed: %v",
+			h.PrinterTarget, h.OpenCashDrawer, printer.HexCommand(h.DrawerKick), err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "failed_to_print",
+			"message": err.Error(),
+			"target":  h.PrinterTarget,
+		})
+		return
+	}
+
+	drawerSent := false
+	drawerMethod := ""
+	drawerBinPath := ""
+	drawerOutput := ""
+
+	// In Windows POS production, the cash drawer must be opened explicitly by
+	// sending the ESC/POS drawer kick command after the receipt is printed.
+	// Some older builds populated DrawerKick from CASH_DRAWER_COMMAND but did not
+	// correctly map CASH_DRAWER_ENABLED into OpenCashDrawer, causing logs like:
+	// drawer=false drawerCommand=1B700019FA. Treat a configured DrawerKick command
+	// as an explicit request to open the drawer for the real receipt print flow.
+	drawerEnabled := h.OpenCashDrawer || len(h.DrawerKick) > 0
+	if drawerEnabled {
+		log.Printf("PrintReceipt: drawer enabled bill=%s openCashDrawer=%t drawerKickConfigured=%t target=%q command=%s",
+			bill.ID, h.OpenCashDrawer, len(h.DrawerKick) > 0, h.PrinterTarget, printer.HexCommand(h.DrawerKick))
+		result, err := printer.KickCashDrawer(h.PrinterTarget, h.DrawerKick)
+		drawerMethod = result.Method
+		drawerBinPath = result.BinPath
+		drawerOutput = result.Output
+		if err != nil {
+			h.completePrint(req.IdempotencyKey, false)
+			log.Printf("PrintReceipt: drawer kick target=%q command=%s method=%s binPath=%q failed after receipt print: %v",
+				h.PrinterTarget, printer.HexCommand(h.DrawerKick), result.Method, result.BinPath, err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":             "failed_to_open_drawer",
+				"message":           err.Error(),
+				"printed":           true,
+				"drawerCommand":     printer.HexCommand(h.DrawerKick),
+				"drawerCommandSent": false,
+				"drawerMethod":      result.Method,
+				"drawerBinPath":     result.BinPath,
+				"drawerOutput":      result.Output,
+				"target":            h.PrinterTarget,
+				"bytes":             len(data),
+				"retryWarning":      "Receipt was printed before the drawer error. Retrying may print another receipt.",
+			})
+			return
+		}
+		drawerSent = true
+		log.Printf("PrintReceipt: drawer kick target=%q command=%s method=%s binPath=%q bytes=%d ok=true visualConfirmationRequired=true",
+			result.Target, printer.HexCommand(h.DrawerKick), result.Method, result.BinPath, result.Bytes)
+	}
+
+	h.completePrint(req.IdempotencyKey, true)
+	mode := printer.NormalizePrintMode(h.PrinterMode)
+	log.Printf("PrintReceipt: bill=%s target=%q mode=%s bytes=%d drawer=%t drawerEnabled=%t openCashDrawer=%t drawerKickConfigured=%t drawerCommand=%s drawerMethod=%s",
+		bill.ID, h.PrinterTarget, mode, len(data), drawerSent, drawerEnabled, h.OpenCashDrawer, len(h.DrawerKick) > 0, printer.HexCommand(h.DrawerKick), drawerMethod)
+	c.JSON(http.StatusOK, gin.H{
+		"ok":                    true,
+		"printed":               true,
+		"duplicate":             false,
+		"billId":                bill.ID,
+		"bytes":                 len(data),
+		"target":                h.PrinterTarget,
+		"mode":                  mode,
+		"drawerCommand":         printer.HexCommand(h.DrawerKick),
+		"drawerCommandSent":     drawerSent,
+		"drawerEnabled":         drawerEnabled,
+		"openCashDrawer":        h.OpenCashDrawer,
+		"drawerKickConfigured":  len(h.DrawerKick) > 0,
+		"drawerMethod":          drawerMethod,
+		"drawerBinPath":         drawerBinPath,
+		"drawerOutput":          drawerOutput,
+		"drawerOpenedConfirmed": false,
+	})
+}
+
+// PrintTestReceipt prints a synthetic receipt so operators can verify the
+// physical printer, encoding mode, cutter, and drawer without creating a sale.
+func (h *BillsHandler) PrintTestReceipt(c *gin.Context) {
+	if !h.PrinterEnabled {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_disabled",
+			"message": "set RECEIPT_PRINTER_ENABLED=true in .env",
+		})
+		return
+	}
+	if strings.TrimSpace(h.PrinterTarget) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_not_configured",
+			"message": "set RECEIPT_PRINTER_PORT=LPT1 in .env",
+		})
+		return
+	}
+
+	now := time.Now()
+	params := printer.ReceiptParams{
+		CompanyNameTh: "POS Printer Test",
+		CompanyAddrTh: "Windows 10 POS / LPT1",
+		TaxID:         "0000000000000",
+		Phone:         "TEST",
+		ReceiptFooter: "Thai CP874 mode is enabled. If Thai is wrong, tune RECEIPT_CHARSET or use ascii fallback.",
+		BillID:        "TEST-" + now.Format("20060102-150405"),
+		CashierName:   "Printer Test",
+		PaymentMethod: paymentLabelForMode("cash", h.PrinterMode),
+		Items: []printer.ReceiptItem{
+			{Code: "TEST001", Name: "Receipt test item", Qty: 1, UnitPrice: 10, LineTotal: 10},
+			{Code: "TEST002", Name: "Second line item", Qty: 2, UnitPrice: 5, LineTotal: 10},
+		},
+		Subtotal:        20,
+		Discount:        0,
+		AmountAfterDisc: 20,
+		TaxRatePercent:  7,
+		Tax:             1.31,
+		Total:           20,
+		ReceivedAmount:  20,
+		ChangeAmount:    0,
+		HasReceived:     true,
+		HasChange:       true,
+		CodeTable:       h.PrinterCharset,
+		PrintMode:       h.PrinterMode,
+		OpenDrawer:      false,
+		DrawerKick:      h.DrawerKick,
+	}
+
+	data := printer.BuildReceipt(params)
+	if err := printer.PrintRaw(h.PrinterTarget, data); err != nil {
+		log.Printf("PrintTestReceipt: printer.PrintRaw target=%q drawer=%t drawerCommand=%s failed: %v",
+			h.PrinterTarget, h.OpenCashDrawer, printer.HexCommand(h.DrawerKick), err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "failed_to_print",
+			"message": err.Error(),
+			"target":  h.PrinterTarget,
+		})
+		return
+	}
+
+	drawerSent := false
+	drawerMethod := ""
+	drawerBinPath := ""
+	drawerOutput := ""
+	if h.OpenCashDrawer {
+		result, err := printer.KickCashDrawer(h.PrinterTarget, h.DrawerKick)
+		drawerMethod = result.Method
+		drawerBinPath = result.BinPath
+		drawerOutput = result.Output
+		if err != nil {
+			log.Printf("PrintTestReceipt: drawer kick target=%q command=%s method=%s binPath=%q failed after receipt print: %v",
+				h.PrinterTarget, printer.HexCommand(h.DrawerKick), result.Method, result.BinPath, err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":             "failed_to_open_drawer",
+				"message":           err.Error(),
+				"printed":           true,
+				"drawerCommand":     printer.HexCommand(h.DrawerKick),
+				"drawerCommandSent": false,
+				"drawerMethod":      result.Method,
+				"drawerBinPath":     result.BinPath,
+				"drawerOutput":      result.Output,
+				"target":            h.PrinterTarget,
+				"bytes":             len(data),
+			})
+			return
+		}
+		drawerSent = true
+	}
+
+	mode := printer.NormalizePrintMode(h.PrinterMode)
+	log.Printf("PrintTestReceipt: target=%q mode=%s bytes=%d drawer=%t drawerCommand=%s drawerMethod=%s",
+		h.PrinterTarget, mode, len(data), drawerSent, printer.HexCommand(h.DrawerKick), drawerMethod)
+	c.JSON(http.StatusOK, gin.H{
+		"ok":                    true,
+		"printed":               true,
+		"duplicate":             false,
+		"billId":                params.BillID,
+		"bytes":                 len(data),
+		"target":                h.PrinterTarget,
+		"mode":                  mode,
+		"drawerCommand":         printer.HexCommand(h.DrawerKick),
+		"drawerCommandSent":     drawerSent,
+		"drawerMethod":          drawerMethod,
+		"drawerBinPath":         drawerBinPath,
+		"drawerOutput":          drawerOutput,
+		"drawerOpenedConfirmed": false,
+	})
+}
+
+func (h *BillsHandler) buildReceiptParams(
+	bill *repository.Bill,
+	details []repository.BillDetail,
+	discounts []repository.BillDiscountDetail,
+	company *repository.Company,
+) printer.ReceiptParams {
+	var totalDiscount float64
+	for _, d := range discounts {
+		totalDiscount += d.Amount
+	}
+
+	items := make([]printer.ReceiptItem, 0, len(details))
+	for _, d := range details {
+		itemName, itemNameSource := receiptname.SafeProductNameWithSource(receiptname.Product{
+			Code:        d.PartCode,
+			ReceiptName: d.ReceiptName,
+			Name:        d.Name,
+		})
+		if itemNameSource != "receipt_name" {
+			log.Printf("BuildReceipt: bill=%s part=%s receiptNameSource=%s selected=%q",
+				bill.ID, d.PartCode, itemNameSource, itemName)
+		}
+		items = append(items, printer.ReceiptItem{
+			Code:      d.PartCode,
+			Name:      itemName,
+			Qty:       d.Qty,
+			UnitPrice: d.Price,
+			LineTotal: d.Price * float64(d.Qty),
+		})
+	}
+
+	cashier := bill.UpdatedBy
+	if cashier == "" {
+		cashier = bill.CreatedBy
+	}
+
+	taxPercent := 7
+	if bill.TotalAmount > 0 && bill.VATAmount > 0 {
+		taxPercent = int((bill.VATAmount / (bill.TotalAmount - bill.VATAmount)) * 100.0)
+		if taxPercent < 0 || taxPercent > 50 {
+			taxPercent = 7
+		}
+	}
+
+	companyPhone := ""
+	if company.Phone != "" {
+		companyPhone = company.Phone
+	}
+	companyWebsite := ""
+	if company.Website != nil {
+		companyWebsite = *company.Website
+	}
+	received, change, hasReceived, hasChange := receiptPaymentAmounts(parsePaymentMeta(bill.PaymentRef))
+
+	return printer.ReceiptParams{
+		CompanyNameTh:   firstNonEmpty(company.CompanyNameTH, company.CompanyName),
+		CompanyAddrTh:   firstNonEmpty(company.CompanyAddressTH, company.CompanyAddress),
+		TaxID:           company.TaxID,
+		Phone:           companyPhone,
+		Website:         companyWebsite,
+		ReceiptFooter:   company.ReceiptFooter,
+		BillID:          bill.ID,
+		CashierName:     cashier,
+		PaymentMethod:   paymentLabelForMode(bill.PaymentMethod, h.PrinterMode),
+		Items:           items,
+		Subtotal:        bill.PurchaseAmount,
+		Discount:        totalDiscount,
+		AmountAfterDisc: bill.PurchaseAmount - totalDiscount,
+		TaxRatePercent:  taxPercent,
+		Tax:             bill.VATAmount,
+		Total:           bill.TotalAmount,
+		ReceivedAmount:  received,
+		ChangeAmount:    change,
+		HasReceived:     hasReceived,
+		HasChange:       hasChange,
+		CodeTable:       h.PrinterCharset,
+		PrintMode:       h.PrinterMode,
+		OpenDrawer:      false,
+		DrawerKick:      h.DrawerKick,
+	}
+}
+
+func firstNonEmpty(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
+}
+
+func receiptPaymentAmounts(meta interface{}) (received, change float64, hasReceived, hasChange bool) {
+	metaMap, ok := meta.(map[string]interface{})
+	if !ok {
+		return 0, 0, false, false
+	}
+	for _, key := range []string{"receivedAmount", "received", "paidAmount", "cashReceived"} {
+		if v, ok := toFloat64(metaMap[key]); ok {
+			received = v
+			hasReceived = true
+			break
+		}
+	}
+	for _, key := range []string{"changeAmount", "change", "cashChange"} {
+		if v, ok := toFloat64(metaMap[key]); ok {
+			change = v
+			hasChange = true
+			break
+		}
+	}
+	return received, change, hasReceived, hasChange
+}
+
+func paymentLabelForMode(method, mode string) string {
+	if printer.NormalizePrintMode(mode) == printer.ModeThaiCP874 {
+		return paymentLabelTH(method)
+	}
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case "cash":
+		return "Cash"
+	case "bank", "transfer":
+		return "Bank transfer"
+	case "credit", "credit_term":
+		return "Credit term"
+	case "cheque", "check":
+		return "Cheque"
+	case "debit":
+		return "Debit card"
+	case "exchange":
+		return "Exchange"
+	case "":
+		return ""
+	default:
+		return method
+	}
+}
+
+// paymentLabelTH maps the bill.PaymentMethod enum value into a Thai label that
+// reads naturally on the printed receipt.
+func paymentLabelTH(method string) string {
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case "cash":
+		return "เงินสด"
+	case "bank", "transfer":
+		return "โอน"
+	case "credit", "credit_term":
+		return "เครดิต"
+	case "cheque", "check":
+		return "เช็ค"
+	case "debit":
+		return "บัตรเดบิต"
+	case "exchange":
+		return "แลกเปลี่ยน"
+	case "":
+		return ""
+	default:
+		return method
+	}
 }

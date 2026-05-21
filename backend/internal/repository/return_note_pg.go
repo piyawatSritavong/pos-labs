@@ -102,9 +102,9 @@ func (r *returnNoteRepositoryPG) Create(ctx context.Context, note *ReturnNote, i
 				"return_note_id", "reference_bill_id",
 				"part_code", "address_code",
 				"unit_id", "unit_label", "unit_label_th",
-				"name", "price", "qty", "line_total"
+				"name", "receipt_name", "price", "qty", "line_total"
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		`,
 			item.ReturnNoteID,
 			item.ReferenceBillID,
@@ -114,6 +114,7 @@ func (r *returnNoteRepositoryPG) Create(ctx context.Context, note *ReturnNote, i
 			item.UnitLabel,
 			item.UnitLabelTH,
 			item.Name,
+			item.ReceiptName,
 			item.Price,
 			item.Qty,
 			item.LineTotal,
@@ -264,7 +265,7 @@ func (r *returnNoteRepositoryPG) GetItems(ctx context.Context, returnNoteID stri
 			"return_note_id", "reference_bill_id",
 			"part_code", "address_code",
 			"unit_id", "unit_label", "unit_label_th",
-			"name", "price", "qty", "line_total"
+			"name", COALESCE(NULLIF("receipt_name", ''), 'ITEM ' || "part_code"), "price", "qty", "line_total"
 		FROM "return_note_item_detail"
 		WHERE "return_note_id" = $1
 		ORDER BY "part_code", "address_code"
@@ -286,6 +287,7 @@ func (r *returnNoteRepositoryPG) GetItems(ctx context.Context, returnNoteID stri
 			&item.UnitLabel,
 			&item.UnitLabelTH,
 			&item.Name,
+			&item.ReceiptName,
 			&item.Price,
 			&item.Qty,
 			&item.LineTotal,

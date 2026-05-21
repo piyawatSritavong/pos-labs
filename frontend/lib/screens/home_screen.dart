@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frontend/screens/backoffice_screen.dart';
 import 'package:frontend/services/api_bills.dart';
@@ -44,7 +43,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<SearchBarcodeSectionState> _productListKey =
       GlobalKey<SearchBarcodeSectionState>();
   final FocusNode _barcodeFocusNode = FocusNode();
-  Timer? _refocusTimer;
   bool _isCheckingPendingBill = true;
   final PosMirrorService _posMirrorService = PosMirrorService();
   int _holdCount = 0;
@@ -64,8 +62,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _handlePendingBillOnLaunch();
       _loadHoldCount();
 
-      // Start broadcasting POS state for Van Staff
-      if (auth.isVanStaff && auth.token != null) {
+      // Start broadcasting POS state for cashier/van POS sessions.
+      if (auth.isPOSOperator && auth.token != null) {
         final billProvider = context.read<BillProvider>();
         _posMirrorService.connect(
           buildPosMirrorWsUrl(auth.token!),
@@ -96,7 +94,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _posMirrorService.dispose();
-    _refocusTimer?.cancel();
     _barcodeFocusNode.dispose();
     _searchController.dispose();
     _barcodeController.dispose();
@@ -107,7 +104,6 @@ class _HomeScreenState extends State<HomeScreen> {
     String code, {
     bool clearOnSuccess = false,
   }) async {
-    _scheduleRefocus();
     final upper = code.toUpperCase();
     _barcodeController.value = _barcodeController.value.copyWith(
       text: upper,
@@ -129,19 +125,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _scheduleRefocus() {
-    _refocusTimer?.cancel();
-    _refocusTimer = Timer(const Duration(seconds: 30), () {
-      _focusScanner();
-    });
-  }
-
-  void _focusScanner() {
-    if (!mounted) return;
-    FocusScope.of(context).requestFocus(_barcodeFocusNode);
-    _scheduleRefocus();
-  }
-
   Future<void> _handlePendingBillOnLaunch() async {
     final auth = context.read<AuthProvider>();
     final billProvider = context.read<BillProvider>();
@@ -153,7 +136,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _isCheckingPendingBill = false;
         });
-        _focusScanner();
       }
       return;
     }
@@ -215,7 +197,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _isCheckingPendingBill = false;
         });
-        _focusScanner();
       }
     }
   }
@@ -247,9 +228,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Scaffold(
-      body: SafeArea(
-        child: _buildForMode(context, mode, auth, bill),
-      ),
+      body: SafeArea(child: _buildForMode(context, mode, auth, bill)),
       bottomNavigationBar: null,
     );
   }
@@ -286,7 +265,10 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(flex: 3, child: SearchBarcodeSection(key: _productListKey)),
+                Expanded(
+                  flex: 3,
+                  child: SearchBarcodeSection(key: _productListKey),
+                ),
                 const SizedBox(width: 20),
                 const Expanded(flex: 7, child: CartSummarySection()),
               ],
@@ -297,7 +279,8 @@ class _HomeScreenState extends State<HomeScreen> {
             controller: _barcodeController,
             focusNode: _barcodeFocusNode,
             onChanged: _handleBarcodeSearch,
-            onSubmit: (value) => _handleBarcodeSearch(value, clearOnSuccess: true),
+            onSubmit: (value) =>
+                _handleBarcodeSearch(value, clearOnSuccess: true),
           ),
         ],
       ),
@@ -321,7 +304,10 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(flex: 4, child: SearchBarcodeSection(key: _productListKey)),
+                Expanded(
+                  flex: 4,
+                  child: SearchBarcodeSection(key: _productListKey),
+                ),
                 const SizedBox(width: 16),
                 const Expanded(flex: 6, child: CartSummarySection()),
               ],
@@ -332,7 +318,8 @@ class _HomeScreenState extends State<HomeScreen> {
             controller: _barcodeController,
             focusNode: _barcodeFocusNode,
             onChanged: _handleBarcodeSearch,
-            onSubmit: (value) => _handleBarcodeSearch(value, clearOnSuccess: true),
+            onSubmit: (value) =>
+                _handleBarcodeSearch(value, clearOnSuccess: true),
           ),
         ],
       ),
@@ -355,7 +342,8 @@ class _HomeScreenState extends State<HomeScreen> {
             onSearchTap: _openSearchDialog,
             isMobile: true,
             holdCount: _holdCount,
-            onShowActionSheet: () => _showMobileActionSheet(context, auth, bill),
+            onShowActionSheet: () =>
+                _showMobileActionSheet(context, auth, bill),
           ),
           // Keep SearchBarcodeSection mounted but hidden so barcode scan + auto-add works
           Offstage(
@@ -363,7 +351,10 @@ class _HomeScreenState extends State<HomeScreen> {
             child: SizedBox(
               width: 300,
               height: 400,
-              child: SearchBarcodeSection(key: _productListKey, itemsPerPage: 4),
+              child: SearchBarcodeSection(
+                key: _productListKey,
+                itemsPerPage: 4,
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -373,7 +364,8 @@ class _HomeScreenState extends State<HomeScreen> {
             controller: _barcodeController,
             focusNode: _barcodeFocusNode,
             onChanged: _handleBarcodeSearch,
-            onSubmit: (value) => _handleBarcodeSearch(value, clearOnSuccess: true),
+            onSubmit: (value) =>
+                _handleBarcodeSearch(value, clearOnSuccess: true),
           ),
         ],
       ),
@@ -482,20 +474,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ).then((_) => PosMirrorService.current?.notifyDialog(null));
         },
       ),
-      tile(
-        Icons.pause_circle_outline,
-        'พักบิล',
-        null,
-        () async {
-          PosMirrorService.current?.notifyDialog('hold_bill');
-          await showDialog(
-            context: context,
-            builder: (_) => const HoldBillDialog(),
-          );
-          PosMirrorService.current?.notifyDialog(null);
-          _loadHoldCount();
-        },
-      ),
+      tile(Icons.pause_circle_outline, 'พักบิล', null, () async {
+        PosMirrorService.current?.notifyDialog('hold_bill');
+        await showDialog(
+          context: context,
+          builder: (_) => const HoldBillDialog(),
+        );
+        PosMirrorService.current?.notifyDialog(null);
+        _loadHoldCount();
+      }),
       tile(
         Icons.warning_amber_rounded,
         'สต็อก',
@@ -508,61 +495,39 @@ class _HomeScreenState extends State<HomeScreen> {
           ).then((_) => PosMirrorService.current?.notifyDialog(null));
         },
       ),
-      tile(
-        Icons.history_rounded,
-        'ประวัติ',
-        null,
-        () {
-          PosMirrorService.current?.notifyDialog('bill_log');
+      tile(Icons.history_rounded, 'ประวัติ', null, () {
+        PosMirrorService.current?.notifyDialog('bill_log');
+        showDialog(
+          context: context,
+          builder: (_) => const BillsLogDialog(),
+        ).then((_) => PosMirrorService.current?.notifyDialog(null));
+      }),
+      if (auth.isVanStaff) ...[
+        tile(Icons.person_add_outlined, 'สมาชิก', null, () {
+          PosMirrorService.current?.notifyDialog('member_register');
           showDialog(
             context: context,
-            builder: (_) => const BillsLogDialog(),
+            builder: (_) => const MemberRegisterDialog(),
           ).then((_) => PosMirrorService.current?.notifyDialog(null));
-        },
-      ),
-      if (auth.isVanStaff) ...[
-        tile(
-          Icons.person_add_outlined,
-          'สมาชิก',
-          null,
-          () {
-            PosMirrorService.current?.notifyDialog('member_register');
-            showDialog(
-              context: context,
-              builder: (_) => const MemberRegisterDialog(),
-            ).then((_) => PosMirrorService.current?.notifyDialog(null));
-          },
-        ),
-        tile(
-          Icons.inventory_2_outlined,
-          'นับสต็อก',
-          null,
-          () {
-            PosMirrorService.current?.notifyDialog('physical_count');
-            showDialog(
-              context: context,
-              builder: (_) => PhysicalCountDialog(
-                branchId: auth.branchId ?? '',
-                storeId: '',
-              ),
-            ).then((_) => PosMirrorService.current?.notifyDialog(null));
-          },
-        ),
-        tile(
-          Icons.calculate_outlined,
-          'ปิดวัน',
-          null,
-          () {
-            PosMirrorService.current?.notifyDialog('daily_close');
-            showDialog(
-              context: context,
-              builder: (_) => DailyCloseDialog(
-                branchId: auth.branchId ?? '',
-                posId: auth.posId ?? '',
-              ),
-            ).then((_) => PosMirrorService.current?.notifyDialog(null));
-          },
-        ),
+        }),
+        tile(Icons.inventory_2_outlined, 'นับสต็อก', null, () {
+          PosMirrorService.current?.notifyDialog('physical_count');
+          showDialog(
+            context: context,
+            builder: (_) =>
+                PhysicalCountDialog(branchId: auth.branchId ?? '', storeId: ''),
+          ).then((_) => PosMirrorService.current?.notifyDialog(null));
+        }),
+        tile(Icons.calculate_outlined, 'ปิดวัน', null, () {
+          PosMirrorService.current?.notifyDialog('daily_close');
+          showDialog(
+            context: context,
+            builder: (_) => DailyCloseDialog(
+              branchId: auth.branchId ?? '',
+              posId: auth.posId ?? '',
+            ),
+          ).then((_) => PosMirrorService.current?.notifyDialog(null));
+        }),
         tile(
           Icons.request_page_outlined,
           'เบิกของ',
@@ -833,7 +798,12 @@ class _PendingBillDialog extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: context.colorBorder),
                 ),
-                child: _buildMetaRow(context, 'ยอดปัจจุบัน', '฿${totalAmount.toStringAsFixed(2)}', emphasize: true),
+                child: _buildMetaRow(
+                  context,
+                  'ยอดปัจจุบัน',
+                  '฿${totalAmount.toStringAsFixed(2)}',
+                  emphasize: true,
+                ),
               ),
               const SizedBox(height: 18),
               Row(
@@ -860,7 +830,12 @@ class _PendingBillDialog extends StatelessWidget {
     );
   }
 
-  Widget _buildMetaRow(BuildContext context, String label, String value, {bool emphasize = false}) {
+  Widget _buildMetaRow(
+    BuildContext context,
+    String label,
+    String value, {
+    bool emphasize = false,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -934,7 +909,7 @@ class HeaderBar extends StatelessWidget {
       valueListenable: searchController,
       builder: (context, value, _) {
         final hasText = value.text.trim().isNotEmpty;
-        final displayText = hasText ? value.text.trim() : 'พิมค้นหาสินค้า';
+        final displayText = hasText ? value.text.trim() : 'เลือกสินค้า';
         return Material(
           color: Colors.transparent,
           child: InkWell(
@@ -965,7 +940,11 @@ class HeaderBar extends StatelessWidget {
                       onTap: () => searchController.clear(),
                       child: Padding(
                         padding: const EdgeInsets.all(4),
-                        child: Icon(Icons.close, color: context.colorMuted, size: 20),
+                        child: Icon(
+                          Icons.close,
+                          color: context.colorMuted,
+                          size: 20,
+                        ),
                       ),
                     ),
                 ],
@@ -1004,14 +983,21 @@ class HeaderBar extends StatelessWidget {
                 right: -2,
                 top: -2,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: context.colorDanger,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     holdCount > 9 ? '9+' : '$holdCount',
-                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -1255,7 +1241,9 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
                   child: Row(
                     children: [
                       Icon(
-                        themeProvider.isDark ? Icons.dark_mode : Icons.light_mode,
+                        themeProvider.isDark
+                            ? Icons.dark_mode
+                            : Icons.light_mode,
                         size: 18,
                       ),
                       const SizedBox(width: 8),
@@ -1326,7 +1314,11 @@ class _HeaderIconButton extends StatelessWidget {
               border: Border.all(color: context.colorBorder),
               borderRadius: BorderRadius.circular(radius),
             ),
-            child: Icon(icon, color: iconColor ?? context.colorPrimary, size: isCompact ? 20 : 24),
+            child: Icon(
+              icon,
+              color: iconColor ?? context.colorPrimary,
+              size: isCompact ? 20 : 24,
+            ),
           ),
         ),
         if (showBadge)

@@ -169,13 +169,20 @@ Double-click `C:\POSApp\start-pos.bat`. You should see:
 
 ```
 === POS Auto-Start ===
-[1/4] Starting PostgreSQL service "postgresql-x64-17" ...
-[2/4] Ensuring logs folder exists ...
-[3/4] Starting backend "pos-backend.exe" (minimized, logs to logs\backend.log) ...
-[4/4] Opening Microsoft Edge in kiosk mode at http://127.0.0.1:8080 ...
+[1/5] Checking PostgreSQL service "postgresql-x64-17" ...
+[2/5] Ensuring logs folder exists ...
+[3/5] Starting backend "pos-backend.exe" (hidden/background, logs to logs\backend.log) ...
+[4/5] Opening Microsoft Edge kiosk (main POS) at http://127.0.0.1:8080 ...
+[5/5] Detecting monitors ...
 ```
 
 Edge should open in fullscreen kiosk on the POS UI within ~5 seconds.
+The Go backend runs in the background with no terminal window. To stop it,
+run `stop-pos.bat` or kill it manually:
+
+```cmd
+taskkill /F /IM pos-backend.exe /T
+```
 
 > To exit kiosk for debugging: `Ctrl+Alt+Del` → close Edge from Task Manager,
 > or run `stop-pos.bat`.
@@ -266,6 +273,9 @@ to reach the DB and you'll see it in `logs\backend.log`.
   cd C:\POSApp
   pos-backend.exe
   ```
+- Normal `start-pos.bat` startup intentionally runs the backend through
+  `start-backend-hidden.vbs`, so there is no visible backend terminal. Check
+  `logs\backend.log` or Task Manager (`pos-backend.exe`) instead.
 
 ### Database connection fails
 
@@ -330,7 +340,18 @@ start "" msedge.exe --kiosk "%BACKEND_URL%" --no-first-run
 - **Main monitor (1)**: opens Edge kiosk on the main POS UI (`http://127.0.0.1:8080/?username=pos1`)
 - **Monitor 2**: opens a **second** Edge kiosk on the customer display route (`http://127.0.0.1:8080/#/customer`), positioned at `x=2000,y=0`
 
-The two kiosks sync in real time via a backend WebSocket (`/ws/pos-mirror`) — when the cashier scans/adds an item on monitor 1, monitor 2 updates immediately.
+The two kiosks sync in real time via backend WebSockets:
+
+- Cashier POS sends state to `/ws/pos-mirror` after login.
+- Customer display stays open at `/#/customer` and receives state from `/ws/customer-display?branchId=00000&posId=POS001&posSecret=...`.
+
+This works even though `start-pos.bat` launches the customer kiosk with a separate Edge profile.
+
+To test the customer display without a sale, log in on the cashier screen and call:
+
+```powershell
+curl -X POST http://127.0.0.1:8080/pos-mirror/test-state -H "Authorization: Bearer <SESSION_TOKEN>"
+```
 
 ### Adjusting monitor 2 position
 
@@ -370,7 +391,150 @@ If only one monitor is connected, `start-pos.bat` skips the second kiosk and jus
 
 ---
 
-## 15. POS Secret
+## 15. Receipt printer mode and test print
+
+Production defaults to readable ASCII receipt output:
+
+```env
+RECEIPT_PRINTER_ENABLED=true
+RECEIPT_PRINTER_PORT=LPT1
+RECEIPT_PRINTER_NAME=POS80
+RECEIPT_TEXT_MODE=ascii
+RECEIPT_PRINT_MODE=ascii
+RECEIPT_PRODUCT_NAME_MODE=receipt_name
+RECEIPT_FORCE_ASCII=true
+RECEIPT_CHARSET=21
+CASH_DRAWER_ENABLED=true
+CASH_DRAWER_BIN_PATH=C:\POSApp\drawer.bin
+CASH_DRAWER_COMMAND=1B700019FA
+```
+
+The production printer is the internal 80mm thermal printer using Windows
+Generic / Text Only on `LPT1`. The backend writes raw ESC/POS bytes; Flutter
+Web does not use browser printing for receipts.
+
+Why ASCII: this POS printer rendered Thai CP874 incorrectly in Generic / Text
+Only mode. ASCII mode avoids garbled output. Product names shown in the POS UI
+remain Thai, but paper receipts use `part_master.receipt_name`, an uppercase
+ASCII name created specifically for LPT1 / Generic Text printing.
+
+When adding new products through seed/admin SQL, always set
+`part_master.receipt_name`. Keep it short, uppercase ASCII, and readable on an
+80mm receipt. Examples:
+
+```sql
+-- name_th: ไม้อัดยาง 10 มิล เกรด C
+receipt_name = 'PLYWOOD 10MM C'
+
+-- name_th: เมลามีนขาว 1 หน้า ขนาด 6 มิล
+receipt_name = 'MELAMINE WHITE 1S 6MM'
+```
+
+If `receipt_name` is empty, the backend falls back to a controlled ASCII name
+from product code/size/grade and finally `ITEM <part_code>`. It does not print
+raw Thai product names in ASCII production mode.
+
+Thai output remains available for later testing:
+
+```env
+RECEIPT_FORCE_ASCII=false
+RECEIPT_TEXT_MODE=thai_cp874
+RECEIPT_CHARSET=21
+```
+
+If Thai is wrong, try `RECEIPT_CHARSET=20`, then `18`, then the value from the printer self-test/vendor manual. Return to `RECEIPT_TEXT_MODE=ascii` and `RECEIPT_FORCE_ASCII=true` if it is not reliable.
+
+To print a small readable test print without completing a sale:
+
+```powershell
+curl.exe -X POST http://127.0.0.1:8080/pos/printer/test-print -H "Authorization: Bearer <SESSION_TOKEN>"
+```
+
+To print a sample 80mm receipt without completing a sale:
+
+```powershell
+curl.exe -X POST http://127.0.0.1:8080/pos/printer/test-receipt -H "Authorization: Bearer <SESSION_TOKEN>"
+```
+
+Refund/return receipts are printed by the cashier checkout flow after the
+return note is created. The backend endpoint is:
+
+```http
+POST /returns/<RETURN_NOTE_ID>/print
+```
+
+### Cash drawer testing
+
+The cash drawer does not open automatically just because the printer prints.
+The backend must send an explicit ESC/POS drawer kick command to the printer.
+
+Manual Windows test confirmed `cmd /c copy /b C:\POSApp\drawer.bin LPT1` opens
+the drawer when run from PowerShell. The backend drawer path intentionally uses
+the same PowerShell flow: write `C:\POSApp\drawer.bin` as bytes, then call
+`cmd.exe /c copy /b ... LPT1` from that PowerShell process.
+
+Example for the default command:
+
+```powershell
+[byte[]](0x1B,0x70,0x00,0x19,0xFA) | Set-Content -Encoding Byte C:\POSApp\drawer.bin
+cmd /c copy /b C:\POSApp\drawer.bin LPT1
+```
+
+Use this endpoint to test the drawer without printing a receipt:
+
+```powershell
+curl.exe -X POST http://127.0.0.1:8080/pos/printer/open-drawer `
+  -H "Authorization: Bearer <SESSION_TOKEN>" `
+  -H "Content-Type: application/json" `
+  -d "{\"command\":\"1B700019FA\"}"
+```
+
+Try these common commands one at a time:
+
+```text
+1B700019FA  ESC p 0 25 250  DK1 / pin 0, short pulse
+1B700032FA  ESC p 0 50 250  DK1 / pin 0, longer pulse
+1B700119FA  ESC p 1 25 250  DK2 / pin 1, short pulse
+1B700132FA  ESC p 1 50 250  DK2 / pin 1, longer pulse
+```
+
+All four commands were manually tested on the Windows POS and opened the drawer.
+Default production command is `1B700019FA`.
+
+If a different command is preferred, set it in `C:\POSApp\.env`:
+
+```env
+CASH_DRAWER_ENABLED=true
+CASH_DRAWER_BIN_PATH=C:\POSApp\drawer.bin
+CASH_DRAWER_COMMAND=1B700119FA
+```
+
+`POST /pos/printer/open-drawer` logs the target, command, byte count, and
+PowerShell method/bin path. A successful write only means Windows accepted the
+bytes; it does **not** prove the cash drawer opened. You must visually confirm
+the drawer movement. DK1/DK2 or pin 0/pin 1 depends on the printer's drawer
+port wiring and firmware.
+
+Troubleshooting if the drawer does not open:
+
+- Confirm `RECEIPT_PRINTER_PORT=LPT1` and `CASH_DRAWER_ENABLED=true`.
+- Confirm `CASH_DRAWER_BIN_PATH=C:\POSApp\drawer.bin` is writable by the
+  backend process.
+- Confirm manual PowerShell + `cmd /c copy /b ... LPT1` still opens it.
+- Try the other three `CASH_DRAWER_COMMAND` values.
+- Check `logs\backend.log` for `OpenCashDrawer` or `PrintReceipt` lines.
+- Confirm the drawer cable is in the printer DK port, not a cash-drawer-only jack.
+
+Keep tests separate while diagnosing:
+
+- Test small printer output only: `POST /pos/printer/test-print`
+- Test sample receipt: `POST /pos/printer/test-receipt`
+- Test drawer only: `POST /pos/printer/open-drawer`
+- Checkout print plus drawer: set `CASH_DRAWER_ENABLED=true` and the working `CASH_DRAWER_COMMAND`
+
+---
+
+## 16. POS Secret
 
 The Flutter app sends a `POS_SECRET` to the backend on each login. Both ends **must agree**:
 
@@ -405,7 +569,7 @@ bash scripts/build-pos-windows.sh
 
 ---
 
-## 16. Regenerating real product data from xlsx
+## 17. Regenerating real product data from xlsx
 
 The `seed-real-data.sql` script was auto-generated from `~/Downloads/real-data-stock.xlsx` by `scripts/generate-real-seed-sql.py`.
 
@@ -428,7 +592,7 @@ Then on the Windows POS:
 
 ---
 
-## 17. Troubleshooting — "Parts list is empty / Addresses page returns 500"
+## 18. Troubleshooting — "Parts list is empty / Addresses page returns 500"
 
 If after a fresh deploy you see Parts page showing "ยังไม่มีข้อมูลสินค้า" or the Addresses page returns `500 {"error": "failed_to_list_addresses"}`, run this diagnostic first:
 
@@ -485,7 +649,7 @@ The nuclear option:
 
 ---
 
-## 18. Quick diagnostic one-liner
+## 19. Quick diagnostic one-liner
 
 If you want to check DB state without `verify-data.bat`:
 

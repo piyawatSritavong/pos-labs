@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
+import 'package:frontend/providers/company_provider.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
@@ -755,7 +756,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
 
           if (!mounted) return;
 
-          final confirmed = await showDialog<bool>(
+          final cashResult = await showDialog<_CashPaymentResult>(
             context: context,
             barrierDismissible: false,
             builder: (dialogContext) => _CashConfirmDialog(total: total),
@@ -763,11 +764,16 @@ class _CartSummarySectionState extends State<CartSummarySection> {
 
           if (!mounted) return;
 
-          if (confirmed != true) {
+          if (cashResult == null) {
             bill.setAwaitingCashPayment(value: false);
             return;
           }
 
+          paymentSelection = _PaymentSelection.cash(
+            receivedAmount: cashResult.receivedAmount,
+            changeAmount: cashResult.changeAmount,
+            totalAmount: total,
+          );
           bill.setAwaitingCashPayment(value: false);
         }
       } else {
@@ -778,54 +784,84 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     }
 
     if (!mounted) return;
-    bill.setShowThankYouOverlay(true);
+    final checkoutBillId = bill.billId;
+    var paymentSaved = false;
+    var returnSaved = false;
+    var receiptPrinted = false;
+    var returnReceiptPrinted = false;
+    String? returnNoteId;
+
+    Future<void> finalizeCheckout() async {
+      if (!paymentSaved &&
+          hasPurchaseItems &&
+          paymentSelection != null &&
+          checkoutBillId != null) {
+        await bill.payCurrentBill(
+          token: token,
+          paymentMethod: paymentSelection.backendMethod,
+          paymentMeta: paymentSelection.paymentMeta,
+        );
+        paymentSaved = true;
+      }
+
+      if (!returnSaved && hasReturnItems && referenceBillId != null) {
+        final returnNote = await bill.createReturnNote(
+          token: token,
+          settlementMode: returnSettleMode == 'none'
+              ? 'exchange'
+              : returnSettleMode,
+          purchaseBillId: hasPurchaseItems ? checkoutBillId : null,
+          paymentMethod: paymentSelection?.backendMethod,
+          paymentMeta: paymentSelection?.paymentMeta,
+        );
+        returnNoteId =
+            returnNote['id']?.toString() ??
+            returnNote['returnNoteId']?.toString();
+        if (returnNoteId == null || returnNoteId!.isEmpty) {
+          throw Exception('สร้างใบคืนสินค้าแล้วแต่ไม่พบเลขที่ใบคืนสินค้า');
+        }
+        returnSaved = true;
+      }
+
+      if (!receiptPrinted && hasPurchaseItems && checkoutBillId != null) {
+        await ApiService.printReceipt(
+          token: token,
+          billId: checkoutBillId,
+          idempotencyKey: 'checkout:$checkoutBillId',
+        );
+        receiptPrinted = true;
+      }
+
+      if (!returnReceiptPrinted && hasReturnItems && returnNoteId != null) {
+        await ApiService.printReturnReceipt(
+          token: token,
+          returnNoteId: returnNoteId!,
+          idempotencyKey: 'return:${returnNoteId!}',
+        );
+        returnReceiptPrinted = true;
+      }
+    }
+
+    bill.setShowThankYouOverlay(false);
     final paid = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => _ReceiptDialog(
         settlementTotal: total,
         hasPurchaseItems: hasPurchaseItems,
+        onFinalize: finalizeCheckout,
         paymentSelection: paymentSelection,
         returnSettleMode: returnSettleMode == 'none' ? null : returnSettleMode,
       ),
     );
 
     if (paid == true && mounted) {
-      try {
-        if (hasPurchaseItems &&
-            paymentSelection != null &&
-            bill.billId != null) {
-          await bill.payCurrentBill(
-            token: token,
-            paymentMethod: paymentSelection.backendMethod,
-            paymentMeta: paymentSelection.paymentMeta,
-          );
-        }
-
-        if (hasReturnItems && referenceBillId != null) {
-          await bill.createReturnNote(
-            token: token,
-            settlementMode: returnSettleMode == 'none'
-                ? 'exchange'
-                : returnSettleMode,
-            purchaseBillId: hasPurchaseItems ? bill.billId : null,
-            paymentMethod: paymentSelection?.backendMethod,
-            paymentMeta: paymentSelection?.paymentMeta,
-          );
-        }
-
-        bill.clearReturnSession();
-        _resetPaymentState();
-        bill.resetCurrentBillState();
-      } catch (e) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('บันทึกรายการชำระเงินไม่สำเร็จ: $e')),
-        );
-        return;
-      }
+      bill.clearReturnSession();
+      _resetPaymentState();
+      bill.resetCurrentBillState();
     }
 
-    if (mounted) {
+    if (mounted && paid != true) {
       bill.setShowThankYouOverlay(false);
     }
   }
@@ -1684,11 +1720,21 @@ class _PaymentSelection {
     this.installments = const <_CreditTermInstallment>[],
   });
 
-  factory _PaymentSelection.cash() {
-    return const _PaymentSelection(
+  factory _PaymentSelection.cash({
+    double? receivedAmount,
+    double? changeAmount,
+    double? totalAmount,
+  }) {
+    return _PaymentSelection(
       kind: _PaymentKind.cash,
       backendMethod: 'cash',
       label: 'เงินสด',
+      paymentMeta: <String, dynamic>{
+        'type': 'cash',
+        if (receivedAmount != null) 'receivedAmount': receivedAmount,
+        if (changeAmount != null) 'changeAmount': changeAmount,
+        if (totalAmount != null) 'totalAmount': totalAmount,
+      },
     );
   }
 
@@ -1749,18 +1795,97 @@ String _formatDateValue(DateTime date) {
   return '$year-$month-$day';
 }
 
-class _ReceiptDialog extends StatelessWidget {
+class _ReceiptDialog extends StatefulWidget {
   const _ReceiptDialog({
     required this.settlementTotal,
     required this.hasPurchaseItems,
+    required this.onFinalize,
     this.paymentSelection,
     this.returnSettleMode,
   });
 
   final double settlementTotal;
   final bool hasPurchaseItems;
+  final Future<void> Function() onFinalize;
   final _PaymentSelection? paymentSelection;
   final String? returnSettleMode;
+
+  @override
+  State<_ReceiptDialog> createState() => _ReceiptDialogState();
+}
+
+class _ReceiptDialogState extends State<_ReceiptDialog> {
+  // Snapshot of `widget.*` for terser access inside build().
+  double get settlementTotal => widget.settlementTotal;
+  bool get hasPurchaseItems => widget.hasPurchaseItems;
+  Future<void> Function() get onFinalize => widget.onFinalize;
+  _PaymentSelection? get paymentSelection => widget.paymentSelection;
+  String? get returnSettleMode => widget.returnSettleMode;
+  bool _isFinalizing = false;
+  bool _finalizeAttempted = false;
+  bool _finalizeSucceeded = false;
+  String? _finalizeError;
+
+  @override
+  void initState() {
+    super.initState();
+    // 1) Tell the customer display (จอ 2) that the receipt dialog is now open
+    //    so it can render the matching overlay (customer_screen handles
+    //    `activeDialog == 'receipt'`).
+    PosMirrorService.current?.notifyDialog('receipt');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _handleFinalize(closeOnSuccess: false);
+    });
+  }
+
+  Future<void> _handleFinalize({bool closeOnSuccess = true}) async {
+    if (_isFinalizing) return;
+    if (_finalizeSucceeded) {
+      if (closeOnSuccess && mounted) {
+        Navigator.of(context).pop(true);
+      }
+      return;
+    }
+    setState(() {
+      _isFinalizing = true;
+      _finalizeAttempted = true;
+      _finalizeError = null;
+    });
+    try {
+      await onFinalize();
+      if (!mounted) return;
+      setState(() {
+        _finalizeSucceeded = true;
+      });
+      if (closeOnSuccess) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _finalizeError = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: Text('ปิดการขายไม่สำเร็จ: $e'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isFinalizing = false);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    // Clear customer-side overlay when the cashier closes the dialog.
+    PosMirrorService.current?.notifyDialog(null);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1775,21 +1900,91 @@ class _ReceiptDialog extends StatelessWidget {
     final returnCredit = bill.returnCreditAmount;
     final netTotal = settlementTotal;
 
+    // Company info for the receipt header. CompanyProvider is loaded at app
+    // startup (office_screen); if it hasn't loaded yet, fields fall back to
+    // empty strings so the receipt still renders.
+    final company =
+        Provider.of<CompanyProvider>(context, listen: false).company ??
+        const <String, dynamic>{};
+    final companyNameTh =
+        company['companyNameTh']?.toString().isNotEmpty == true
+        ? company['companyNameTh'].toString()
+        : (company['companyName']?.toString() ?? '');
+    final companyAddressTh =
+        company['companyAddressTh']?.toString().isNotEmpty == true
+        ? company['companyAddressTh'].toString()
+        : (company['companyAddress']?.toString() ?? '');
+    final taxId = company['taxId']?.toString() ?? '';
+    final phone = company['phone']?.toString() ?? '';
+    final website = company['website']?.toString() ?? '';
+    final receiptFooter = company['receiptFooter']?.toString() ?? '';
+
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 680),
+        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 720),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // ── HEADER: company info (per receiptpos.png) ───────────────
+              if (companyNameTh.isNotEmpty) ...[
+                Text(
+                  companyNameTh,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 4),
+              ],
+              if (companyAddressTh.isNotEmpty) ...[
+                Text(
+                  companyAddressTh,
+                  style: const TextStyle(fontSize: 11),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+              ],
+              if (taxId.isNotEmpty) ...[
+                Text(
+                  'เลขผู้เสียภาษี $taxId',
+                  style: const TextStyle(fontSize: 11),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              if (phone.isNotEmpty) ...[
+                Text(
+                  'โทร. $phone',
+                  style: const TextStyle(fontSize: 11),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              if (website.isNotEmpty) ...[
+                Text(
+                  'เว็บไซต์ $website',
+                  style: const TextStyle(fontSize: 11),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              const Divider(height: 20, thickness: 1),
+              // ── BODY heading ────────────────────────────────────────────
               const Text(
-                'ใบเสร็จรับเงิน',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                'ใบกำกับภาษีอย่างย่อ/ใบเสร็จรับเงิน',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
+              if ((bill.billId ?? '').isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  bill.billId ?? '',
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ],
               const SizedBox(height: 12),
               Builder(
                 builder: (context) {
@@ -1808,7 +2003,7 @@ class _ReceiptDialog extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'พนักงาน: $userName',
+                            'พนักงานขาย: $userName',
                             style: const TextStyle(fontSize: 12),
                           ),
                         ],
@@ -2021,21 +2216,65 @@ class _ReceiptDialog extends StatelessWidget {
                   isEmphasis: true,
                 ),
               ],
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              // VAT INCLUDED notice — matches receiptpos.png layout
               const Text(
-                'Thank You\nPowered by Super POS Man',
+                'VAT INCLUDED',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  color: Colors.grey,
+                ),
               ),
+              const SizedBox(height: 12),
+              // Editable receipt footer from company_setting.receipt_footer
+              // (set in Backoffice → Company → "ข้อความท้ายใบเสร็จ").
+              if (receiptFooter.isNotEmpty) ...[
+                const Divider(height: 16, thickness: 1),
+                Text(
+                  receiptFooter,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+                const SizedBox(height: 4),
+              ],
+              if (_finalizeError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _finalizeError!,
+                  style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+                ),
+              ],
               const SizedBox(height: 16),
               OutlinedButton(
-                onPressed: () => Navigator.of(context).pop(false),
+                onPressed: _isFinalizing || _finalizeAttempted
+                    ? null
+                    : () => Navigator.of(context).pop(false),
                 child: const Text('ย้อนกลับ'),
               ),
               const SizedBox(height: 8),
               ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('กลับหน้าหลัก'),
+                onPressed: _isFinalizing
+                    ? null
+                    : () {
+                        if (_finalizeSucceeded) {
+                          Navigator.of(context).pop(true);
+                        } else {
+                          _handleFinalize(closeOnSuccess: false);
+                        }
+                      },
+                child: _isFinalizing
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        _finalizeSucceeded
+                            ? 'กลับสู่หน้าหลัก'
+                            : 'ลองทำรายการอีกครั้ง',
+                      ),
               ),
             ],
           ),
@@ -2402,6 +2641,10 @@ class _PaymentMethodDialogState extends State<_PaymentMethodDialog> {
                         ),
                       ),
                     ),
+                    /*
+                    Credit term payment is hidden for this POS deployment.
+                    Keep the implementation here so it can be restored later
+                    without changing backend payment contracts.
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton(
@@ -2422,9 +2665,11 @@ class _PaymentMethodDialogState extends State<_PaymentMethodDialog> {
                         ),
                       ),
                     ),
+                    */
                   ],
                 ),
-                if (_selectedKind == _PaymentKind.creditTerm) ...[
+                // Credit term fields stay disabled while the "เงินเซ็น" button is hidden.
+                if (false && _selectedKind == _PaymentKind.creditTerm) ...[
                   const SizedBox(height: 16),
                   InkWell(
                     onTap: () => _pickDate(
@@ -2698,11 +2943,18 @@ class _CashConfirmDialogState extends State<_CashConfirmDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('ยกเลิก'),
         ),
         ElevatedButton(
-          onPressed: isEnough ? () => Navigator.of(context).pop(true) : null,
+          onPressed: isEnough
+              ? () => Navigator.of(context).pop(
+                  _CashPaymentResult(
+                    receivedAmount: _paidAmount,
+                    changeAmount: change,
+                  ),
+                )
+              : null,
           child: const Text('ยืนยัน'),
         ),
       ],
@@ -2731,4 +2983,14 @@ class _CashConfirmDialogState extends State<_CashConfirmDialog> {
       ],
     );
   }
+}
+
+class _CashPaymentResult {
+  const _CashPaymentResult({
+    required this.receivedAmount,
+    required this.changeAmount,
+  });
+
+  final double receivedAmount;
+  final double changeAmount;
 }

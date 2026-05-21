@@ -31,6 +31,27 @@
 
   <title>frontend</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Print rules for the Backoffice "พิมพ์บาร์โค้ด" sheet.
+       BarcodeSheetPage renders a Wrap of 50×30mm tiles; the operator hits
+       Ctrl+P (or the page auto-calls window.print() on mount). We strip Flutter
+       app chrome here so labels print edge-to-edge on A4.
+       margin:0 suppresses the browser-injected "1/1" page header/footer that
+       Chromium injects whenever @page has any non-zero margin. -->
+  <style>
+    @media print {
+      @page {
+        size: A4;
+        margin: 0;
+      }
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+      }
+      .no-print { display: none !important; }
+    }
+  </style>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

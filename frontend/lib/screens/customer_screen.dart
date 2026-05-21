@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
@@ -5,7 +6,9 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/providers/bill_provider.dart';
+import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:provider/provider.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 class CustomerScreen extends StatefulWidget {
   const CustomerScreen({super.key});
@@ -15,7 +18,20 @@ class CustomerScreen extends StatefulWidget {
 }
 
 class _CustomerScreenState extends State<CustomerScreen> {
+  // BroadcastChannel — works only within same browsing context (tabs spawned by the same script).
   html.BroadcastChannel? _bc;
+  // 'storage' event listener — fires whenever ANOTHER same-origin window writes localStorage.
+  // This is the channel that actually reaches the popup opened by window.open().
+  html.EventListener? _storageHandler;
+  // Polling fallback — in rare cases the 'storage' event can be missed (browser quirks),
+  // so we also poll the same key every 1.5 s and re-apply if its sequence changed.
+  Timer? _pollTimer;
+  String? _lastSeenSeq;
+  WebSocketChannel? _customerChannel;
+  Timer? _reconnectTimer;
+  String _connectionStatus = 'connecting';
+  String? _connectionError;
+  int _reconnectAttempts = 0;
 
   @override
   void initState() {
@@ -23,6 +39,27 @@ class _CustomerScreenState extends State<CustomerScreen> {
     if (kIsWeb) {
       _bc = html.BroadcastChannel('pos_mirror');
       _bc!.addEventListener('message', _onMirrorMessage);
+
+      _storageHandler = (html.Event event) {
+        final se = event as html.StorageEvent;
+        if (se.key == 'pos_mirror_state' || se.key == 'pos_mirror_seq') {
+          _applyFromLocalStorage();
+        }
+      };
+      html.window.addEventListener('storage', _storageHandler);
+
+      // Pull whatever state exists at startup (cashier may have written it before
+      // this popup was opened).
+      _applyFromLocalStorage();
+      _connectCustomerDisplayWebSocket();
+
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+        final seq = html.window.localStorage['pos_mirror_seq'];
+        if (seq != null && seq != _lastSeenSeq) {
+          _applyFromLocalStorage();
+        }
+      });
+
       // ขอ fullscreen หลังหน้าถูก render เสร็จ (Web only) เพื่อให้แสดงเต็มจอ 2
       // user gesture จากปุ่มในหน้าหลักจะส่งต่อมาให้ popup นี้ใช้สิทธิ์ขอ fullscreen ได้
       WidgetsBinding.instance.addPostFrameCallback((_) => _requestFullscreen());
@@ -41,12 +78,108 @@ class _CustomerScreenState extends State<CustomerScreen> {
     final me = event as html.MessageEvent;
     try {
       final data = jsonDecode(me.data as String) as Map<String, dynamic>;
-      if (mounted) context.read<BillProvider>().updateFromMirrorState(data);
+      _applyMirrorState(data);
+    } catch (_) {}
+  }
+
+  void _connectCustomerDisplayWebSocket() {
+    _reconnectTimer?.cancel();
+    _customerChannel?.sink.close();
+    _customerChannel = null;
+    if (!mounted) return;
+    setState(() {
+      _connectionStatus = 'connecting';
+      _connectionError = null;
+    });
+
+    try {
+      final uri = Uri.parse(buildCustomerDisplayWsUrl());
+      final channel = WebSocketChannel.connect(uri);
+      _customerChannel = channel;
+      channel.ready.then(
+        (_) {
+          if (mounted) {
+            setState(() {
+              _connectionStatus = 'connected';
+              _connectionError = null;
+            });
+          }
+        },
+        onError: (error) {
+          _connectionError = error.toString();
+          _scheduleReconnect();
+        },
+      );
+      channel.stream.listen(
+        (message) {
+          _reconnectAttempts = 0;
+          if (mounted) {
+            setState(() {
+              _connectionStatus = 'connected';
+              _connectionError = null;
+            });
+          }
+          try {
+            final data = jsonDecode(message.toString()) as Map<String, dynamic>;
+            _applyMirrorState(data);
+          } catch (_) {}
+        },
+        onError: (error) {
+          _connectionError = error.toString();
+          _scheduleReconnect();
+        },
+        onDone: _scheduleReconnect,
+      );
+    } catch (e) {
+      _connectionError = e.toString();
+      _scheduleReconnect();
+    }
+  }
+
+  void _scheduleReconnect() {
+    if (!mounted) return;
+    _customerChannel = null;
+    setState(() {
+      _connectionStatus = 'reconnecting';
+    });
+    final seconds = _reconnectAttempts < 5 ? 2 + _reconnectAttempts : 8;
+    _reconnectAttempts++;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(Duration(seconds: seconds), () {
+      if (mounted) {
+        _connectCustomerDisplayWebSocket();
+      }
+    });
+  }
+
+  void _applyMirrorState(Map<String, dynamic> data) {
+    if (!mounted) return;
+    context.read<BillProvider>().updateFromMirrorState(data);
+  }
+
+  /// Read the latest pos_mirror_state from localStorage and apply it to the
+  /// BillProvider. Used by the 'storage' event listener, the periodic poller,
+  /// and at startup.
+  void _applyFromLocalStorage() {
+    final raw = html.window.localStorage['pos_mirror_state'];
+    if (raw == null || raw.isEmpty) return;
+    _lastSeenSeq = html.window.localStorage['pos_mirror_seq'];
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      _applyMirrorState(data);
     } catch (_) {}
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
+    _reconnectTimer?.cancel();
+    _customerChannel?.sink.close();
+    _customerChannel = null;
+    if (_storageHandler != null) {
+      html.window.removeEventListener('storage', _storageHandler);
+      _storageHandler = null;
+    }
     _bc?.close();
     _bc = null;
     super.dispose();
@@ -58,7 +191,10 @@ class _CustomerScreenState extends State<CustomerScreen> {
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
-  List<_CustomerLineItem> _mapItems(List<Map<String, dynamic>> rawItems) {
+  List<_CustomerLineItem> _mapItems(
+    List<Map<String, dynamic>> rawItems, {
+    bool isReturn = false,
+  }) {
     return rawItems.map((item) {
       final qtyRaw = _toDouble(
         item['qty'] ?? item['quantity'] ?? item['amount'],
@@ -74,12 +210,15 @@ class _CustomerScreenState extends State<CustomerScreen> {
       return _CustomerLineItem(
         name:
             item['nameTh']?.toString() ??
+            item['partName']?.toString() ??
+            item['part_name']?.toString() ??
             item['name']?.toString() ??
             item['description']?.toString() ??
             'สินค้า',
         code: partCode ?? '-',
         qty: qty,
         price: resolvedPrice,
+        isReturn: isReturn,
       );
     }).toList();
   }
@@ -87,13 +226,19 @@ class _CustomerScreenState extends State<CustomerScreen> {
   @override
   Widget build(BuildContext context) {
     final bill = context.watch<BillProvider>();
-    final items = _mapItems(bill.items);
+    final items = [
+      ..._mapItems(bill.items),
+      ..._mapItems(bill.returnLines, isReturn: true),
+    ];
     final subtotal = bill.subtotal;
     final discount = bill.discount;
     final amountAfterDiscount = bill.amountAfterDiscount;
     final taxRate = bill.taxRate;
     final tax = bill.tax;
     final total = bill.total;
+    final returnCredit = bill.returnCreditAmount;
+    final netSettlement = bill.netSettlementAmount;
+    final hasReturnItems = bill.hasReturnItems;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -164,7 +309,9 @@ class _CustomerScreenState extends State<CustomerScreen> {
                                       children: [
                                         // รายการสินค้าแต่ละบรรทัด (เหมือน CartSummarySection)
                                         ...items.map((it) {
-                                          final lineTotal = (it.price * it.qty)
+                                          final lineAmount = it.price * it.qty;
+                                          final lineTotal = lineAmount
+                                              .abs()
                                               .toStringAsFixed(2);
                                           return Padding(
                                             padding: const EdgeInsets.symmetric(
@@ -180,10 +327,17 @@ class _CustomerScreenState extends State<CustomerScreen> {
                                                             .start,
                                                     children: [
                                                       Text(
-                                                        it.name,
-                                                        style: const TextStyle(
+                                                        it.isReturn
+                                                            ? 'คืน ${it.name}'
+                                                            : it.name,
+                                                        style: TextStyle(
                                                           fontWeight:
                                                               FontWeight.w600,
+                                                          color: it.isReturn
+                                                              ? Colors
+                                                                    .red
+                                                                    .shade700
+                                                              : null,
                                                         ),
                                                       ),
                                                       const SizedBox(height: 4),
@@ -201,11 +355,16 @@ class _CustomerScreenState extends State<CustomerScreen> {
                                                 Expanded(
                                                   flex: 2,
                                                   child: Text(
-                                                    '${it.qty}',
+                                                    it.isReturn
+                                                        ? '-${it.qty}'
+                                                        : '${it.qty}',
                                                     textAlign: TextAlign.right,
-                                                    style: const TextStyle(
+                                                    style: TextStyle(
                                                       fontWeight:
                                                           FontWeight.w600,
+                                                      color: it.isReturn
+                                                          ? Colors.red.shade700
+                                                          : null,
                                                     ),
                                                   ),
                                                 ),
@@ -213,11 +372,14 @@ class _CustomerScreenState extends State<CustomerScreen> {
                                                 Expanded(
                                                   flex: 3,
                                                   child: Text(
-                                                    '฿$lineTotal',
+                                                    '${it.isReturn ? '- ' : ''}฿$lineTotal',
                                                     textAlign: TextAlign.right,
-                                                    style: const TextStyle(
+                                                    style: TextStyle(
                                                       fontWeight:
                                                           FontWeight.bold,
+                                                      color: it.isReturn
+                                                          ? Colors.red.shade700
+                                                          : null,
                                                     ),
                                                   ),
                                                 ),
@@ -253,6 +415,13 @@ class _CustomerScreenState extends State<CustomerScreen> {
                                           'ภาษี (${(taxRate * 100).toStringAsFixed(0)}%)',
                                           '฿${tax.toStringAsFixed(2)}',
                                         ),
+                                        if (hasReturnItems) ...[
+                                          const SizedBox(height: 8),
+                                          _buildSummaryRow(
+                                            'ยอดคืนสินค้า',
+                                            '- ฿${returnCredit.toStringAsFixed(2)}',
+                                          ),
+                                        ],
                                         const SizedBox(height: 12),
                                         Container(
                                           padding: const EdgeInsets.symmetric(
@@ -289,6 +458,52 @@ class _CustomerScreenState extends State<CustomerScreen> {
                                             ],
                                           ),
                                         ),
+                                        if (hasReturnItems) ...[
+                                          const SizedBox(height: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 12,
+                                              horizontal: 14,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  (netSettlement < 0
+                                                          ? Colors.red
+                                                          : AppColors.primary)
+                                                      .withValues(alpha: 0.08),
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                    AppSizes.radius,
+                                                  ),
+                                            ),
+                                            child: Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                Text(
+                                                  netSettlement < 0
+                                                      ? 'ยอดคืนเงินสุทธิ'
+                                                      : 'ยอดชำระสุทธิหลังคืน',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${netSettlement < 0 ? '-฿' : '฿'}${netSettlement.abs().toStringAsFixed(2)}',
+                                                  style: TextStyle(
+                                                    color: netSettlement < 0
+                                                        ? Colors.red.shade700
+                                                        : AppColors.primary,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                   ),
@@ -312,8 +527,21 @@ class _CustomerScreenState extends State<CustomerScreen> {
           ),
           if (bill.isAwaitingCashPayment)
             _CashPaymentOverlay(amount: bill.awaitingCashAmount),
-          if (bill.isAwaitingQrPayment) _QrScanOverlay(amount: total),
+          if (bill.isAwaitingQrPayment) _QrScanOverlay(amount: netSettlement),
+          // Mirror cashier's _ReceiptDialog so the customer can verify totals.
+          // Cashier sets activeDialog='receipt' just before showDialog and
+          // clears it on dispose; we render an equivalent summary card here.
+          if (bill.activeDialog == 'receipt')
+            _ReceiptConfirmationOverlay(
+              subtotal: bill.subtotal,
+              discount: bill.discount,
+              tax: bill.tax,
+              total: bill.total,
+              returnCredit: bill.returnCreditAmount,
+              netSettlement: bill.netSettlementAmount,
+            ),
           if (bill.showThankYouOverlay) const _ThankYouOverlay(),
+          _ConnectionBadge(status: _connectionStatus, error: _connectionError),
         ],
       ),
     );
@@ -347,99 +575,150 @@ class _CustomerScreenState extends State<CustomerScreen> {
   }
 }
 
+class _ConnectionBadge extends StatelessWidget {
+  const _ConnectionBadge({required this.status, this.error});
+
+  final String status;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final connected = status == 'connected';
+    final color = connected ? Colors.green.shade700 : Colors.orange.shade800;
+    final label = connected ? 'เชื่อมต่อแล้ว' : 'กำลังเชื่อมต่อ';
+
+    return Positioned(
+      right: 12,
+      top: 12,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.45)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                connected ? Icons.wifi : Icons.wifi_off,
+                size: 14,
+                color: color,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (!connected && error != null && error!.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: error!,
+                  child: Icon(Icons.info_outline, size: 14, color: color),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CustomerLineItem {
   _CustomerLineItem({
     required this.name,
     required this.code,
     required this.qty,
     required this.price,
+    this.isReturn = false,
   });
 
   final String name;
   final String code;
   final int qty;
   final double price;
+  final bool isReturn;
 }
 
-class _CashPaymentOverlay extends StatefulWidget {
+class _CashPaymentOverlay extends StatelessWidget {
   const _CashPaymentOverlay({required this.amount});
 
   final double amount;
 
   @override
-  State<_CashPaymentOverlay> createState() => _CashPaymentOverlayState();
-}
-
-class _CashPaymentOverlayState extends State<_CashPaymentOverlay>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<Color?> _colorAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    )..repeat(reverse: true);
-
-    _colorAnimation = ColorTween(
-      begin: Colors.white.withOpacity(0.6),
-      end: Colors.green.withOpacity(0.6),
-    ).animate(_controller);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Positioned.fill(
-      child: AnimatedBuilder(
-        animation: _colorAnimation,
-        builder: (context, _) {
-          return Container(
-            color: _colorAnimation.value,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                margin: const EdgeInsets.symmetric(horizontal: 24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(AppSizes.radius),
-                  boxShadow: AppShadows.soft,
-                ),
+      child: ColoredBox(
+        color: Colors.black54,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Card(
+              elevation: 12,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(32),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Icon(Icons.payments, size: 56, color: AppColors.primary),
+                    const SizedBox(height: 12),
                     const Text(
                       'กรุณาชำระเงิน',
+                      textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 20,
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'กรุณาชำระเงินตามยอด ฿${widget.amount.toStringAsFixed(2)}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 16),
-                    ),
                     const SizedBox(height: 8),
+                    const Text(
+                      'โปรดชำระเงินสดตามยอดด้านล่าง',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: AppColors.muted),
+                    ),
+                    const Divider(height: 32, thickness: 1),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'ยอดชำระ',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '฿${amount.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
                     const Text(
                       'โปรดแจ้งพนักงานเมื่อชำระเงินเรียบร้อย',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 13, color: AppColors.muted),
+                      style: TextStyle(fontSize: 14, color: AppColors.muted),
                     ),
                   ],
                 ),
               ),
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }
@@ -528,7 +807,7 @@ class _QrScanOverlay extends StatelessWidget {
                     errorBuilder: (context, error, stackTrace) {
                       return const Center(
                         child: Text(
-                          'กรุณาเพิ่มรูป QR code ที่ images/shop_qr.png',
+                          'กรุณาติดต่อพนักงานเพื่อขอ QR Code ชำระเงิน',
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 12),
                         ),
@@ -547,6 +826,151 @@ class _QrScanOverlay extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Mirror of the cashier's `_ReceiptDialog` for the customer-facing screen.
+///
+/// Shown when `BillProvider.activeDialog == 'receipt'` (set by the cashier's
+/// dialog open/close lifecycle in cart_summary_section.dart). The card is
+/// read-only — the customer reviews the totals while the cashier prints the
+/// physical receipt on the 80mm thermal printer.
+class _ReceiptConfirmationOverlay extends StatelessWidget {
+  const _ReceiptConfirmationOverlay({
+    required this.subtotal,
+    required this.discount,
+    required this.tax,
+    required this.total,
+    required this.returnCredit,
+    required this.netSettlement,
+  });
+
+  final double subtotal;
+  final double discount;
+  final double tax;
+  final double total;
+  final double returnCredit;
+  final double netSettlement;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: ColoredBox(
+        color: Colors.black54,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Card(
+              elevation: 12,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Icon(
+                      Icons.receipt_long,
+                      size: 56,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'กรุณาตรวจสอบยอดเงิน',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'พนักงานกำลังพิมพ์ใบเสร็จ',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: AppColors.muted),
+                    ),
+                    const Divider(height: 32, thickness: 1),
+                    _line('ก่อนลด', subtotal),
+                    const SizedBox(height: 6),
+                    _line('ส่วนลด', -discount),
+                    const SizedBox(height: 6),
+                    _line('ภาษี', tax),
+                    if (returnCredit > 0) ...[
+                      const SizedBox(height: 6),
+                      _line('ยอดคืนสินค้า', -returnCredit),
+                    ],
+                    const Divider(height: 24, thickness: 1),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'รวมสุทธิ',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '฿${total.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (returnCredit > 0) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            netSettlement < 0
+                                ? 'ยอดคืนเงินสุทธิ'
+                                : 'ยอดชำระสุทธิหลังคืน',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            '${netSettlement < 0 ? '-฿' : '฿'}${netSettlement.abs().toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: netSettlement < 0
+                                  ? Colors.red.shade700
+                                  : AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _line(String label, double value) {
+    final isNeg = value < 0;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 16)),
+        Text(
+          '${isNeg ? '- ' : ''}฿${value.abs().toStringAsFixed(2)}',
+          style: const TextStyle(fontSize: 16),
+        ),
+      ],
     );
   }
 }

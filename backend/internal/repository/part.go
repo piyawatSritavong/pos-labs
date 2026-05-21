@@ -16,6 +16,7 @@ type PartDetail struct {
 	UnitLabelTH     string
 	Name            string
 	NameTH          string
+	ReceiptName     string
 	Details         string
 	Cost            float64
 	Price           float64
@@ -35,23 +36,24 @@ type PartSummary struct {
 	UnitLabelTH     string
 	Name            string
 	NameTH          string
+	ReceiptName     string
 	Price           float64
 	IsActive        bool
 	TotalStock      int
 }
 type PartAddress struct {
-	Code        string
-	PartCode    string
-	StoreID     string
-	StoreLabel  string
+	Code         string
+	PartCode     string
+	StoreID      string
+	StoreLabel   string
 	StoreLabelTH string
-	Shelf       string
-	Qty         int
-	Min         int
-	Max         int
-	Rop         int
-	Remarks     string
-	IsDefault   bool
+	Shelf        string
+	Qty          int
+	Min          int
+	Max          int
+	Rop          int
+	Remarks      string
+	IsDefault    bool
 }
 
 type PartRepository interface {
@@ -67,5 +69,3 @@ var ErrNotFound = errors.New("not found")
 func IsNotFoundError(err error) bool {
 	return errors.Is(err, ErrNotFound)
 }
-
-

@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"backend/internal/config"
 	"backend/internal/httpserver/handlers"
 	"backend/internal/httpserver/middleware"
+	"backend/internal/printer"
 	"backend/internal/repository"
 
 	"github.com/gin-contrib/cors"
@@ -119,8 +121,34 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	companyRepo := repository.NewCompanyRepository(db)
 	promotionRepo := repository.NewPromotionRepository(db)
 	addressRepo := repository.NewAddressRepository(db)
+	drawerKickCommand, drawerKickHex, err := printer.ParseDrawerKickCommand(cfg.CashDrawerKickCommand)
+	if err != nil {
+		log.Printf("Invalid CASH_DRAWER_KICK_COMMAND=%q: %v; using default %s",
+			cfg.CashDrawerKickCommand, err, printer.DefaultDrawerKickCommandHex)
+		drawerKickCommand, drawerKickHex = printer.MustDrawerKickCommand(printer.DefaultDrawerKickCommandHex)
+	}
 	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo, partRepo, memberRepo, companyRepo, promotionRepo, addressRepo)
-	returnNotesHandler := handlers.NewReturnNotesHandler(returnNoteRepo, billRepo, memberRepo, branchRepo, posRepo)
+	// Wire the 80mm receipt printer target — see config.ReceiptPrinter
+	// (defaults to "LPT1"). Handler reports printer_not_configured if empty.
+	billsHandler.PrinterTarget = cfg.ReceiptPrinter
+	// Code page for Thai output (ESC t n). 21 covers most Thailand-market
+	// printers; tune via RECEIPT_CHARSET if the device disagrees.
+	if cfg.ReceiptCharset >= 0 && cfg.ReceiptCharset <= 255 {
+		billsHandler.PrinterCharset = byte(cfg.ReceiptCharset)
+	}
+	billsHandler.PrinterMode = cfg.ReceiptPrintMode
+	billsHandler.PrinterEnabled = cfg.ReceiptPrinterEnabled
+	billsHandler.OpenCashDrawer = cfg.CashDrawerEnabled
+	billsHandler.DrawerKick = drawerKickCommand
+	returnNotesHandler := handlers.NewReturnNotesHandler(returnNoteRepo, billRepo, memberRepo, branchRepo, posRepo, companyRepo)
+	returnNotesHandler.PrinterTarget = cfg.ReceiptPrinter
+	if cfg.ReceiptCharset >= 0 && cfg.ReceiptCharset <= 255 {
+		returnNotesHandler.PrinterCharset = byte(cfg.ReceiptCharset)
+	}
+	returnNotesHandler.PrinterMode = cfg.ReceiptPrintMode
+	returnNotesHandler.PrinterEnabled = cfg.ReceiptPrinterEnabled
+	returnNotesHandler.OpenCashDrawer = cfg.CashDrawerEnabled
+	returnNotesHandler.DrawerKick = drawerKickCommand
 	bills := r.Group("/bills")
 	bills.Use(authMw.RequirePermission("bills", "read"))
 	// GET endpoints allow access without posId/branchId (for admin users)
@@ -145,6 +173,8 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		billsWrite.PUT("/:id/hold", billsHandler.Hold)                            // hold bill
 		billsWrite.PUT("/switch", billsHandler.SwitchBill)                        // switch bills: if currentBillId not provided, create new bill; otherwise hold current and resume target
 		billsWrite.PUT("/:id/payment", billsHandler.Payment)                      // process payment
+		billsWrite.POST("/print-test", billsHandler.PrintTestReceipt)             // print synthetic test receipt without a sale
+		billsWrite.POST("/:id/print", billsHandler.PrintReceipt)                  // ESC-POS receipt → LPT1 (80mm)
 		billsWrite.PUT("/:id/cancel", billsHandler.Cancel)                        // cancel bill
 	}
 	billsDelete := r.Group("/bills")
@@ -166,6 +196,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	returnsWrite.Use(middleware.RequirePOSBranch())
 	{
 		returnsWrite.POST("", returnNotesHandler.Create)
+		returnsWrite.POST("/:id/print", returnNotesHandler.PrintReceipt)
 	}
 
 	// Reports (CSV exports)
@@ -214,6 +245,15 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 
 	// POS (CRUD)
 	posHandler := handlers.NewPOSHandler(posRepo)
+	posHandler.PrinterEnabled = cfg.ReceiptPrinterEnabled
+	posHandler.PrinterTarget = cfg.ReceiptPrinter
+	if cfg.ReceiptCharset >= 0 && cfg.ReceiptCharset <= 255 {
+		posHandler.PrinterCharset = byte(cfg.ReceiptCharset)
+	}
+	posHandler.PrinterMode = cfg.ReceiptPrintMode
+	posHandler.CashDrawerEnabled = cfg.CashDrawerEnabled
+	posHandler.DrawerKick = drawerKickCommand
+	posHandler.DrawerKickCommandHex = drawerKickHex
 	pos := r.Group("/pos")
 	pos.Use(authMw.RequirePermission("pos", "read"))
 	{
@@ -225,6 +265,14 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	{
 		posWrite.POST("", posHandler.Create)
 		posWrite.PUT("/:id/toggle-activate", posHandler.ToggleActivate)
+	}
+	posPrinter := r.Group("/pos/printer")
+	posPrinter.Use(authMw.RequirePermission("bills", "write"))
+	posPrinter.Use(middleware.RequirePOSBranch())
+	{
+		posPrinter.POST("/open-drawer", posHandler.OpenDrawer)
+		posPrinter.POST("/test-print", posHandler.TestPrint)
+		posPrinter.POST("/test-receipt", posHandler.TestReceipt)
 	}
 	posSecret := r.Group("/pos")
 	posSecret.Use(authMw.RequirePermission("pos", "secret")) // Special permission for retrieving and refreshing secret
@@ -394,8 +442,15 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	reports.GET("/stock-variance", authMw.RequirePermission("reports_variance", "read"), stockVarianceHandler.GetVariance)
 
 	// POS Mirror WebSocket (no auth middleware — handler authenticates via ?token= query param)
-	posMirrorHandler := handlers.NewPosMirrorHandler(sessionRepo, userRepo)
+	posMirrorHandler := handlers.NewPosMirrorHandler(sessionRepo, userRepo, posRepo)
 	r.GET("/ws/pos-mirror", posMirrorHandler.HandleWS)
+	r.GET("/ws/customer-display", posMirrorHandler.HandleCustomerDisplayWS)
+	posMirrorWrite := r.Group("/pos-mirror")
+	posMirrorWrite.Use(authMw.RequirePermission("bills", "write"))
+	posMirrorWrite.Use(middleware.RequirePOSBranch())
+	{
+		posMirrorWrite.POST("/test-state", posMirrorHandler.TestState)
+	}
 
 	// ----------------------------------------------------------------------
 	// Static Flutter Web + SPA fallback.
@@ -419,7 +474,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		"/reports/", "/company/", "/branches/", "/pos/", "/promotions/",
 		"/addresses/", "/users/", "/user-branches/", "/transfers/",
 		"/stock-counts/", "/daily-closes/", "/cash-reconciliations/",
-		"/ws/",
+		"/ws/", "/pos-mirror/",
 	}
 	exactAPIPaths := map[string]struct{}{
 		"/health": {}, "/test": {},
@@ -427,6 +482,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		"/reports": {}, "/company": {}, "/branches": {}, "/pos": {}, "/promotions": {},
 		"/addresses": {}, "/users": {}, "/user-branches": {}, "/transfers": {},
 		"/stock-counts": {}, "/daily-closes": {}, "/cash-reconciliations": {},
+		"/pos-mirror": {},
 	}
 
 	// Reuse staticDir declared earlier for the /assets/qr-image handler.

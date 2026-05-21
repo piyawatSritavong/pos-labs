@@ -1,21 +1,36 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"backend/internal/config"
+	"backend/internal/printer"
 	"backend/internal/repository"
 
 	"github.com/gin-gonic/gin"
 )
 
 type POSHandler struct {
-	pos repository.POSRepository
+	pos                  repository.POSRepository
+	PrinterEnabled       bool
+	PrinterTarget        string
+	PrinterCharset       byte
+	PrinterMode          string
+	CashDrawerEnabled    bool
+	DrawerKick           []byte
+	DrawerKickCommandHex string
 }
 
 func NewPOSHandler(pos repository.POSRepository) *POSHandler {
-	return &POSHandler{pos: pos}
+	return &POSHandler{
+		pos:            pos,
+		PrinterEnabled: true,
+		PrinterMode:    printer.ModeASCII,
+	}
 }
 
 func (h *POSHandler) List(c *gin.Context) {
@@ -197,6 +212,245 @@ func (h *POSHandler) RefreshSecret(c *gin.Context) {
 	})
 }
 
+func (h *POSHandler) OpenDrawer(c *gin.Context) {
+	if !h.PrinterEnabled {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_disabled",
+			"message": "set RECEIPT_PRINTER_ENABLED=true in .env",
+		})
+		return
+	}
+	if !h.CashDrawerEnabled {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "cash_drawer_disabled",
+			"message": "set CASH_DRAWER_ENABLED=true in .env",
+		})
+		return
+	}
+	if strings.TrimSpace(h.PrinterTarget) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_not_configured",
+			"message": "set RECEIPT_PRINTER_PORT=LPT1 in .env",
+		})
+		return
+	}
+
+	var req struct {
+		Command string `json:"command"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+			return
+		}
+	}
+
+	rawCommand := strings.TrimSpace(req.Command)
+	if rawCommand == "" {
+		rawCommand = strings.TrimSpace(c.Query("command"))
+	}
+	if rawCommand == "" {
+		rawCommand = h.DrawerKickCommandHex
+	}
+	if rawCommand == "" {
+		rawCommand = printer.DefaultDrawerKickCommandHex
+	}
+
+	command, normalized, err := printer.ParseDrawerKickCommand(rawCommand)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":          "invalid_drawer_command",
+			"message":        err.Error(),
+			"commonCommands": printer.CommonDrawerKickCommandHexes,
+		})
+		return
+	}
+
+	result, err := printer.KickCashDrawer(h.PrinterTarget, command)
+	if err != nil {
+		log.Printf("OpenCashDrawer: target=%q command=%s bytes=%d failed: %v",
+			h.PrinterTarget, normalized, result.Bytes, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "failed_to_open_drawer",
+			"message": err.Error(),
+			"target":  h.PrinterTarget,
+			"command": normalized,
+			"bytes":   result.Bytes,
+			"method":  result.Method,
+			"binPath": result.BinPath,
+			"output":  result.Output,
+		})
+		return
+	}
+
+	log.Printf("OpenCashDrawer: target=%q command=%s bytes=%d method=%s binPath=%q writeSucceeded=true visualConfirmationRequired=true",
+		result.Target, normalized, result.Bytes, result.Method, result.BinPath)
+	c.JSON(http.StatusOK, gin.H{
+		"ok":                     true,
+		"written":                true,
+		"drawerOpenedConfirmed":  false,
+		"target":                 result.Target,
+		"command":                normalized,
+		"bytes":                  result.Bytes,
+		"method":                 result.Method,
+		"binPath":                result.BinPath,
+		"output":                 result.Output,
+		"commonCommands":         printer.CommonDrawerKickCommandHexes,
+		"visualConfirmationNote": "Backend wrote the drawer kick command to the printer target, but this does not prove the cash drawer opened. Please visually confirm the drawer.",
+	})
+}
+
+func (h *POSHandler) TestPrint(c *gin.Context) {
+	if !h.PrinterEnabled {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_disabled",
+			"message": "set RECEIPT_PRINTER_ENABLED=true in .env",
+		})
+		return
+	}
+	if strings.TrimSpace(h.PrinterTarget) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_not_configured",
+			"message": "set RECEIPT_PRINTER_PORT=LPT1 in .env",
+		})
+		return
+	}
+
+	data := printer.New().
+		Init().
+		Center().
+		Bold().
+		Line("POS TEST PRINT").
+		NoBold().
+		Line(time.Now().Format("2006-01-02 15:04:05")).
+		Separator(0).
+		Left().
+		Line("Printer: " + h.PrinterTarget).
+		Line("Mode: ASCII safe").
+		LF(2).
+		Cut().
+		Bytes()
+
+	if err := printer.PrintRaw(h.PrinterTarget, data); err != nil {
+		log.Printf("PrinterTestPrint: target=%q bytes=%d failed: %v",
+			h.PrinterTarget, len(data), err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "failed_to_print",
+			"message": err.Error(),
+			"target":  h.PrinterTarget,
+			"bytes":   len(data),
+		})
+		return
+	}
+
+	log.Printf("PrinterTestPrint: target=%q bytes=%d ok=true", h.PrinterTarget, len(data))
+	c.JSON(http.StatusOK, gin.H{
+		"ok":      true,
+		"printed": true,
+		"target":  h.PrinterTarget,
+		"bytes":   len(data),
+		"message": "Small ASCII-safe test print was sent to the printer.",
+	})
+}
+
+func (h *POSHandler) TestReceipt(c *gin.Context) {
+	if !h.PrinterEnabled {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_disabled",
+			"message": "set RECEIPT_PRINTER_ENABLED=true in .env",
+		})
+		return
+	}
+	if strings.TrimSpace(h.PrinterTarget) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_not_configured",
+			"message": "set RECEIPT_PRINTER_PORT=LPT1 in .env",
+		})
+		return
+	}
+
+	params := printer.ReceiptParams{
+		CompanyNameTh:   "POS TEST RECEIPT",
+		CompanyAddrTh:   "Windows 10 POS / Generic Text / LPT1",
+		BillID:          "TEST-" + time.Now().Format("20060102-150405"),
+		CashierName:     "Printer Test",
+		PaymentMethod:   "Cash",
+		Items:           []printer.ReceiptItem{{Code: "TEST001", Name: "Test item", Qty: 1, UnitPrice: 20, LineTotal: 20}},
+		Subtotal:        20,
+		Discount:        0,
+		AmountAfterDisc: 20,
+		TaxRatePercent:  0,
+		Tax:             0,
+		Total:           20,
+		ReceivedAmount:  20,
+		ChangeAmount:    0,
+		HasReceived:     true,
+		HasChange:       true,
+		CodeTable:       h.PrinterCharset,
+		PrintMode:       h.PrinterMode,
+		OpenDrawer:      false,
+		DrawerKick:      h.DrawerKick,
+	}
+	data := printer.BuildReceipt(params)
+	if err := printer.PrintRaw(h.PrinterTarget, data); err != nil {
+		log.Printf("PrinterTestReceipt: target=%q bytes=%d drawer=%t drawerCommand=%s failed: %v",
+			h.PrinterTarget, len(data), h.CashDrawerEnabled, printer.HexCommand(h.DrawerKick), err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "failed_to_print",
+			"message": err.Error(),
+			"target":  h.PrinterTarget,
+			"bytes":   len(data),
+		})
+		return
+	}
+
+	drawerSent := false
+	drawerMethod := ""
+	drawerBinPath := ""
+	drawerOutput := ""
+	if h.CashDrawerEnabled {
+		result, err := printer.KickCashDrawer(h.PrinterTarget, h.DrawerKick)
+		drawerMethod = result.Method
+		drawerBinPath = result.BinPath
+		drawerOutput = result.Output
+		if err != nil {
+			log.Printf("PrinterTestReceipt: drawer kick target=%q command=%s method=%s binPath=%q failed after receipt print: %v",
+				h.PrinterTarget, printer.HexCommand(h.DrawerKick), result.Method, result.BinPath, err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":             "failed_to_open_drawer",
+				"message":           err.Error(),
+				"printed":           true,
+				"drawerCommand":     printer.HexCommand(h.DrawerKick),
+				"drawerCommandSent": false,
+				"drawerMethod":      result.Method,
+				"drawerBinPath":     result.BinPath,
+				"drawerOutput":      result.Output,
+				"target":            h.PrinterTarget,
+				"bytes":             len(data),
+			})
+			return
+		}
+		drawerSent = true
+	}
+
+	log.Printf("PrinterTestReceipt: target=%q bytes=%d mode=%s drawer=%t drawerCommand=%s drawerMethod=%s ok=true",
+		h.PrinterTarget, len(data), printer.NormalizePrintMode(h.PrinterMode), drawerSent, printer.HexCommand(h.DrawerKick), drawerMethod)
+	c.JSON(http.StatusOK, gin.H{
+		"ok":                    true,
+		"printed":               true,
+		"target":                h.PrinterTarget,
+		"bytes":                 len(data),
+		"mode":                  printer.NormalizePrintMode(h.PrinterMode),
+		"drawerCommand":         printer.HexCommand(h.DrawerKick),
+		"drawerCommandSent":     drawerSent,
+		"drawerMethod":          drawerMethod,
+		"drawerBinPath":         drawerBinPath,
+		"drawerOutput":          drawerOutput,
+		"drawerOpenedConfirmed": false,
+		"message":               "Sample receipt was sent. If drawerCommandSent is true, visually confirm whether the drawer opened.",
+	})
+}
+
 func (h *POSHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -215,4 +469,3 @@ func (h *POSHandler) Delete(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "pos_deleted"})
 }
-

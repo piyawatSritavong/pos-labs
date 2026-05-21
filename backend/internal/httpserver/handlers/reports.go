@@ -211,7 +211,7 @@ func (h *ReportsHandler) PartsReport(c *gin.Context) {
 	filename := fmt.Sprintf("parts_%s.csv", time.Now().Format("2006-01-02_150405"))
 	headers := []string{
 		"code", "bar_code", "category_id", "unit_id", "name", "name_th",
-		"details", "cost", "price", "image", "is_active",
+		"receipt_name", "details", "cost", "price", "image", "is_active",
 	}
 
 	var rows [][]string
@@ -223,6 +223,7 @@ func (h *ReportsHandler) PartsReport(c *gin.Context) {
 			p.UnitID,
 			p.Name,
 			p.NameTH,
+			p.ReceiptName,
 			p.Details,
 			toString(p.Cost),
 			toString(p.Price),

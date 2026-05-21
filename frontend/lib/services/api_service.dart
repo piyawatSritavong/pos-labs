@@ -11,9 +11,7 @@ class ApiService {
   // บน desktop/mobile ใช้ค่า absolute เดิม
   static const String baseUrl = kIsWeb
       ? ''
-      : (_isProduction
-            ? 'http://54.169.213.40:8080'
-            : 'http://localhost:8080');
+      : (_isProduction ? 'http://54.169.213.40:8080' : 'http://localhost:8080');
 
   static const String _branchId = '00000';
   static const String _posId = 'POS001';
@@ -22,6 +20,9 @@ class ApiService {
     'POS_SECRET',
     defaultValue: 'default_if_needed',
   );
+  static const String defaultBranchId = _branchId;
+  static const String defaultPosId = _posId;
+  static const String posSecret = _posSecret;
 
   // ======================================================================
   // 0) Helpers
@@ -644,6 +645,127 @@ class ApiService {
 
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/bills/:id/payment');
+  }
+
+  // POST /bills/:id/print — สั่งพิมพ์ใบเสร็จไป backend (ESC-POS → LPT1 / printer share)
+  //
+  // เรียกอัตโนมัติเมื่อ _ReceiptDialog เปิด หลังบันทึกชำระเงินสำเร็จ
+  // ถ้า backend ตอบ error จะ throw เพื่อให้ dialog ค้างไว้และกด retry ได้
+  static Future<Map<String, dynamic>> printReceipt({
+    required String token,
+    required String billId,
+    String? idempotencyKey,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/$billId/print');
+    final body = <String, dynamic>{};
+    if (idempotencyKey != null && idempotencyKey.isNotEmpty) {
+      body['idempotencyKey'] = idempotencyKey;
+    }
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'พิมพ์ใบเสร็จไม่สำเร็จ: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return {'ok': true};
+  }
+
+  static Future<Map<String, dynamic>> printTestReceipt({
+    required String token,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/print-test');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'พิมพ์ใบเสร็จทดสอบไม่สำเร็จ: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return {'ok': true};
+  }
+
+  // POST /returns/:id/print — พิมพ์ใบคืนสินค้า/คืนเงินหลังสร้าง return note สำเร็จ
+  static Future<Map<String, dynamic>> printReturnReceipt({
+    required String token,
+    required String returnNoteId,
+    String? idempotencyKey,
+  }) async {
+    final uri = Uri.parse('$baseUrl/returns/$returnNoteId/print');
+    final body = <String, dynamic>{};
+    if (idempotencyKey != null && idempotencyKey.isNotEmpty) {
+      body['idempotencyKey'] = idempotencyKey;
+    }
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'พิมพ์ใบคืนสินค้าไม่สำเร็จ: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return {'ok': true};
+  }
+
+  static Future<Map<String, dynamic>> sendCustomerDisplayTestState({
+    required String token,
+  }) async {
+    final uri = Uri.parse('$baseUrl/pos-mirror/test-state');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'ส่งข้อมูลทดสอบจอลูกค้าไม่สำเร็จ: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return {'ok': true};
   }
 
   // GET /returns/reference/:billId — ดึงบิลอ้างอิงสำหรับคืนสินค้า พร้อม qty ที่ยังคืนได้

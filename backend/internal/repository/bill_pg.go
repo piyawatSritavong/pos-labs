@@ -165,7 +165,9 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 		SELECT
 			bid."bill_id", bid."part_code", bid."address_code",
 			bid."unit_id", bid."uni_label", bid."unit_label_th",
-			bid."name", bid."cost", bid."price", bid."qty",
+			bid."name",
+			COALESCE(NULLIF(bid."receipt_name", ''), NULLIF(pm."receipt_name", ''), 'ITEM ' || bid."part_code") AS "receipt_name",
+			bid."cost", bid."price", bid."qty",
 			COALESCE((
 				SELECT SUM(am."qty")
 				FROM "address_master" am
@@ -174,6 +176,7 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 			), 0) AS "total_stock"
 		FROM "bill_item_detail" bid
 		JOIN "bill_master" b ON b."id" = bid."bill_id"
+		LEFT JOIN "part_master" pm ON pm."code" = bid."part_code"
 		WHERE bid."bill_id" = $1
 		ORDER BY bid."part_code", bid."address_code"
 	`, id)
@@ -193,6 +196,7 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 			&d.UnitLabel,
 			&d.UnitLabelTH,
 			&d.Name,
+			&d.ReceiptName,
 			&d.Cost,
 			&d.Price,
 			&d.Qty,
@@ -504,7 +508,7 @@ func (r *billRepositoryPG) GetItemByPartCode(ctx context.Context, billID, partCo
 		SELECT
 			"bill_id", "part_code", "address_code",
 			"unit_id", "uni_label", "unit_label_th",
-			"name", "cost", "price", "qty"
+			"name", COALESCE(NULLIF("receipt_name", ''), 'ITEM ' || "part_code"), "cost", "price", "qty"
 		FROM "bill_item_detail"
 		WHERE "bill_id" = $1 AND "part_code" = $2 AND "address_code" = $3
 	`, billID, partCode, addressCode)
@@ -518,6 +522,7 @@ func (r *billRepositoryPG) GetItemByPartCode(ctx context.Context, billID, partCo
 		&d.UnitLabel,
 		&d.UnitLabelTH,
 		&d.Name,
+		&d.ReceiptName,
 		&d.Cost,
 		&d.Price,
 		&d.Qty,
@@ -536,14 +541,16 @@ func (r *billRepositoryPG) AddItem(ctx context.Context, detail *BillDetail) erro
 		INSERT INTO "bill_item_detail"(
 			"bill_id", "part_code", "address_code",
 			"unit_id", "uni_label", "unit_label_th",
-			"name", "cost", "price", "qty"
+			"name", "receipt_name", "cost", "price", "qty"
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT ("bill_id", "part_code", "address_code")
-		DO UPDATE SET "qty" = "bill_item_detail"."qty" + EXCLUDED."qty"
+		DO UPDATE SET
+			"qty" = "bill_item_detail"."qty" + EXCLUDED."qty",
+			"receipt_name" = COALESCE(NULLIF("bill_item_detail"."receipt_name", ''), EXCLUDED."receipt_name")
 	`, detail.BillID, detail.PartCode, detail.AddressCode,
 		detail.UnitID, detail.UnitLabel, detail.UnitLabelTH,
-		detail.Name, detail.Cost, detail.Price, detail.Qty)
+		detail.Name, detail.ReceiptName, detail.Cost, detail.Price, detail.Qty)
 	return err
 }
 
@@ -613,7 +620,7 @@ func (r *billRepositoryPG) GetAllItems(ctx context.Context, billID string) ([]Bi
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT "bill_id", "part_code", "address_code",
 		       "unit_id", "uni_label", "unit_label_th",
-		       "name", "cost", "price", "qty"
+		       "name", COALESCE(NULLIF("receipt_name", ''), 'ITEM ' || "part_code"), "cost", "price", "qty"
 		FROM "bill_item_detail"
 		WHERE "bill_id" = $1
 		ORDER BY "part_code", "address_code"
@@ -629,7 +636,7 @@ func (r *billRepositoryPG) GetAllItems(ctx context.Context, billID string) ([]Bi
 		if err := rows.Scan(
 			&d.BillID, &d.PartCode, &d.AddressCode,
 			&d.UnitID, &d.UnitLabel, &d.UnitLabelTH,
-			&d.Name, &d.Cost, &d.Price, &d.Qty,
+			&d.Name, &d.ReceiptName, &d.Cost, &d.Price, &d.Qty,
 		); err != nil {
 			return nil, err
 		}

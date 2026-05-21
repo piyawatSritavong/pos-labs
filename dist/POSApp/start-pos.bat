@@ -2,7 +2,7 @@
 REM ============================================================================
 REM  POS Auto-Start Script (Windows 10)
 REM  - Ensures PostgreSQL service is running (with admin-friendly fallback)
-REM  - Starts pos-backend.exe minimized, redirecting stdout+stderr to logs\backend.log
+REM  - Starts pos-backend.exe hidden/background, redirecting stdout+stderr to logs\backend.log
 REM  - Opens Edge kiosk on main monitor (login URL pre-fills "pos1" username)
 REM  - If a 2nd monitor is detected, opens another Edge kiosk on it for customer
 REM    display (route /#/customer) — separate user-data-dir so Edge allows two kiosks
@@ -73,10 +73,16 @@ if not exist "%APP_DIR%\logs" mkdir "%APP_DIR%\logs"
 echo. >> "%APP_DIR%\logs\backend.log"
 echo === Backend start: %DATE% %TIME% === >> "%APP_DIR%\logs\backend.log"
 
-echo [3/5] Starting backend "%BACKEND_EXE%" (minimized, logs ^> logs\backend.log) ...
-REM start /min runs detached; cmd /c keeps the redirection alive for the lifetime
-REM of the process. Outer quoted block around the command preserves inner quotes.
-start "POS Backend" /min cmd /c ""%APP_DIR%\%BACKEND_EXE%" 1>>"%APP_DIR%\logs\backend.log" 2>&1"
+echo [3/5] Starting backend "%BACKEND_EXE%" (hidden/background, logs ^> logs\backend.log) ...
+REM Run through WScript so no backend terminal window is shown on the POS screen.
+REM To stop it later, use stop-pos.bat or: taskkill /F /IM %BACKEND_EXE% /T
+if not exist "%APP_DIR%\start-backend-hidden.vbs" (
+    echo       [ERROR] Missing %APP_DIR%\start-backend-hidden.vbs
+    echo              Re-copy the full POSApp deploy folder.
+    pause
+    exit /b 1
+)
+wscript.exe "%APP_DIR%\start-backend-hidden.vbs" "%APP_DIR%" "%BACKEND_EXE%" "%APP_DIR%\logs\backend.log"
 
 echo       Waiting 5 seconds for backend to come up ...
 timeout /t 5 /nobreak >nul

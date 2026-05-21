@@ -48,12 +48,13 @@ func (h *PartsHandler) List(c *gin.Context) {
 	out := make([]gin.H, 0, len(items))
 	for _, p := range items {
 		out = append(out, gin.H{
-			"code":     p.Code,
-			"barCode":  p.BarCode,
-			"name":     p.Name,
-			"nameTh":   p.NameTH,
-			"price":    p.Price,
-			"isActive": p.IsActive,
+			"code":        p.Code,
+			"barCode":     p.BarCode,
+			"name":        p.Name,
+			"nameTh":      p.NameTH,
+			"receiptName": p.ReceiptName,
+			"price":       p.Price,
+			"isActive":    p.IsActive,
 			"category": gin.H{
 				"id":      p.CategoryID,
 				"label":   p.CategoryLabel,
@@ -82,28 +83,38 @@ func (h *PartsHandler) Get(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	// Get part detail without branch filtering (general endpoint)
+	// Get part detail without branch filtering (general endpoint).
+	// If lookup by code misses, fall back to bar_code so a scan of either
+	// the part code or the printed barcode resolves to the same part.
 	part, addresses, err := h.parts.GetPartDetail(ctx, code, nil)
 	if err != nil {
-		if repository.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})
+		if !repository.IsNotFoundError(err) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_part"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_part"})
-		return
+		part, addresses, err = h.parts.GetPartByBarcode(ctx, code, "")
+		if err != nil {
+			if repository.IsNotFoundError(err) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_part"})
+			return
+		}
 	}
 
 	// Build response shape as requested
 	resp := gin.H{
-		"code":     part.Code,
-		"barCode":  part.BarCode,
-		"name":     part.Name,
-		"nameTh":   part.NameTH,
-		"details":  part.Details,
-		"cost":     part.Cost,
-		"price":    part.Price,
-		"image":    part.Image,
-		"isActive": part.IsActive,
+		"code":        part.Code,
+		"barCode":     part.BarCode,
+		"name":        part.Name,
+		"nameTh":      part.NameTH,
+		"receiptName": part.ReceiptName,
+		"details":     part.Details,
+		"cost":        part.Cost,
+		"price":       part.Price,
+		"image":       part.Image,
+		"isActive":    part.IsActive,
 		"category": gin.H{
 			"id":      part.CategoryID,
 			"label":   part.CategoryLabel,
@@ -257,15 +268,16 @@ func (h *PartsHandler) Search(c *gin.Context) {
 		}
 
 		out = append(out, gin.H{
-			"code":     part.Code,
-			"barCode":  part.BarCode,
-			"name":     part.Name,
-			"nameTh":   part.NameTH,
-			"details":  part.Details,
-			"cost":     part.Cost,
-			"price":    part.Price,
-			"image":    part.Image,
-			"isActive": part.IsActive,
+			"code":        part.Code,
+			"barCode":     part.BarCode,
+			"name":        part.Name,
+			"nameTh":      part.NameTH,
+			"receiptName": part.ReceiptName,
+			"details":     part.Details,
+			"cost":        part.Cost,
+			"price":       part.Price,
+			"image":       part.Image,
+			"isActive":    part.IsActive,
 			"category": gin.H{
 				"id":      part.CategoryID,
 				"label":   part.CategoryLabel,

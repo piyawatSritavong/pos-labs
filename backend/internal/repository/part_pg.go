@@ -44,6 +44,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 				COALESCE(u.label_th, ''),
 				p.name,
 				COALESCE(p.name_th, ''),
+				COALESCE(p.receipt_name, ''),
 				p.price,
 				COALESCE(p.is_active, false),
 				COALESCE((
@@ -76,6 +77,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 				COALESCE(u.label_th, ''),
 				p.name,
 				COALESCE(p.name_th, ''),
+				COALESCE(p.receipt_name, ''),
 				p.price,
 				COALESCE(p.is_active, false),
 				COALESCE(SUM(a.qty), 0) AS total_stock
@@ -86,7 +88,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
-				p.name, p.name_th, p.price, p.is_active
+				p.name, p.name_th, p.receipt_name, p.price, p.is_active
 			ORDER BY p.code
 			LIMIT $1 OFFSET $2
 		`, limit, offset)
@@ -110,6 +112,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			&s.UnitLabelTH,
 			&s.Name,
 			&s.NameTH,
+			&s.ReceiptName,
 			&s.Price,
 			&s.IsActive,
 			&s.TotalStock,
@@ -143,6 +146,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 				COALESCE(u.label_th, ''),
 				p.name,
 				COALESCE(p.name_th, ''),
+				COALESCE(p.receipt_name, ''),
 				COALESCE(p.details, ''),
 				p.cost,
 				p.price,
@@ -159,7 +163,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
-				p.name, p.name_th, p.details, p.cost, p.price, p.image, p.is_active
+				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.image, p.is_active
 		`
 		args = []interface{}{code, *branchID}
 	} else {
@@ -175,6 +179,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 				COALESCE(u.label_th, ''),
 				p.name,
 				COALESCE(p.name_th, ''),
+				COALESCE(p.receipt_name, ''),
 				COALESCE(p.details, ''),
 				p.cost,
 				p.price,
@@ -189,7 +194,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
-				p.name, p.name_th, p.details, p.cost, p.price, p.image, p.is_active
+				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.image, p.is_active
 		`
 		args = []interface{}{code}
 	}
@@ -208,6 +213,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 		&d.UnitLabelTH,
 		&d.Name,
 		&d.NameTH,
+		&d.ReceiptName,
 		&d.Details,
 		&d.Cost,
 		&d.Price,
@@ -357,12 +363,12 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 	if query != "" {
 		searchPattern := "%" + query + "%"
 		// Search in part fields
-		partSearch := fmt.Sprintf(`(p.code ILIKE $%d OR p.bar_code ILIKE $%d OR p.name ILIKE $%d OR p.name_th ILIKE $%d)`, 
-			argIndex, argIndex, argIndex, argIndex)
-		
+		partSearch := fmt.Sprintf(`(p.code ILIKE $%d OR p.bar_code ILIKE $%d OR p.name ILIKE $%d OR p.name_th ILIKE $%d OR p.receipt_name ILIKE $%d)`,
+			argIndex, argIndex, argIndex, argIndex, argIndex)
+
 		// Search in category fields
 		categorySearch := fmt.Sprintf(`(c.label ILIKE $%d OR c.label_th ILIKE $%d)`, argIndex, argIndex)
-		
+
 		// Search in store address fields (code, shelf, remarks, store label, store label_th)
 		// Use EXISTS to check if any address/store matches
 		addressSearch := fmt.Sprintf(`EXISTS(
@@ -373,7 +379,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 				AND (a_search.code ILIKE $%d OR a_search.shelf ILIKE $%d OR a_search.remarks ILIKE $%d 
 					OR s_search.label ILIKE $%d OR s_search.label_th ILIKE $%d)
 		)`, argIndex, argIndex, argIndex, argIndex, argIndex)
-		
+
 		whereClauses = append(whereClauses, fmt.Sprintf(`(%s OR %s OR %s)`, partSearch, categorySearch, addressSearch))
 		args = append(args, searchPattern)
 		argIndex++
@@ -440,6 +446,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 				COALESCE(u.label_th, ''),
 				p.name,
 				COALESCE(p.name_th, ''),
+				COALESCE(p.receipt_name, ''),
 				COALESCE(p.details, ''),
 				p.cost,
 				p.price,
@@ -456,7 +463,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
-				p.name, p.name_th, p.details, p.cost, p.price, p.image, p.is_active
+				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.image, p.is_active
 			ORDER BY p.code
 			LIMIT $%d OFFSET $%d
 		`, branchArgIndex, branchArgIndex, whereSQL, limitArgIndex, offsetArgIndex)
@@ -478,6 +485,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 				COALESCE(u.label_th, ''),
 				p.name,
 				COALESCE(p.name_th, ''),
+				COALESCE(p.receipt_name, ''),
 				COALESCE(p.details, ''),
 				p.cost,
 				p.price,
@@ -492,7 +500,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
-				p.name, p.name_th, p.details, p.cost, p.price, p.image, p.is_active
+				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.image, p.is_active
 			ORDER BY p.code
 			LIMIT $%d OFFSET $%d
 		`, whereSQL, limitArgIndex, offsetArgIndex)
@@ -518,6 +526,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			&d.UnitLabelTH,
 			&d.Name,
 			&d.NameTH,
+			&d.ReceiptName,
 			&d.Details,
 			&d.Cost,
 			&d.Price,
@@ -535,5 +544,3 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 
 	return parts, nil
 }
-
-

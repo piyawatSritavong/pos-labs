@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../theme/app_theme.dart';
 import 'home_screen.dart';
 import 'customer_screen.dart';
 import 'backoffice_screen.dart';
@@ -95,6 +96,25 @@ class _LoginScreenState extends State<LoginScreen> {
               key: _formKey,
               child: Column(
                 children: [
+                  // ── ไจ๊เฮง brand logo ────────────────────────────────────
+                  Container(
+                    width: 140,
+                    height: 140,
+                    margin: const EdgeInsets.only(bottom: 24),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.asset(
+                      'assets/images/logoJaiHeng.jpg',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.storefront,
+                        size: 64,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
                   // Username
                   TextFormField(
                     controller: _usernameController,

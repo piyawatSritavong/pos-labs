@@ -48,9 +48,11 @@ class _AddressesManagementSectionState
     });
 
     try {
+      // limit=2000 loads the full 1,566-row catalog in one request.
+      // Backend MaxLimit raised to 2000 in config.go.
       final items = await ApiService.getAddresses(
         token: token,
-        limit: 200,
+        limit: 2000,
         offset: 0,
       );
 

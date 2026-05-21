@@ -88,39 +88,39 @@ ON CONFLICT ("id") DO NOTHING;
 -- Example products (20 items)
 INSERT INTO "part_master"(
     "code", "bar_code", "category_id", "unit_id",
-    "name", "name_th", "details", "cost", "price", "image", "is_active"
+    "name", "name_th", "receipt_name", "details", "cost", "price", "image", "is_active"
 )
 VALUES 
-    ('P0001', '8851000001', 'CAT001', 'pcs', 'Mock Product 01', 'สินค้าทดสอบ 01', 'Mock data item 01', 10.00, 15.00, '', true),
-    ('P0002', '8851000002', 'CAT002', 'pcs', 'Mock Product 02', 'สินค้าทดสอบ 02', 'Mock data item 02', 12.00, 18.00, '', true),
-    ('P0003', '8851000003', 'CAT003', 'pcs', 'Mock Product 03', 'สินค้าทดสอบ 03', 'Mock data item 03', 14.00, 21.00, '', true),
-    ('P0004', '8851000004', 'CAT001', 'pcs', 'Mock Product 04', 'สินค้าทดสอบ 04', 'Mock data item 04', 16.00, 24.00, '', true),
-    ('P0005', '8851000005', 'CAT002', 'pcs', 'Mock Product 05', 'สินค้าทดสอบ 05', 'Mock data item 05', 18.00, 27.00, '', true),
-    ('P0006', '8851000006', 'CAT003', 'pcs', 'Mock Product 06', 'สินค้าทดสอบ 06', 'Mock data item 06', 20.00, 30.00, '', true),
-    ('P0007', '8851000007', 'CAT001', 'pcs', 'Mock Product 07', 'สินค้าทดสอบ 07', 'Mock data item 07', 22.00, 33.00, '', true),
-    ('P0008', '8851000008', 'CAT002', 'pcs', 'Mock Product 08', 'สินค้าทดสอบ 08', 'Mock data item 08', 24.00, 36.00, '', true),
-    ('P0009', '8851000009', 'CAT003', 'pcs', 'Mock Product 09', 'สินค้าทดสอบ 09', 'Mock data item 09', 26.00, 39.00, '', true),
-    ('P0010', '8851000010', 'CAT001', 'pcs', 'Mock Product 10', 'สินค้าทดสอบ 10', 'Mock data item 10', 28.00, 42.00, '', true),
-    ('P0011', '8851000011', 'CAT002', 'pcs', 'Mock Product 11', 'สินค้าทดสอบ 11', 'Mock data item 11', 30.00, 45.00, '', true),
-    ('P0012', '8851000012', 'CAT003', 'pcs', 'Mock Product 12', 'สินค้าทดสอบ 12', 'Mock data item 12', 32.00, 48.00, '', true),
-    ('P0013', '8851000013', 'CAT001', 'pcs', 'Mock Product 13', 'สินค้าทดสอบ 13', 'Mock data item 13', 34.00, 51.00, '', true),
-    ('P0014', '8851000014', 'CAT002', 'pcs', 'Mock Product 14', 'สินค้าทดสอบ 14', 'Mock data item 14', 36.00, 54.00, '', true),
-    ('P0015', '8851000015', 'CAT003', 'pcs', 'Mock Product 15', 'สินค้าทดสอบ 15', 'Mock data item 15', 38.00, 57.00, '', true),
-    ('P0016', '8851000016', 'CAT001', 'pcs', 'Mock Product 16', 'สินค้าทดสอบ 16', 'Mock data item 16', 40.00, 60.00, '', true),
-    ('P0017', '8851000017', 'CAT002', 'pcs', 'Mock Product 17', 'สินค้าทดสอบ 17', 'Mock data item 17', 42.00, 63.00, '', true),
-    ('P0018', '8851000018', 'CAT003', 'pcs', 'Mock Product 18', 'สินค้าทดสอบ 18', 'Mock data item 18', 44.00, 66.00, '', true),
-    ('P0019', '8851000019', 'CAT001', 'pcs', 'Mock Product 19', 'สินค้าทดสอบ 19', 'Mock data item 19', 46.00, 69.00, '', true),
-    ('P0020', '8851000020', 'CAT002', 'pcs', 'Mock Product 20', 'สินค้าทดสอบ 20', 'Mock data item 20', 48.00, 72.00, '', true)
+    ('P0001', '8851000001', 'CAT001', 'pcs', 'Mock Product 01', 'สินค้าทดสอบ 01', 'MOCK PRODUCT 01', 'Mock data item 01', 10.00, 15.00, '', true),
+    ('P0002', '8851000002', 'CAT002', 'pcs', 'Mock Product 02', 'สินค้าทดสอบ 02', 'MOCK PRODUCT 02', 'Mock data item 02', 12.00, 18.00, '', true),
+    ('P0003', '8851000003', 'CAT003', 'pcs', 'Mock Product 03', 'สินค้าทดสอบ 03', 'MOCK PRODUCT 03', 'Mock data item 03', 14.00, 21.00, '', true),
+    ('P0004', '8851000004', 'CAT001', 'pcs', 'Mock Product 04', 'สินค้าทดสอบ 04', 'MOCK PRODUCT 04', 'Mock data item 04', 16.00, 24.00, '', true),
+    ('P0005', '8851000005', 'CAT002', 'pcs', 'Mock Product 05', 'สินค้าทดสอบ 05', 'MOCK PRODUCT 05', 'Mock data item 05', 18.00, 27.00, '', true),
+    ('P0006', '8851000006', 'CAT003', 'pcs', 'Mock Product 06', 'สินค้าทดสอบ 06', 'MOCK PRODUCT 06', 'Mock data item 06', 20.00, 30.00, '', true),
+    ('P0007', '8851000007', 'CAT001', 'pcs', 'Mock Product 07', 'สินค้าทดสอบ 07', 'MOCK PRODUCT 07', 'Mock data item 07', 22.00, 33.00, '', true),
+    ('P0008', '8851000008', 'CAT002', 'pcs', 'Mock Product 08', 'สินค้าทดสอบ 08', 'MOCK PRODUCT 08', 'Mock data item 08', 24.00, 36.00, '', true),
+    ('P0009', '8851000009', 'CAT003', 'pcs', 'Mock Product 09', 'สินค้าทดสอบ 09', 'MOCK PRODUCT 09', 'Mock data item 09', 26.00, 39.00, '', true),
+    ('P0010', '8851000010', 'CAT001', 'pcs', 'Mock Product 10', 'สินค้าทดสอบ 10', 'MOCK PRODUCT 10', 'Mock data item 10', 28.00, 42.00, '', true),
+    ('P0011', '8851000011', 'CAT002', 'pcs', 'Mock Product 11', 'สินค้าทดสอบ 11', 'MOCK PRODUCT 11', 'Mock data item 11', 30.00, 45.00, '', true),
+    ('P0012', '8851000012', 'CAT003', 'pcs', 'Mock Product 12', 'สินค้าทดสอบ 12', 'MOCK PRODUCT 12', 'Mock data item 12', 32.00, 48.00, '', true),
+    ('P0013', '8851000013', 'CAT001', 'pcs', 'Mock Product 13', 'สินค้าทดสอบ 13', 'MOCK PRODUCT 13', 'Mock data item 13', 34.00, 51.00, '', true),
+    ('P0014', '8851000014', 'CAT002', 'pcs', 'Mock Product 14', 'สินค้าทดสอบ 14', 'MOCK PRODUCT 14', 'Mock data item 14', 36.00, 54.00, '', true),
+    ('P0015', '8851000015', 'CAT003', 'pcs', 'Mock Product 15', 'สินค้าทดสอบ 15', 'MOCK PRODUCT 15', 'Mock data item 15', 38.00, 57.00, '', true),
+    ('P0016', '8851000016', 'CAT001', 'pcs', 'Mock Product 16', 'สินค้าทดสอบ 16', 'MOCK PRODUCT 16', 'Mock data item 16', 40.00, 60.00, '', true),
+    ('P0017', '8851000017', 'CAT002', 'pcs', 'Mock Product 17', 'สินค้าทดสอบ 17', 'MOCK PRODUCT 17', 'Mock data item 17', 42.00, 63.00, '', true),
+    ('P0018', '8851000018', 'CAT003', 'pcs', 'Mock Product 18', 'สินค้าทดสอบ 18', 'MOCK PRODUCT 18', 'Mock data item 18', 44.00, 66.00, '', true),
+    ('P0019', '8851000019', 'CAT001', 'pcs', 'Mock Product 19', 'สินค้าทดสอบ 19', 'MOCK PRODUCT 19', 'Mock data item 19', 46.00, 69.00, '', true),
+    ('P0020', '8851000020', 'CAT002', 'pcs', 'Mock Product 20', 'สินค้าทดสอบ 20', 'MOCK PRODUCT 20', 'Mock data item 20', 48.00, 72.00, '', true)
 ON CONFLICT ("code") DO NOTHING;
 
 -- Add more products as needed following the same pattern:
 -- INSERT INTO "part_master"(
 --     "code", "bar_code", "category_id", "unit_id",
---     "name", "name_th", "details", "cost", "price", "image", "is_active"
+--     "name", "name_th", "receipt_name", "details", "cost", "price", "image", "is_active"
 -- )
 -- VALUES 
 --     ('P0003', '8850000003', 'CAT003', 'pcs', 
---      'Product 3', 'สินค้า 3', 'Product description', 30.00, 45.00, '', true)
+--      'Product 3', 'สินค้า 3', 'PRODUCT 3', 'Product description', 30.00, 45.00, '', true)
 -- ON CONFLICT ("code") DO NOTHING;
 
 -- ============================================================================
