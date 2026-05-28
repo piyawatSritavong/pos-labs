@@ -882,15 +882,23 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     final hasSettlementItems = bill.items.isNotEmpty || bill.hasReturnItems;
     return LayoutBuilder(
       builder: (context, constraints) {
+        final isMobileView = MediaQuery.of(context).size.shortestSide < 600;
         final isCompact =
             constraints.maxWidth < 400 || constraints.maxHeight < 520;
         final isTightHeight = constraints.maxHeight < 480;
-        final panelPadding = isTightHeight ? 14.0 : (isCompact ? 16.0 : 20.0);
-        final sectionGap = isTightHeight ? 6.0 : (isCompact ? 8.0 : 12.0);
-        final summaryRowGap = isTightHeight ? 6.0 : 8.0;
+        final panelPadding = isMobileView
+            ? 6.0
+            : (isTightHeight ? 14.0 : (isCompact ? 16.0 : 20.0));
+        final sectionGap = isMobileView
+            ? 6.0
+            : (isTightHeight ? 6.0 : (isCompact ? 8.0 : 12.0));
+        final summaryRowGap = isMobileView ? 6.0 : (isTightHeight ? 6.0 : 8.0);
         final useSplitLayout = constraints.maxWidth >= 760;
         final quickDiscountButtonStyle = OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: isMobileView ? 6 : 10,
+            vertical: isMobileView ? 6 : 8,
+          ),
           minimumSize: const Size(0, 34),
           textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
           visualDensity: VisualDensity.compact,
@@ -900,7 +908,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: context.colorBorder),
           ),
-          padding: EdgeInsets.all(isTightHeight ? 10 : 12),
+          padding: EdgeInsets.all(isMobileView ? 6 : (isTightHeight ? 10 : 12)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -971,7 +979,9 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                           final priceFocusNode =
                               _safeItemPriceFocusNodes[itemKey];
                           return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            padding: EdgeInsets.symmetric(
+                              vertical: isMobileView ? 6 : 8,
+                            ),
                             child: Row(
                               children: [
                                 Expanded(
@@ -1159,8 +1169,8 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                                                 border: OutlineInputBorder(),
                                                 contentPadding:
                                                     EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 10,
+                                                      horizontal: 6,
+                                                      vertical: 6,
                                                     ),
                                               ),
                                               onSubmitted: (_) =>
@@ -1191,7 +1201,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: context.colorBorder),
           ),
-          padding: EdgeInsets.all(isTightHeight ? 10 : 12),
+          padding: EdgeInsets.all(isMobileView ? 6 : (isTightHeight ? 10 : 12)),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1237,7 +1247,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: isMobileView ? 6 : 8),
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
@@ -1274,7 +1284,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                               _recalculateDiscount(context, subtotal),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: isMobileView ? 6 : 8),
                       DropdownButton<bool>(
                         value: _isPercentMode,
                         onChanged: (value) {
@@ -1296,8 +1306,8 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                 children: [
                   Container(
                     padding: EdgeInsets.symmetric(
-                      vertical: isCompact ? 10 : 12,
-                      horizontal: 14,
+                      vertical: isMobileView ? 6 : (isCompact ? 10 : 12),
+                      horizontal: isMobileView ? 6 : 14,
                     ),
                     decoration: BoxDecoration(
                       color: context.colorPrimary.withValues(alpha: 0.05),
@@ -1344,7 +1354,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                           child: const Text('พักบิล'),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      SizedBox(width: isMobileView ? 6 : 12),
                       Expanded(
                         child: OutlinedButton(
                           style: OutlinedButton.styleFrom(
@@ -1382,13 +1392,15 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                     'ตะกร้าสินค้า',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: isMobileView ? 6 : 12),
                   if (bill.assignedMember != null) ...[
                     // Member chip — show who is linked
                     Expanded(
                       child: Container(
                         height: 40,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobileView ? 6 : 10,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.green.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(8),
@@ -1419,7 +1431,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: isMobileView ? 6 : 8),
                     IconButton(
                       tooltip: 'ยกเลิกสมาชิก',
                       onPressed: bill.isLoading
@@ -1470,8 +1482,8 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                 SizedBox(height: sectionGap),
                 Container(
                   padding: EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: isCompact ? 6 : 8,
+                    horizontal: isMobileView ? 6 : 10,
+                    vertical: isMobileView ? 6 : (isCompact ? 6 : 8),
                   ),
                   decoration: BoxDecoration(
                     color: context.colorDanger.withValues(alpha: 0.08),

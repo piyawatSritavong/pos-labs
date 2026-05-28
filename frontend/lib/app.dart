@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 class _MobileFontReducer extends TextScaler {
   const _MobileFontReducer(this.base);
 
-  static const double _reduction = 10;
+  static const double _reduction = 8;
   static const double _minFontSize = 8;
 
   final TextScaler base;
@@ -55,13 +55,75 @@ class MyApp extends StatelessWidget {
             return child ?? const SizedBox.shrink();
           }
 
+          final theme = Theme.of(context);
           return MediaQuery(
             data: mediaQuery.copyWith(
               textScaler: _MobileFontReducer(mediaQuery.textScaler),
             ),
-            child: child ?? const SizedBox.shrink(),
+            child: Theme(
+              data: _compactMobileTheme(theme),
+              child: child ?? const SizedBox.shrink(),
+            ),
           );
         },
+      ),
+    );
+  }
+
+  ThemeData _compactMobileTheme(ThemeData theme) {
+    const compactPadding = EdgeInsets.all(6);
+    const compactHorizontalPadding = EdgeInsets.symmetric(horizontal: 6);
+    const compactButtonSize = Size(0, 34);
+
+    return theme.copyWith(
+      visualDensity: VisualDensity.compact,
+      cardTheme: theme.cardTheme.copyWith(margin: compactPadding),
+      dialogTheme: theme.dialogTheme.copyWith(
+        insetPadding: compactPadding,
+        actionsPadding: compactPadding,
+      ),
+      inputDecorationTheme: theme.inputDecorationTheme.copyWith(
+        isDense: true,
+        contentPadding: compactPadding,
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: (theme.elevatedButtonTheme.style ?? const ButtonStyle())
+            .copyWith(
+              minimumSize: const WidgetStatePropertyAll(compactButtonSize),
+              padding: const WidgetStatePropertyAll(compactHorizontalPadding),
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: (theme.outlinedButtonTheme.style ?? const ButtonStyle())
+            .copyWith(
+              minimumSize: const WidgetStatePropertyAll(compactButtonSize),
+              padding: const WidgetStatePropertyAll(compactHorizontalPadding),
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: (theme.textButtonTheme.style ?? const ButtonStyle()).copyWith(
+          minimumSize: const WidgetStatePropertyAll(compactButtonSize),
+          padding: const WidgetStatePropertyAll(compactHorizontalPadding),
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: (theme.iconButtonTheme.style ?? const ButtonStyle()).copyWith(
+          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+      listTileTheme: theme.listTileTheme.copyWith(
+        contentPadding: compactHorizontalPadding,
+        minVerticalPadding: 0,
+        dense: true,
+        visualDensity: VisualDensity.compact,
       ),
     );
   }

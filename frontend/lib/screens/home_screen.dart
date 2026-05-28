@@ -330,7 +330,7 @@ class _HomeScreenState extends State<HomeScreen> {
     BillProvider bill,
   ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.all(6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -355,9 +355,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           const Expanded(child: CartSummarySection()),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _BarcodeQuickAction(
             controller: _barcodeController,
             focusNode: _barcodeFocusNode,
@@ -900,8 +900,8 @@ class HeaderBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: isMobile ? 12 : 24,
-        vertical: isMobile ? 10 : 16,
+        horizontal: isMobile ? 6 : 24,
+        vertical: isMobile ? 6 : 16,
       ),
       decoration: BoxDecoration(
         color: context.colorSurface,
@@ -912,7 +912,7 @@ class HeaderBar extends StatelessWidget {
       child: Row(
         children: [
           Expanded(child: _buildSearchBar(context)),
-          SizedBox(width: isMobile ? 8 : 24),
+          SizedBox(width: isMobile ? 6 : 24),
           if (isMobile)
             _buildMobileActions(context)
           else
@@ -934,7 +934,10 @@ class HeaderBar extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
             onTap: onSearchTap,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 6 : 20,
+                vertical: isMobile ? 6 : 12,
+              ),
               decoration: BoxDecoration(
                 color: context.colorBg,
                 borderRadius: BorderRadius.circular(999),
@@ -943,7 +946,7 @@ class HeaderBar extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(Icons.search, color: context.colorMuted),
-                  const SizedBox(width: 12),
+                  SizedBox(width: isMobile ? 6 : 12),
                   Expanded(
                     child: Text(
                       displayText,
@@ -1021,7 +1024,7 @@ class HeaderBar extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         CircleAvatar(
           radius: 20,
           backgroundColor: cs.primary.withValues(alpha: 0.12),
@@ -1406,7 +1409,7 @@ class _BarcodeQuickAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: context.colorSurface,
         borderRadius: BorderRadius.circular(AppSizes.radius),
@@ -1429,14 +1432,14 @@ class _BarcodeQuickAction extends StatelessWidget {
               onSubmitted: onSubmit,
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 6),
           SizedBox(
-            height: 54,
+            height: 42,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: context.colorAccent,
                 foregroundColor: context.colorText,
-                padding: const EdgeInsets.symmetric(horizontal: 28),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(999),
                 ),
