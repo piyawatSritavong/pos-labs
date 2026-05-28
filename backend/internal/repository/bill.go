@@ -60,6 +60,7 @@ type BillRepository interface {
 	UpdateTimestamp(ctx context.Context, billID, updatedBy string) error
 	GetItemByPartCode(ctx context.Context, billID, partCode, addressCode string) (*BillDetail, error)
 	AddItem(ctx context.Context, detail *BillDetail) error
+	AddItemReturningQty(ctx context.Context, detail *BillDetail) (previousQty int, newQty int, err error)
 	UpdateItemQty(ctx context.Context, billID, partCode, addressCode string, qty int) error
 	UpdateItemPrice(ctx context.Context, billID, partCode, addressCode string, price float64) error
 	RemoveItem(ctx context.Context, billID, partCode, addressCode string) error
@@ -69,6 +70,7 @@ type BillRepository interface {
 	GetAllItems(ctx context.Context, billID string) ([]BillDetail, error)
 	GetAllDiscounts(ctx context.Context, billID string) ([]BillDiscountDetail, error)
 	UpdateAmounts(ctx context.Context, billID string, purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount float64) error
+	RecalculateAmountsAndTimestamp(ctx context.Context, billID, updatedBy string) error
 	UpdatePayment(ctx context.Context, billID, paymentMethod, paymentRef, updatedBy string) error
 	Delete(ctx context.Context, billID string) error
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"backend/internal/config"
 	"backend/internal/repository"
@@ -86,13 +87,17 @@ func (h *PartsHandler) Get(c *gin.Context) {
 	// Get part detail without branch filtering (general endpoint).
 	// If lookup by code misses, fall back to bar_code so a scan of either
 	// the part code or the printed barcode resolves to the same part.
+	start := time.Now()
 	part, addresses, err := h.parts.GetPartDetail(ctx, code, nil)
+	logSlowTiming("parts.get.detail_by_code", start, "code", code, "found", err == nil)
 	if err != nil {
 		if !repository.IsNotFoundError(err) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_part"})
 			return
 		}
+		start = time.Now()
 		part, addresses, err = h.parts.GetPartByBarcode(ctx, code, "")
+		logSlowTiming("parts.get.detail_by_barcode", start, "barcode", code, "found", err == nil)
 		if err != nil {
 			if repository.IsNotFoundError(err) {
 				c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})

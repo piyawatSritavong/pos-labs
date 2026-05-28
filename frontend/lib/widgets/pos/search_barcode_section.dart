@@ -41,14 +41,33 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
-  Product _mapProduct(Map<String, dynamic> json) {
+  Product _mapProduct(Map<String, dynamic> json, {String? posId}) {
     final rawAddresses = (json['addresses'] as List?) ?? [];
 
     final barcode = json['barCode']?.toString() ?? json['barcode']?.toString();
 
     Map<String, dynamic>? defaultAddress;
+    final vehicleStoreId = posId == null || posId.trim().isEmpty
+        ? null
+        : 'vehicle_${posId.trim()}';
+
+    if (vehicleStoreId != null) {
+      for (final addr in rawAddresses) {
+        if (addr is! Map<String, dynamic>) continue;
+        final store = addr['store'];
+        final storeId = store is Map
+            ? store['id']?.toString()
+            : addr['storeId']?.toString();
+        final qty = _toDouble(addr['qty']);
+        if (storeId == vehicleStoreId && qty > 0) {
+          defaultAddress = addr;
+          break;
+        }
+      }
+    }
 
     for (final addr in rawAddresses) {
+      if (defaultAddress != null) break;
       if (addr is Map<String, dynamic> &&
           (addr['isDefault'] == true || addr['is_default'] == true)) {
         defaultAddress = addr;
@@ -90,7 +109,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
   }
 
   Future<void> searchByBarcode(String barcode) async {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final auth = context.read<AuthProvider>();
     final token = auth.token;
     if (token == null) return;
     final trimmed = barcode.trim().toUpperCase();
@@ -105,14 +124,29 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
 
     setState(() => _isLoading = true);
     try {
+      if (_lastAutoAddedBarcode != trimmed) {
+        try {
+          final billSnapshot = await _addScannedBarcode(
+            token: token,
+            barcode: trimmed,
+          );
+          final product = _mapProductFromBill(billSnapshot, trimmed);
+          _products = product == null ? [] : [product];
+          _lastAutoAddedBarcode = trimmed;
+          return;
+        } catch (e) {
+          debugPrint('direct add by barcode failed: $e');
+        }
+      }
+
       final raw = await ApiPartsService.getPartByCode(
         token: token,
         code: trimmed,
       );
-      final product = _mapProduct(raw);
+      final product = _mapProduct(raw, posId: auth.posId);
       _products = [product];
       if (_lastAutoAddedBarcode != trimmed) {
-        final added = await _autoAddProduct(product);
+        final added = await _autoAddProduct(product, scannedBarcode: trimmed);
         if (added) {
           _lastAutoAddedBarcode = trimmed;
         }
@@ -126,7 +160,58 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
     }
   }
 
-  Future<bool> _autoAddProduct(Product product) async {
+  Future<Map<String, dynamic>> _addScannedBarcode({
+    required String token,
+    required String barcode,
+  }) {
+    return context.read<BillProvider>().addItemByBarcode(
+      token: token,
+      barcode: barcode,
+      qty: 1,
+    );
+  }
+
+  Product? _mapProductFromBill(Map<String, dynamic> bill, String barcode) {
+    final rawItems =
+        (bill['items'] as List?) ?? (bill['details'] as List?) ?? [];
+    if (rawItems.isEmpty) return null;
+
+    Map<String, dynamic>? item;
+    for (final raw in rawItems.reversed) {
+      if (raw is Map<String, dynamic>) {
+        item = raw;
+        break;
+      }
+    }
+    if (item == null) return null;
+
+    final partCode =
+        item['partCode']?.toString() ?? item['part_code']?.toString() ?? '';
+    final addressCode =
+        item['addressCode']?.toString() ??
+        item['address_code']?.toString() ??
+        '';
+    final name =
+        item['partName']?.toString() ??
+        item['name']?.toString() ??
+        item['receiptName']?.toString() ??
+        partCode;
+
+    return Product(
+      id: partCode,
+      name: name,
+      price: _toDouble(item['price']),
+      code: partCode,
+      receiptName: item['receiptName']?.toString(),
+      defaultAddressCode: addressCode,
+      barcode: barcode,
+    );
+  }
+
+  Future<bool> _autoAddProduct(
+    Product product, {
+    required String scannedBarcode,
+  }) async {
     if (_isAutoAdding) return false;
     _isAutoAdding = true;
     final messenger = ScaffoldMessenger.of(context);
@@ -142,6 +227,33 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
     }
 
     try {
+      Object? barcodeError;
+      final barcodeForAdd = scannedBarcode.trim().isNotEmpty
+          ? scannedBarcode.trim()
+          : product.barcode?.trim();
+      if (barcodeForAdd != null && barcodeForAdd.isNotEmpty) {
+        try {
+          await bill.addItemByBarcode(
+            token: token,
+            barcode: barcodeForAdd,
+            qty: 1,
+          );
+          return true;
+        } catch (e) {
+          final catalogBarcode = product.barcode?.trim();
+          if (catalogBarcode != null &&
+              catalogBarcode.isNotEmpty &&
+              catalogBarcode != barcodeForAdd) {
+            await bill.addItemByBarcode(
+              token: token,
+              barcode: catalogBarcode,
+              qty: 1,
+            );
+            return true;
+          }
+          barcodeError = e;
+        }
+      }
       if (product.defaultAddressCode != null &&
           product.defaultAddressCode!.isNotEmpty) {
         await bill.addItem(
@@ -151,14 +263,10 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
           qty: 1,
         );
         return true;
-      } else if (product.barcode != null && product.barcode!.isNotEmpty) {
-        await bill.addItemByBarcode(
-          token: token,
-          barcode: product.barcode!,
-          qty: 1,
-        );
-        return true;
       } else {
+        if (barcodeError != null) {
+          throw barcodeError;
+        }
         messenger.showSnackBar(
           const SnackBar(
             content: Text('ไม่พบ default store หรือ barcode สำหรับสินค้านี้'),
@@ -248,14 +356,18 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
                                     shrinkWrap: true,
                                     padding: EdgeInsets.zero,
                                     itemCount: pageItems.length,
-                                    separatorBuilder: (_, __) =>
+                                    separatorBuilder: (context, index) =>
                                         const SizedBox(height: 12),
                                     itemBuilder: (context, index) {
                                       final product = pageItems[index];
                                       return _ProductCard(
                                         product: product,
                                         onAdd: () async {
-                                          await _autoAddProduct(product);
+                                          await _autoAddProduct(
+                                            product,
+                                            scannedBarcode:
+                                                product.barcode ?? product.code,
+                                          );
                                         },
                                       );
                                     },

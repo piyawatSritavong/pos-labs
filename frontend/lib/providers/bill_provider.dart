@@ -584,6 +584,17 @@ class BillProvider extends ChangeNotifier {
 
   Future<void> _ensureBill({required String token}) async {
     if (_billId != null) {
+      final currentStatus = (_currentBill?['status']?.toString() ?? '')
+          .toLowerCase()
+          .trim();
+      if (currentStatus == 'new') {
+        return;
+      }
+      if (currentStatus.isNotEmpty) {
+        await startNewBill(token: token);
+        return;
+      }
+
       try {
         final latest = await ApiService.getBill(token: token, billId: _billId!);
         final status = (latest['status']?.toString() ?? '').toLowerCase();
@@ -594,19 +605,6 @@ class BillProvider extends ChangeNotifier {
       } catch (_) {
         // fall through and try to recover an active bill from the backend
       }
-    }
-
-    final activeBills = await ApiService.getBills(
-      token: token,
-      limit: 1,
-      offset: 0,
-      statuses: const ['new'],
-      includeDetails: true,
-      scope: 'pos',
-    );
-    if (activeBills.isNotEmpty) {
-      _applyBill(activeBills.first);
-      return;
     }
 
     await startNewBill(token: token);
@@ -644,7 +642,7 @@ class BillProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> addItemByBarcode({
+  Future<Map<String, dynamic>> addItemByBarcode({
     required String token,
     required String barcode,
     int qty = 1,
@@ -667,13 +665,14 @@ class BillProvider extends ChangeNotifier {
       if (_items.isEmpty) {
         await _reloadBill(token: token);
       }
+      return _currentBill ?? bill;
     } finally {
       isLoading = false;
       notifyListeners();
     }
   }
 
-  Future<void> addItem({
+  Future<Map<String, dynamic>> addItem({
     required String token,
     required String partCode,
     required String addressCode,
@@ -698,6 +697,7 @@ class BillProvider extends ChangeNotifier {
       if (_items.isEmpty) {
         await _reloadBill(token: token);
       }
+      return _currentBill ?? bill;
     } finally {
       isLoading = false;
       notifyListeners();

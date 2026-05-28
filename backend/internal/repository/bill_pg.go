@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"backend/internal/config"
@@ -154,14 +155,38 @@ func (r *billRepositoryPG) GetByID(ctx context.Context, id string) (*Bill, error
 }
 
 func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, []BillDetail, []BillDiscountDetail, error) {
-	// Get master record first
-	bill, err := r.GetByID(ctx, id)
-	if err != nil {
-		return nil, nil, nil, err
+	var (
+		bill      *Bill
+		details   []BillDetail
+		discounts []BillDiscountDetail
+		firstErr  error
+		errMu     sync.Mutex
+		wg        sync.WaitGroup
+	)
+
+	setErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errMu.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		errMu.Unlock()
 	}
 
-	// Load bill details (with total stock per part across all addresses in the bill's branch)
-	detailRows, err := r.db.QueryContext(ctx, `
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		var err error
+		bill, err = r.GetByID(ctx, id)
+		setErr(err)
+	}()
+
+	go func() {
+		defer wg.Done()
+		// Load bill details (with total stock per part across all addresses in the bill's branch)
+		detailRows, err := r.db.QueryContext(ctx, `
 		SELECT
 			bid."bill_id", bid."part_code", bid."address_code",
 			bid."unit_id", bid."uni_label", bid."unit_label_th",
@@ -180,64 +205,71 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 		WHERE bid."bill_id" = $1
 		ORDER BY bid."part_code", bid."address_code"
 	`, id)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	defer detailRows.Close()
-
-	var details []BillDetail
-	for detailRows.Next() {
-		var d BillDetail
-		if err := detailRows.Scan(
-			&d.BillID,
-			&d.PartCode,
-			&d.AddressCode,
-			&d.UnitID,
-			&d.UnitLabel,
-			&d.UnitLabelTH,
-			&d.Name,
-			&d.ReceiptName,
-			&d.Cost,
-			&d.Price,
-			&d.Qty,
-			&d.TotalStock,
-		); err != nil {
-			return nil, nil, nil, err
+		if err != nil {
+			setErr(err)
+			return
 		}
-		details = append(details, d)
-	}
-	if err := detailRows.Err(); err != nil {
-		return nil, nil, nil, err
-	}
+		defer detailRows.Close()
 
-	// Load bill discount details
-	discountRows, err := r.db.QueryContext(ctx, `
+		for detailRows.Next() {
+			var d BillDetail
+			if err := detailRows.Scan(
+				&d.BillID,
+				&d.PartCode,
+				&d.AddressCode,
+				&d.UnitID,
+				&d.UnitLabel,
+				&d.UnitLabelTH,
+				&d.Name,
+				&d.ReceiptName,
+				&d.Cost,
+				&d.Price,
+				&d.Qty,
+				&d.TotalStock,
+			); err != nil {
+				setErr(err)
+				return
+			}
+			details = append(details, d)
+		}
+		setErr(detailRows.Err())
+	}()
+
+	go func() {
+		defer wg.Done()
+		// Load bill discount details
+		discountRows, err := r.db.QueryContext(ctx, `
 		SELECT
 			"bill_id", "promotion_code", "unit", "amount"
 		FROM "bill_discount_detail"
 		WHERE "bill_id" = $1
 		ORDER BY "promotion_code"
 	`, id)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	defer discountRows.Close()
-
-	var discounts []BillDiscountDetail
-	for discountRows.Next() {
-		var d BillDiscountDetail
-		if err := discountRows.Scan(
-			&d.BillID,
-			&d.PromotionCode,
-			&d.Unit,
-			&d.Amount,
-		); err != nil {
-			return nil, nil, nil, err
+		if err != nil {
+			setErr(err)
+			return
 		}
-		discounts = append(discounts, d)
-	}
-	if err := discountRows.Err(); err != nil {
-		return nil, nil, nil, err
+		defer discountRows.Close()
+
+		for discountRows.Next() {
+			var d BillDiscountDetail
+			if err := discountRows.Scan(
+				&d.BillID,
+				&d.PromotionCode,
+				&d.Unit,
+				&d.Amount,
+			); err != nil {
+				setErr(err)
+				return
+			}
+			discounts = append(discounts, d)
+		}
+		setErr(discountRows.Err())
+	}()
+
+	wg.Wait()
+	if firstErr != nil {
+		return nil, nil, nil, firstErr
 	}
 
 	return bill, details, discounts, nil
@@ -554,6 +586,34 @@ func (r *billRepositoryPG) AddItem(ctx context.Context, detail *BillDetail) erro
 	return err
 }
 
+func (r *billRepositoryPG) AddItemReturningQty(ctx context.Context, detail *BillDetail) (int, int, error) {
+	var previousQty, newQty int
+	err := r.db.QueryRowContext(ctx, `
+		WITH existing AS (
+			SELECT "qty"
+			FROM "bill_item_detail"
+			WHERE "bill_id" = $1 AND "part_code" = $2 AND "address_code" = $3
+		),
+		upserted AS (
+			INSERT INTO "bill_item_detail"(
+				"bill_id", "part_code", "address_code",
+				"unit_id", "uni_label", "unit_label_th",
+				"name", "receipt_name", "cost", "price", "qty"
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			ON CONFLICT ("bill_id", "part_code", "address_code")
+			DO UPDATE SET
+				"qty" = "bill_item_detail"."qty" + EXCLUDED."qty",
+				"receipt_name" = COALESCE(NULLIF("bill_item_detail"."receipt_name", ''), EXCLUDED."receipt_name")
+			RETURNING "qty"
+		)
+		SELECT COALESCE((SELECT "qty" FROM existing), 0), (SELECT "qty" FROM upserted)
+	`, detail.BillID, detail.PartCode, detail.AddressCode,
+		detail.UnitID, detail.UnitLabel, detail.UnitLabelTH,
+		detail.Name, detail.ReceiptName, detail.Cost, detail.Price, detail.Qty).Scan(&previousQty, &newQty)
+	return previousQty, newQty, err
+}
+
 func (r *billRepositoryPG) UpdateItemQty(ctx context.Context, billID, partCode, addressCode string, qty int) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE "bill_item_detail"
@@ -689,6 +749,71 @@ func (r *billRepositoryPG) UpdateAmounts(ctx context.Context, billID string, pur
 		WHERE "id" = $6
 	`, purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount, billID)
 	return err
+}
+
+func (r *billRepositoryPG) RecalculateAmountsAndTimestamp(ctx context.Context, billID, updatedBy string) error {
+	result, err := r.db.ExecContext(ctx, `
+		WITH item_totals AS (
+			SELECT COALESCE(SUM("price" * "qty"), 0)::double precision AS purchase_amount
+			FROM "bill_item_detail"
+			WHERE "bill_id" = $1
+		),
+		discount_totals AS (
+			SELECT COALESCE(SUM(
+				CASE
+					WHEN "unit" = 'THB' THEN "amount"
+					WHEN "unit" = 'percentage' THEN (SELECT purchase_amount FROM item_totals) * ("amount" / 100.0)
+					ELSE 0
+				END
+			), 0)::double precision AS total_discount
+			FROM "bill_discount_detail"
+			WHERE "bill_id" = $1
+		),
+		company AS (
+			SELECT "tax_rate", "tax_type"
+			FROM "company_setting"
+			LIMIT 1
+		),
+		calculated AS (
+			SELECT
+				item_totals.purchase_amount,
+				discount_totals.total_discount,
+				GREATEST(item_totals.purchase_amount - discount_totals.total_discount, 0)::double precision AS amount_after_discount,
+				company.tax_rate,
+				company.tax_type
+			FROM item_totals
+			CROSS JOIN discount_totals
+			CROSS JOIN company
+		)
+		UPDATE "bill_master" b
+		SET "purchase_amount" = calculated.purchase_amount,
+		    "total_discount" = calculated.total_discount,
+		    "total_amount" = calculated.amount_after_discount,
+		    "vat_amount" = CASE
+		        WHEN calculated.tax_type = 'xvat' THEN 0
+		        ELSE calculated.amount_after_discount * (calculated.tax_rate / (1.0 + calculated.tax_rate))
+		    END,
+		    "xvat_amount" = CASE
+		        WHEN calculated.tax_type = 'xvat' THEN calculated.amount_after_discount
+		        ELSE calculated.amount_after_discount - (calculated.amount_after_discount * (calculated.tax_rate / (1.0 + calculated.tax_rate)))
+		    END,
+		    "updated_at" = NOW(),
+		    "updated_by" = $2
+		FROM calculated
+		WHERE b."id" = $1
+	`, billID, updatedBy)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *billRepositoryPG) UpdatePayment(ctx context.Context, billID, paymentMethod, paymentRef, updatedBy string) error {

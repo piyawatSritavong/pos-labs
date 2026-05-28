@@ -1,10 +1,11 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
+	"os"
 	"strings"
 	"time"
-	"os"
 
 	"backend/internal/repository"
 
@@ -82,23 +83,17 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		ip := c.ClientIP()
 		now := time.Now().UTC()
 
-		sess, err := m.sessions.GetValidByID(c.Request.Context(), token, ip, now)
+		sess, user, err := m.sessions.GetValidWithUserByID(c.Request.Context(), token, ip, now)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_or_expired_session"})
 			return
 		}
 
-		_ = m.sessions.Touch(c.Request.Context(), sess.ID, now)
-
-		user, err := m.users.GetByID(c.Request.Context(), sess.UserID)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
 		if !user.IsActive {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user_inactive"})
 			return
 		}
+		go m.touchSession(sess.ID, now)
 
 		c.Set("user", user)
 		c.Set("session_id", sess.ID)
@@ -136,13 +131,17 @@ func (m *AuthMiddleware) RequirePermission(resource, action string) gin.HandlerF
 		ip := c.ClientIP()
 		now := time.Now().UTC()
 
-		sess, err := m.sessions.GetValidByID(c.Request.Context(), token, ip, now)
+		sess, user, err := m.sessions.GetValidWithUserByID(c.Request.Context(), token, ip, now)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_or_expired_session"})
 			return
 		}
 
-		_ = m.sessions.Touch(c.Request.Context(), sess.ID, now)
+		if !user.IsActive {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user_inactive"})
+			return
+		}
+		go m.touchSession(sess.ID, now)
 
 		allowed, err := m.rbac.UserHasPermission(c.Request.Context(), sess.UserID, resource, action)
 		if err != nil {
@@ -154,10 +153,7 @@ func (m *AuthMiddleware) RequirePermission(resource, action string) gin.HandlerF
 			return
 		}
 
-		user, err := m.users.GetByID(c.Request.Context(), sess.UserID)
-		if err == nil && user.IsActive {
-			c.Set("user", user)
-		}
+		c.Set("user", user)
 		c.Set("session_id", sess.ID)
 		c.Set("branch_id", sess.BranchID)
 		c.Set("pos_id", sess.POSID)
@@ -166,5 +162,8 @@ func (m *AuthMiddleware) RequirePermission(resource, action string) gin.HandlerF
 	}
 }
 
-
-
+func (m *AuthMiddleware) touchSession(sessionID string, now time.Time) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = m.sessions.Touch(ctx, sessionID, now)
+}

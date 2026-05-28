@@ -956,13 +956,28 @@ class ApiService {
       body: jsonEncode({}),
     );
 
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } catch (_) {
+      decoded = null;
+    }
+    if (response.statusCode == 409 && decoded is Map<String, dynamic>) {
+      final existingBillId = decoded['existingBillId']?.toString() ?? '';
+      if (existingBillId.isNotEmpty) {
+        return {'id': existingBillId, 'existing': true};
+      }
+    }
+
     if (response.statusCode != 200 && response.statusCode != 201) {
       throw Exception(
         'Failed to create bill: ${response.statusCode} ${response.body}',
       );
     }
 
-    final decoded = jsonDecode(response.body);
+    if (decoded == null) {
+      throw Exception('Unexpected /bills response format: ${response.body}');
+    }
     return _extractObjectFromResponse(decoded, '/bills');
   }
 

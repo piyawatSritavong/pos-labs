@@ -123,6 +123,20 @@ func parseBillStatuses(raw string) []string {
 	return out
 }
 
+func allStatusesActive(statuses []string) bool {
+	if len(statuses) == 0 {
+		return false
+	}
+	for _, status := range statuses {
+		switch strings.TrimSpace(strings.ToLower(status)) {
+		case "new", "hold":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func parseBoolQuery(raw string) bool {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "1", "true", "yes", "y":
@@ -265,7 +279,9 @@ func (h *BillsHandler) ensureManualDiscountPromotion(ctx context.Context) error 
 }
 
 func (h *BillsHandler) respondWithFullBill(c *gin.Context, billID string) {
+	start := time.Now()
 	bill, details, discounts, err := h.bills.GetFullByID(c.Request.Context(), billID)
+	logSlowTiming("bills.respond.get_full", start, "bill_id", billID, "ok", err == nil)
 	if err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
@@ -549,8 +565,12 @@ func (h *BillsHandler) List(c *gin.Context) {
 		}
 	}
 
-	// If no date parameters provided, default to current date in UTC+7
-	if dateFrom == nil && dateTo == nil {
+	statuses := parseBillStatuses(c.Query("statuses"))
+
+	// If no date parameters provided, default to current date in UTC+7.
+	// Active POS work queues must not be date-scoped; otherwise an old "new"
+	// bill can block POST /bills while GET /bills?statuses=new returns empty.
+	if dateFrom == nil && dateTo == nil && !allStatusesActive(statuses) {
 		// Get current time in UTC+7 (Thailand timezone)
 		utc := time.Now().UTC()
 		utc7 := utc.Add(7 * time.Hour)
@@ -594,7 +614,6 @@ func (h *BillsHandler) List(c *gin.Context) {
 		return
 	}
 
-	statuses := parseBillStatuses(c.Query("statuses"))
 	includeDetails := parseBoolQuery(c.Query("includeDetails"))
 
 	bills, err := h.bills.List(
@@ -784,25 +803,29 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 		return
 	}
 
-	// Validate bill belongs to session's branch and POS
-	if err := h.validateBillAccess(c.Request.Context(), id, branchID, posID); err != nil {
+	ctx := c.Request.Context()
+	stepStart := time.Now()
+	bill, err := h.bills.GetByID(ctx, id)
+	logSlowTiming("bills.add_by_barcode.bill_lookup", stepStart, "bill_id", id, "ok", err == nil)
+	if err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
 			return
 		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_bill"})
+		return
+	}
+	if bill.BranchID != branchID || bill.POSID != posID {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
 	}
-
-	// Validate bill status is "new"
-	ctx := c.Request.Context()
-	if err := h.validateBillStatusNew(ctx, id); err != nil {
+	if bill.Status != "new" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "invalid_bill_status",
-			"message": fmt.Sprintf("Bill status must be 'new' to add items. %s", err.Error()),
+			"message": fmt.Sprintf("Bill status must be 'new' to add items. current status: %s", bill.Status),
 		})
 		return
 	}
@@ -942,6 +965,7 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 
 // AddItemByBarcode adds an item to a bill by barcode
 func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
+	handlerStart := time.Now()
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_bill_id"})
@@ -954,25 +978,29 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 		return
 	}
 
-	// Validate bill belongs to session's branch and POS
-	if err := h.validateBillAccess(c.Request.Context(), id, branchID, posID); err != nil {
+	ctx := c.Request.Context()
+	stepStart := time.Now()
+	bill, err := h.bills.GetByID(ctx, id)
+	logSlowTiming("bills.add_by_barcode.bill_lookup", stepStart, "bill_id", id, "ok", err == nil)
+	if err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
 			return
 		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_bill"})
+		return
+	}
+	if bill.BranchID != branchID || bill.POSID != posID {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch and POS",
 		})
 		return
 	}
-
-	// Validate bill status is "new"
-	ctx := c.Request.Context()
-	if err := h.validateBillStatusNew(ctx, id); err != nil {
+	if bill.Status != "new" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "invalid_bill_status",
-			"message": fmt.Sprintf("Bill status must be 'new' to add items. %s", err.Error()),
+			"message": fmt.Sprintf("Bill status must be 'new' to add items. current status: %s", bill.Status),
 		})
 		return
 	}
@@ -987,10 +1015,10 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 		return
 	}
 
-	ctx = c.Request.Context()
-
 	// Get part by barcode (filtered by branch)
+	stepStart = time.Now()
 	partDetail, addresses, err := h.parts.GetPartByBarcode(ctx, req.Barcode, branchID)
+	logSlowTiming("bills.add_by_barcode.part_lookup", stepStart, "bill_id", id, "barcode", req.Barcode, "ok", err == nil)
 	if err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found", "message": "Part with this barcode not found"})
@@ -1007,7 +1035,9 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 	}
 
 	vehicleStoreID := h.getVehicleStoreID(ctx, posID)
+	stepStart = time.Now()
 	selectedAddress, hasSalesAddress := salesAddressForPOS(addresses, vehicleStoreID)
+	logSlowTiming("bills.add_by_barcode.address_select", stepStart, "bill_id", id, "vehicle_store_id", vehicleStoreID, "ok", hasSalesAddress)
 	if !hasSalesAddress {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "no_vehicle_stock",
@@ -1017,7 +1047,9 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 	}
 
 	// Check and reduce inventory before adding to bill
+	stepStart = time.Now()
 	decreased, err := h.addresses.DecreaseInventory(ctx, selectedAddress.Code, req.Qty)
+	logSlowTiming("bills.add_by_barcode.inventory_decrease", stepStart, "bill_id", id, "address_code", selectedAddress.Code, "ok", err == nil && decreased)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_check_inventory"})
 		return
@@ -1030,69 +1062,49 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 		return
 	}
 
-	// Check if item already exists in bill
-	existingItem, err := h.bills.GetItemByPartCode(ctx, id, partDetail.Code, selectedAddress.Code)
-	if err != nil && !repository.IsNotFoundError(err) {
-		h.restoreInventoryAfterFailedAdd(ctx, selectedAddress.Code, req.Qty)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_check_existing_item"})
-		return
-	}
-
 	// Get user for updated_by
 	userVal, _ := c.Get("user")
 	user, _ := userVal.(*repository.User)
 
-	hadExisting := existingItem != nil
-	previousQty := 0
-	if existingItem != nil {
-		previousQty = existingItem.Qty
-		// Update quantity (add to existing)
-		newQty := existingItem.Qty + req.Qty
-		if err := h.bills.UpdateItemQty(ctx, id, partDetail.Code, selectedAddress.Code, newQty); err != nil {
-			h.restoreInventoryAfterFailedAdd(ctx, selectedAddress.Code, req.Qty)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_update_item"})
-			return
-		}
-	} else {
-		// Insert new item
-		detail := &repository.BillDetail{
-			BillID:      id,
-			PartCode:    partDetail.Code,
-			AddressCode: selectedAddress.Code,
-			UnitID:      partDetail.UnitID,
-			UnitLabel:   partDetail.UnitLabel,
-			UnitLabelTH: partDetail.UnitLabelTH,
-			Name:        firstNonEmpty(partDetail.NameTH, partDetail.Name),
-			ReceiptName: receiptname.SafeProductName(receiptname.Product{
-				Code:        partDetail.Code,
-				ReceiptName: partDetail.ReceiptName,
-				Name:        partDetail.Name,
-				NameTH:      partDetail.NameTH,
-			}),
-			Cost:  partDetail.Cost,
-			Price: partDetail.Price,
-			Qty:   req.Qty,
-		}
-		if err := h.bills.AddItem(ctx, detail); err != nil {
-			h.restoreInventoryAfterFailedAdd(ctx, selectedAddress.Code, req.Qty)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_add_item"})
-			return
-		}
+	detail := &repository.BillDetail{
+		BillID:      id,
+		PartCode:    partDetail.Code,
+		AddressCode: selectedAddress.Code,
+		UnitID:      partDetail.UnitID,
+		UnitLabel:   partDetail.UnitLabel,
+		UnitLabelTH: partDetail.UnitLabelTH,
+		Name:        firstNonEmpty(partDetail.NameTH, partDetail.Name),
+		ReceiptName: receiptname.SafeProductName(receiptname.Product{
+			Code:        partDetail.Code,
+			ReceiptName: partDetail.ReceiptName,
+			Name:        partDetail.Name,
+			NameTH:      partDetail.NameTH,
+		}),
+		Cost:  partDetail.Cost,
+		Price: partDetail.Price,
+		Qty:   req.Qty,
 	}
-
-	// Recalculate bill amounts
-	if err := h.recalculateBillAmounts(ctx, id); err != nil {
-		log.Printf("Error: failed to recalculate bill amounts after add-item-by-barcode: %v", err)
-		h.rollbackAddedBillItem(ctx, id, partDetail.Code, selectedAddress.Code, req.Qty, hadExisting, previousQty)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_recalculate_bill"})
+	stepStart = time.Now()
+	previousQty, _, err := h.bills.AddItemReturningQty(ctx, detail)
+	logSlowTiming("bills.add_by_barcode.item_upsert", stepStart, "bill_id", id, "part_code", partDetail.Code, "had_existing", previousQty > 0, "ok", err == nil)
+	if err != nil {
+		h.restoreInventoryAfterFailedAdd(ctx, selectedAddress.Code, req.Qty)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_add_item"})
 		return
 	}
 
-	// Update bill updated_at and updated_by
-	if err := h.bills.UpdateTimestamp(ctx, id, user.ID); err != nil {
-		log.Printf("Warning: failed to update bill timestamp: %v", err)
+	// Recalculate bill amounts and touch updated_at in one database round trip.
+	stepStart = time.Now()
+	if err := h.bills.RecalculateAmountsAndTimestamp(ctx, id, user.ID); err != nil {
+		logSlowTiming("bills.add_by_barcode.recalculate_touch", stepStart, "bill_id", id, "ok", false)
+		log.Printf("Error: failed to recalculate bill amounts after add-item-by-barcode: %v", err)
+		h.rollbackAddedBillItem(ctx, id, partDetail.Code, selectedAddress.Code, req.Qty, previousQty > 0, previousQty)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_recalculate_bill"})
+		return
 	}
+	logSlowTiming("bills.add_by_barcode.recalculate_touch", stepStart, "bill_id", id, "ok", true)
 
+	defer logSlowTiming("bills.add_by_barcode.total", handlerStart, "bill_id", id, "barcode", req.Barcode)
 	h.respondWithFullBill(c, id)
 }
 

@@ -306,22 +306,132 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 }
 
 func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string, branchID string) (*PartDetail, []PartAddress, error) {
-	// First get the part code from barcode
-	var partCode string
-	err := r.db.QueryRowContext(ctx, `
-		SELECT "code"
-		FROM "part_master"
-		WHERE "bar_code" = $1
-	`, barcode).Scan(&partCode)
-	if err != nil {
+	if strings.TrimSpace(branchID) == "" {
+		var partCode string
+		err := r.db.QueryRowContext(ctx, `
+			SELECT "code"
+			FROM "part_master"
+			WHERE "bar_code" = $1
+		`, barcode).Scan(&partCode)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil, nil, ErrNotFound
+			}
+			return nil, nil, err
+		}
+		return r.GetPartDetail(ctx, partCode, nil)
+	}
+
+	query := `
+		SELECT
+			p.code,
+			p.bar_code,
+			p.category_id,
+			COALESCE(c.label, ''),
+			COALESCE(c.label_th, ''),
+			p.unit_id,
+			COALESCE(u.label, ''),
+			COALESCE(u.label_th, ''),
+			p.name,
+			COALESCE(p.name_th, ''),
+			COALESCE(p.receipt_name, ''),
+			COALESCE(p.details, ''),
+			p.cost,
+			p.price,
+			COALESCE(p.image, ''),
+			COALESCE(p.is_active, false),
+			COALESCE(SUM(CASE WHEN bs.branch_id = $2 THEN a.qty ELSE 0 END), 0) AS total_stock
+		FROM "part_master" p
+		LEFT JOIN "category_master" c ON c.id = p.category_id
+		LEFT JOIN "unit_master" u ON u.id = p.unit_id
+		LEFT JOIN "address_master" a ON a.part_code = p.code
+		LEFT JOIN "store_master" s ON s.id = a.store_id
+		LEFT JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $2
+		WHERE p.bar_code = $1
+		GROUP BY
+			p.code, p.bar_code, p.category_id, c.label, c.label_th,
+			p.unit_id, u.label, u.label_th,
+			p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.image, p.is_active
+	`
+	row := r.db.QueryRowContext(ctx, query, barcode, branchID)
+
+	var d PartDetail
+	if err := row.Scan(
+		&d.Code,
+		&d.BarCode,
+		&d.CategoryID,
+		&d.CategoryLabel,
+		&d.CategoryLabelTH,
+		&d.UnitID,
+		&d.UnitLabel,
+		&d.UnitLabelTH,
+		&d.Name,
+		&d.NameTH,
+		&d.ReceiptName,
+		&d.Details,
+		&d.Cost,
+		&d.Price,
+		&d.Image,
+		&d.IsActive,
+		&d.TotalStock,
+	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil, ErrNotFound
 		}
 		return nil, nil, err
 	}
 
-	// Then get the full part detail using the part code, filtered by branch
-	return r.GetPartDetail(ctx, partCode, &branchID)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			a.code,
+			a.part_code,
+			a.store_id,
+			s.label,
+			s.label_th,
+			a.shelf,
+			a.qty,
+			a.min,
+			a.max,
+			a.rop,
+			COALESCE(a.remarks, ''),
+			COALESCE(bs.is_default, false) as is_default
+		FROM "address_master" a
+		JOIN "store_master" s ON s.id = a.store_id
+		JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $2
+		WHERE a.part_code = $1
+		ORDER BY bs.is_default DESC, a.code
+	`, d.Code, branchID)
+	if err != nil {
+		return &d, nil, err
+	}
+	defer rows.Close()
+
+	var addrs []PartAddress
+	for rows.Next() {
+		var a PartAddress
+		if err := rows.Scan(
+			&a.Code,
+			&a.PartCode,
+			&a.StoreID,
+			&a.StoreLabel,
+			&a.StoreLabelTH,
+			&a.Shelf,
+			&a.Qty,
+			&a.Min,
+			&a.Max,
+			&a.Rop,
+			&a.Remarks,
+			&a.IsDefault,
+		); err != nil {
+			return &d, nil, err
+		}
+		addrs = append(addrs, a)
+	}
+	if err := rows.Err(); err != nil {
+		return &d, nil, err
+	}
+
+	return &d, addrs, nil
 }
 
 func (r *partRepositoryPG) CheckPartExistsInBranch(ctx context.Context, partCode, branchID string) (bool, error) {

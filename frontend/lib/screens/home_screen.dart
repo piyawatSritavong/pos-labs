@@ -278,7 +278,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _BarcodeQuickAction(
             controller: _barcodeController,
             focusNode: _barcodeFocusNode,
-            onChanged: _handleBarcodeSearch,
             onSubmit: (value) =>
                 _handleBarcodeSearch(value, clearOnSuccess: true),
           ),
@@ -317,7 +316,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _BarcodeQuickAction(
             controller: _barcodeController,
             focusNode: _barcodeFocusNode,
-            onChanged: _handleBarcodeSearch,
             onSubmit: (value) =>
                 _handleBarcodeSearch(value, clearOnSuccess: true),
           ),
@@ -363,7 +361,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _BarcodeQuickAction(
             controller: _barcodeController,
             focusNode: _barcodeFocusNode,
-            onChanged: _handleBarcodeSearch,
             onSubmit: (value) =>
                 _handleBarcodeSearch(value, clearOnSuccess: true),
           ),
@@ -1400,13 +1397,11 @@ class _BarcodeQuickAction extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.onSubmit,
-    this.onChanged,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final ValueChanged<String> onSubmit;
-  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1432,7 +1427,6 @@ class _BarcodeQuickAction extends StatelessWidget {
                 ),
               ),
               onSubmitted: onSubmit,
-              onChanged: onChanged,
             ),
           ),
           const SizedBox(width: 16),
