@@ -8,6 +8,7 @@ import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/widgets/pos/stock_dialog.dart';
 import 'package:frontend/widgets/pos/bill_log_dialog.dart';
 import 'package:frontend/widgets/pos/hold_bill_dialog.dart';
+import 'package:frontend/widgets/pos/barcode_camera_scanner_sheet.dart';
 import 'package:frontend/widgets/pos/search_parts_dialog.dart';
 import 'package:frontend/widgets/pos/cart_summary_section.dart';
 import 'package:frontend/widgets/pos/search_barcode_section.dart';
@@ -115,6 +116,37 @@ class _HomeScreenState extends State<HomeScreen> {
     if (clearOnSuccess) {
       _barcodeController.clear();
       await _productListKey.currentState?.searchByBarcode('');
+    }
+  }
+
+  Future<void> _openCameraScanner() async {
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: false,
+        backgroundColor: Colors.black,
+        barrierColor: Colors.black,
+        builder: (sheetContext) {
+          final height = MediaQuery.of(sheetContext).size.height;
+          return SizedBox(
+            height: height,
+            child: BarcodeCameraScannerSheet(
+              onBarcode: (barcode) =>
+                  _handleBarcodeSearch(barcode, clearOnSuccess: true),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('เปิดกล้องไม่ได้: $e')));
+    } finally {
+      if (mounted) {
+        _barcodeFocusNode.requestFocus();
+      }
     }
   }
 
@@ -280,6 +312,8 @@ class _HomeScreenState extends State<HomeScreen> {
             focusNode: _barcodeFocusNode,
             onSubmit: (value) =>
                 _handleBarcodeSearch(value, clearOnSuccess: true),
+            useCameraScanner: true,
+            onOpenCameraScanner: _openCameraScanner,
           ),
         ],
       ),
@@ -1400,11 +1434,15 @@ class _BarcodeQuickAction extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.onSubmit,
+    this.useCameraScanner = false,
+    this.onOpenCameraScanner,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final ValueChanged<String> onSubmit;
+  final bool useCameraScanner;
+  final VoidCallback? onOpenCameraScanner;
 
   @override
   Widget build(BuildContext context) {
@@ -1444,7 +1482,9 @@ class _BarcodeQuickAction extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
-              onPressed: () => onSubmit(controller.text.trim()),
+              onPressed: useCameraScanner
+                  ? onOpenCameraScanner
+                  : () => onSubmit(controller.text.trim()),
               icon: const Icon(Icons.local_fire_department),
               label: const Text(
                 'SCAN',
