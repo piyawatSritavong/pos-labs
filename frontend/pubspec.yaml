@@ -37,12 +37,13 @@ dependencies:
   provider: ^6.1.5+1 # State management
   shared_preferences: ^2.5.3 # For local storage sessions
   window_manager: ^0.3.9 # Multi-window support for desktop
-  barcode_widget: ^2.0.4 # Code128 / EAN-13 rendering for the print page
   mobile_scanner: ^7.2.0 # Camera barcode scanner for mobile web POS
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  pdf: ^3.12.0 # Generate exact-mm label PDFs (incl. pw.BarcodeWidget / Code128)
+  printing: ^5.14.3 # PdfPreview widget + browser print dialog (web-friendly)
 
 dev_dependencies:
   flutter_test:
@@ -70,6 +71,9 @@ flutter:
   # web build (and other platforms).
   assets:
     - assets/images/
+    # Thai TTF loaded via rootBundle for PDF label generation (the `pdf`
+    # package's default Helvetica cannot render Thai glyphs).
+    - assets/fonts/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

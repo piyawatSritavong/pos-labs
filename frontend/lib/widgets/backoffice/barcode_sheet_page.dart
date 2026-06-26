@@ -1,11 +1,14 @@
-import 'package:barcode_widget/barcode_widget.dart';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 /// One item picked on [BarcodePrintPage] — partCode + name shown beneath the
-/// rendered Code128 + qty (number of copies to print).
+/// rendered Code128 + qty (number of copies to print, always a multiple of 3).
 class BarcodePickItem {
   const BarcodePickItem({
     required this.partCode,
@@ -20,13 +23,19 @@ class BarcodePickItem {
   final int qty;
 }
 
-/// Renders the picked items as a printable A4 sheet:
-/// - 4 columns × 9 rows = 36 labels per page (50×30 mm each)
-/// - Each label: Code128 barcode, the barcode value below, the part name below
-/// - On first mount the page auto-triggers `window.print()` so the operator
-///   sees the system print dialog immediately
-/// - The screen-only "พิมพ์อีกครั้ง" / "กลับ" buttons are hidden during print
-///   via the `no-print` CSS class declared in web/index.html
+/// Builds an exact-millimetre label PDF for the EasyPrint ES-9920UW thermal
+/// printer and shows it in a [PdfPreview] (with a built-in print button).
+///
+/// Media: Direct Thermal DT PP stickers, 32×25 mm, **3 labels per row**.
+/// The printer feeds one row at a time, so each PDF *page* holds exactly one
+/// row of 3 labels. Because every picked item's qty is a multiple of 3
+/// (enforced on [BarcodePrintPage]), each item fills whole rows and no page is
+/// ever a partial row.
+///
+/// Why PDF instead of `window.print()`: Flutter Web renders to a CanvasKit
+/// bitmap, so browser printing scales the canvas and cannot guarantee exact mm
+/// sizes — unacceptable for die-cut label stock. A PDF with a precise
+/// [PdfPageFormat] prints 1:1.
 class BarcodeSheetPage extends StatefulWidget {
   const BarcodeSheetPage({super.key, required this.items});
 
@@ -37,75 +46,32 @@ class BarcodeSheetPage extends StatefulWidget {
 }
 
 class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
-  // 50 mm × 30 mm — at 96 DPI ≈ 189 × 113 px. Use logical px close enough.
-  static const double _labelW = 189;
-  static const double _labelH = 113;
-  static const int _cols = 4;
+  // ── Physical label geometry (calibrate to the real sticker roll) ──────────
+  static const double _labelWmm = 32;
+  static const double _labelHmm = 25;
+  static const int _cols = 3;
+  // Horizontal gap between the 3 labels in a row. Adjust if the printed
+  // barcodes drift off the die-cut on the first test print.
+  static const double _gapMm = 2;
 
-  // Hide the AppBar (and any other screen-only chrome) while the browser
-  // print dialog is open. Flutter Web's canvas renderer doesn't attach HTML
-  // classes, so the `.no-print` CSS rule in index.html can't reach Flutter
-  // widgets. Instead we listen for `beforeprint` / `afterprint` events and
-  // toggle Flutter state so the layout re-renders without the AppBar during
-  // print, then restores it after.
-  bool _isPrinting = false;
-  // dart:html does not expose typed Stream getters for beforeprint/afterprint,
-  // so we attach raw EventListeners via addEventListener and remove them in
-  // dispose. Storing them as `html.EventListener` is required for removal.
-  html.EventListener? _beforePrintHandler;
-  html.EventListener? _afterPrintHandler;
+  // One PDF page == one printer row of 3 labels.
+  PdfPageFormat get _rowFormat => PdfPageFormat(
+        (_labelWmm * _cols + _gapMm * (_cols - 1)) * PdfPageFormat.mm,
+        _labelHmm * PdfPageFormat.mm,
+        marginAll: 0,
+      );
 
-  @override
-  void initState() {
-    super.initState();
-    if (kIsWeb) {
-      _beforePrintHandler = (html.Event _) {
-        if (mounted) setState(() => _isPrinting = true);
-      };
-      _afterPrintHandler = (html.Event _) {
-        if (mounted) setState(() => _isPrinting = false);
-      };
-      html.window.addEventListener('beforeprint', _beforePrintHandler);
-      html.window.addEventListener('afterprint', _afterPrintHandler);
+  // Cached Thai font — the `pdf` package's default Helvetica cannot render Thai
+  // glyphs, so product names need a bundled TTF.
+  pw.Font? _thaiFont;
 
-      // Auto-open the browser print dialog once the sheet has been laid out.
-      // Fire after one extra frame so BarcodeWidget actually paints first.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Future.delayed(const Duration(milliseconds: 250), () {
-          try {
-            html.window.print();
-          } catch (_) {
-            // Some browsers throw if window is not focused — operator can
-            // still click "พิมพ์อีกครั้ง" manually.
-          }
-        });
-      });
-    }
+  Future<pw.Font> _loadFont() async {
+    return _thaiFont ??=
+        pw.Font.ttf(await rootBundle.load('assets/fonts/Sarabun-Regular.ttf'));
   }
 
-  @override
-  void dispose() {
-    if (kIsWeb) {
-      if (_beforePrintHandler != null) {
-        html.window.removeEventListener('beforeprint', _beforePrintHandler);
-      }
-      if (_afterPrintHandler != null) {
-        html.window.removeEventListener('afterprint', _afterPrintHandler);
-      }
-    }
-    super.dispose();
-  }
-
-  void _printAgain() {
-    if (kIsWeb) {
-      try {
-        html.window.print();
-      } catch (_) {}
-    }
-  }
-
-  /// Expand each picked item into individual copies. e.g. {P0001, qty:3} →
-  /// 3 cells. Preserves operator's row order.
+  /// Expand each picked item into individual copies, preserving operator's row
+  /// order. e.g. {P0001, qty:6} → 6 entries.
   List<BarcodePickItem> _expanded() {
     final out = <BarcodePickItem>[];
     for (final it in widget.items) {
@@ -116,110 +82,100 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
     return out;
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Future<Uint8List> _buildPdf(PdfPageFormat _) async {
+    final font = await _loadFont();
+    final doc = pw.Document(
+      theme: pw.ThemeData.withFont(base: font, bold: font),
+    );
     final copies = _expanded();
-    return Scaffold(
-      backgroundColor: Colors.white,
-      // During print: AppBar is removed entirely → only the barcode Wrap
-      // remains, which is exactly what the printer should produce.
-      appBar: _isPrinting ? null : PreferredSize(
-        preferredSize: const Size.fromHeight(56),
-        child: Container(
-          // The whole app bar is screen-only — hidden in print via no-print.
-          color: Colors.white,
-          child: SafeArea(
-            child: Row(
-              children: [
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => Navigator.of(context).pop(),
-                  tooltip: 'กลับ',
-                ),
-                Text(
-                  'พิมพ์บาร์โค้ด (${copies.length} ดวง)',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                  child: ElevatedButton.icon(
-                    onPressed: _printAgain,
-                    icon: const Icon(Icons.print),
-                    label: const Text('พิมพ์อีกครั้ง'),
-                  ),
+
+    // Chunk into rows of 3 — each chunk becomes one page.
+    for (var i = 0; i < copies.length; i += _cols) {
+      final rowItems = copies.sublist(i, math.min(i + _cols, copies.length));
+      doc.addPage(
+        pw.Page(
+          pageFormat: _rowFormat,
+          build: (ctx) => pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              for (var c = 0; c < _cols; c++) ...[
+                if (c > 0) pw.SizedBox(width: _gapMm * PdfPageFormat.mm),
+                pw.Expanded(
+                  child: c < rowItems.length
+                      ? _buildLabel(rowItems[c])
+                      : pw.SizedBox(),
                 ),
               ],
-            ),
+            ],
           ),
         ),
-      ),
-      body: SingleChildScrollView(
-        // The sheet itself — visible in both screen + print views.
-        // class="printable" lets the print CSS strip page chrome around it.
-        child: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: copies.map((it) => _buildLabel(it)).toList(),
-          ),
-        ),
-      ),
-    );
+      );
+    }
+    return doc.save();
   }
 
-  Widget _buildLabel(BarcodePickItem it) {
-    return Container(
-      width: _labelW,
-      height: _labelH,
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300, width: 0.5),
+  pw.Widget _buildLabel(BarcodePickItem it) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(4),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400, width: 0.3),
       ),
-      padding: const EdgeInsets.all(4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          // Top — product name (truncated)
-          Text(
+          // Top — product name (truncated to one line)
+          pw.Text(
             it.name,
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w500),
+            overflow: pw.TextOverflow.clip,
+            style: const pw.TextStyle(fontSize: 6.5),
           ),
-          // Middle — barcode
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: BarcodeWidget(
+          // Middle — Code128 barcode
+          pw.Expanded(
+            child: pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 2),
+              child: pw.BarcodeWidget(
+                barcode: pw.Barcode.code128(escapes: false),
                 data: it.barcode,
-                barcode: Barcode.code128(escapes: false),
                 drawText: false,
-                color: Colors.black,
+                color: PdfColors.black,
               ),
             ),
           ),
-          // Bottom — barcode value (human-readable) + part code
-          Text(
+          // Bottom — human-readable barcode value
+          pw.Text(
             it.barcode,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 9,
-              fontFamily: 'monospace',
-              letterSpacing: 0.5,
-            ),
+            textAlign: pw.TextAlign.center,
+            style: const pw.TextStyle(fontSize: 6, letterSpacing: 0.3),
           ),
         ],
       ),
     );
   }
 
-  // Helper kept for clarity in case we expand the layout later.
-  // ignore: unused_element
-  int get _maxCols => _cols;
+  @override
+  Widget build(BuildContext context) {
+    final total = _expanded().length;
+    final rows = (total / _cols).ceil();
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+          tooltip: 'กลับ',
+        ),
+        title: Text('พิมพ์บาร์โค้ด ($total ดวง = $rows แถว)'),
+      ),
+      body: PdfPreview(
+        build: _buildPdf,
+        initialPageFormat: _rowFormat,
+        canChangePageFormat: false,
+        canChangeOrientation: false,
+        canDebug: false,
+        useActions: true,
+        pdfFileName: 'barcodes.pdf',
+      ),
+    );
+  }
 }

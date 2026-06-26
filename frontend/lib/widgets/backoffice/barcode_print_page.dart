@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/theme/app_theme.dart';
@@ -8,14 +7,18 @@ import 'package:provider/provider.dart';
 
 /// Backoffice page (admin only) that lets the operator pick which parts to
 /// print barcodes for and how many copies of each. Selecting "Print"
-/// navigates to [BarcodeSheetPage] which renders an A4-friendly grid and
-/// triggers `window.print()`.
+/// navigates to [BarcodeSheetPage] which builds an exact-mm label PDF
+/// (32×25 mm, 3 labels per row) for the EasyPrint ES-9920UW thermal printer.
+///
+/// The printer feeds one row (3 labels) at a time, so the per-item quantity is
+/// constrained to multiples of 3 — each picked product then fills whole rows
+/// and rows are never mixed across products.
 ///
 /// User journey:
 ///   1. Page loads → fetch all parts (up to 2,000)
-///   2. Operator ticks rows + adjusts the quantity field for each picked row
-///      ("Select all" toggle + per-row checkbox)
-///   3. Operator clicks "พิมพ์ X รายการ (Y ดวงรวม)" → BarcodeSheetPage opens
+///   2. Operator ticks rows + adjusts the quantity (stepper, ±3) for each
+///      picked row ("Select all" toggle + per-row checkbox)
+///   3. Operator clicks "พิมพ์ X รายการ (Y ดวง = Z แถว)" → BarcodeSheetPage opens
 class BarcodePrintPage extends StatefulWidget {
   const BarcodePrintPage({super.key});
 
@@ -24,10 +27,15 @@ class BarcodePrintPage extends StatefulWidget {
 }
 
 class _BarcodePrintPageState extends State<BarcodePrintPage> {
+  // Labels are printed 3 across (one printer row), so every quantity is a
+  // multiple of this step. _step also serves as the default/minimum copies.
+  static const int _step = 3;
+
   bool _isLoading = true;
   String? _error;
   List<Map<String, dynamic>> _parts = [];
-  // partCode → copies to print. Presence in the map = row is selected.
+  // partCode → copies to print (always a multiple of _step). Presence in the
+  // map = row is selected.
   final Map<String, int> _selectedQty = {};
   String _search = '';
 
@@ -85,19 +93,26 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
   void _toggleRow(String code, bool? checked) {
     setState(() {
       if (checked == true) {
-        _selectedQty[code] = _selectedQty[code] ?? 1;
+        _selectedQty[code] = _selectedQty[code] ?? _step;
       } else {
         _selectedQty.remove(code);
       }
     });
   }
 
+  /// Snap [qty] to the nearest multiple of [_step] (min one row, max 999).
   void _setQty(String code, int qty) {
-    if (qty < 1) qty = 1;
-    if (qty > 999) qty = 999; // sane upper bound — one A4 page holds 36
+    if (qty < _step) qty = _step;
+    if (qty > 999) qty = 999;
+    qty = ((qty + _step ~/ 2) ~/ _step) * _step; // round to nearest row
     setState(() {
       _selectedQty[code] = qty;
     });
+  }
+
+  void _bumpQty(String code, int rows) {
+    final current = _selectedQty[code] ?? _step;
+    _setQty(code, current + rows * _step);
   }
 
   void _toggleSelectAll(bool? checked) {
@@ -106,7 +121,7 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
       if (checked == true) {
         for (final p in _filtered) {
           final code = (p['code'] ?? '').toString();
-          if (code.isNotEmpty) _selectedQty[code] = 1;
+          if (code.isNotEmpty) _selectedQty[code] = _step;
         }
       }
     });
@@ -209,7 +224,7 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
               const SizedBox(width: 24),
               Text(
                 'เลือกแล้ว: ${_selectedQty.length} รายการ '
-                '(${_totalCopies} ดวงรวม)',
+                '($_totalCopies ดวง = ${_totalCopies ~/ _step} แถว)',
                 style: const TextStyle(color: Colors.grey),
               ),
               const Spacer(),
@@ -217,7 +232,8 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
                 onPressed: _selectedQty.isEmpty ? null : _openSheet,
                 icon: const Icon(Icons.print),
                 label: Text(
-                  'พิมพ์ ${_selectedQty.length} รายการ ($_totalCopies ดวงรวม)',
+                  'พิมพ์ ${_selectedQty.length} รายการ '
+                  '($_totalCopies ดวง = ${_totalCopies ~/ _step} แถว)',
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -250,7 +266,7 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
                               DataColumn(label: Text('รหัส')),
                               DataColumn(label: Text('ชื่อสินค้า')),
                               DataColumn(label: Text('Barcode')),
-                              DataColumn(label: Text('จำนวนพิมพ์')),
+                              DataColumn(label: Text('จำนวนพิมพ์ (×3)')),
                             ],
                             rows: filtered.map((p) {
                               final code = (p['code'] ?? '').toString();
@@ -262,7 +278,7 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
                               final barRaw = (p['barCode'] ?? '').toString();
                               final bar = barRaw.isEmpty ? code : barRaw;
                               final selected = _selectedQty.containsKey(code);
-                              final qty = _selectedQty[code] ?? 1;
+                              final qty = _selectedQty[code] ?? _step;
                               return DataRow(
                                 selected: selected,
                                 cells: [
@@ -273,31 +289,45 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
                                   DataCell(Text(code)),
                                   DataCell(Text(name)),
                                   DataCell(Text(bar)),
+                                  // Quantity stepper — copies move in whole rows
+                                  // of 3 (one printer feed). Disabled until the
+                                  // row is selected.
                                   DataCell(
-                                    SizedBox(
-                                      width: 80,
-                                      child: TextFormField(
-                                        key: ValueKey('qty-$code'),
-                                        initialValue: qty.toString(),
-                                        enabled: selected,
-                                        keyboardType: TextInputType.number,
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter.digitsOnly,
-                                        ],
-                                        textAlign: TextAlign.center,
-                                        decoration: const InputDecoration(
-                                          isDense: true,
-                                          contentPadding:
-                                              EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 8,
+                                    Opacity(
+                                      opacity: selected ? 1 : 0.4,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(
+                                                Icons.remove_circle_outline),
+                                            iconSize: 20,
+                                            visualDensity: VisualDensity.compact,
+                                            tooltip: 'ลด 3',
+                                            onPressed: selected
+                                                ? () => _bumpQty(code, -1)
+                                                : null,
                                           ),
-                                          border: OutlineInputBorder(),
-                                        ),
-                                        onChanged: (v) {
-                                          final n = int.tryParse(v) ?? 1;
-                                          _setQty(code, n);
-                                        },
+                                          SizedBox(
+                                            width: 40,
+                                            child: Text(
+                                              '$qty',
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.w600),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(
+                                                Icons.add_circle_outline),
+                                            iconSize: 20,
+                                            visualDensity: VisualDensity.compact,
+                                            tooltip: 'เพิ่ม 3',
+                                            onPressed: selected
+                                                ? () => _bumpQty(code, 1)
+                                                : null,
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
