@@ -42,14 +42,16 @@ func (h *BranchHandler) List(c *gin.Context) {
 	out := make([]gin.H, 0, len(branches))
 	for _, b := range branches {
 		out = append(out, gin.H{
-			"branchId":       b.BranchID,
-			"companyId":      b.CompanyID,
-			"branchName":     b.BranchName,
-			"branchNameTh":   b.BranchNameTH,
-			"branchAddress":  b.BranchAddress,
+			"branchId":        b.BranchID,
+			"companyId":       b.CompanyID,
+			"branchName":      b.BranchName,
+			"branchNameTh":    b.BranchNameTH,
+			"branchAddress":   b.BranchAddress,
 			"branchAddressTh": b.BranchAddressTH,
-			"phone":          b.Phone,
-			"email":          b.Email,
+			"phone":           b.Phone,
+			"email":           b.Email,
+			// NOTE: branch_setting schema currently has no is_active column.
+			// Frontend defaults missing isActive to true via `?? true`.
 		})
 	}
 
@@ -95,15 +97,15 @@ func (h *BranchHandler) Get(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"branchId":       branch.BranchID,
-		"companyId":      branch.CompanyID,
-		"branchName":     branch.BranchName,
-		"branchNameTh":   branch.BranchNameTH,
-		"branchAddress":  branch.BranchAddress,
+		"branchId":        branch.BranchID,
+		"companyId":       branch.CompanyID,
+		"branchName":      branch.BranchName,
+		"branchNameTh":    branch.BranchNameTH,
+		"branchAddress":   branch.BranchAddress,
 		"branchAddressTh": branch.BranchAddressTH,
-		"phone":          branch.Phone,
-		"email":          branch.Email,
-		"stores":         storesOut,
+		"phone":           branch.Phone,
+		"email":           branch.Email,
+		"stores":          storesOut,
 	})
 }
 
@@ -141,14 +143,14 @@ func (h *BranchHandler) Create(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"branchId":       branch.BranchID,
-		"companyId":      branch.CompanyID,
-		"branchName":     branch.BranchName,
-		"branchNameTh":   branch.BranchNameTH,
-		"branchAddress":  branch.BranchAddress,
+		"branchId":        branch.BranchID,
+		"companyId":       branch.CompanyID,
+		"branchName":      branch.BranchName,
+		"branchNameTh":    branch.BranchNameTH,
+		"branchAddress":   branch.BranchAddress,
 		"branchAddressTh": branch.BranchAddressTH,
-		"phone":          branch.Phone,
-		"email":          branch.Email,
+		"phone":           branch.Phone,
+		"email":           branch.Email,
 	})
 }
 
@@ -195,14 +197,14 @@ func (h *BranchHandler) Update(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"branchId":       branch.BranchID,
-		"companyId":      branch.CompanyID,
-		"branchName":     branch.BranchName,
-		"branchNameTh":   branch.BranchNameTH,
-		"branchAddress":  branch.BranchAddress,
+		"branchId":        branch.BranchID,
+		"companyId":       branch.CompanyID,
+		"branchName":      branch.BranchName,
+		"branchNameTh":    branch.BranchNameTH,
+		"branchAddress":   branch.BranchAddress,
 		"branchAddressTh": branch.BranchAddressTH,
-		"phone":          branch.Phone,
-		"email":          branch.Email,
+		"phone":           branch.Phone,
+		"email":           branch.Email,
 	})
 }
 
@@ -236,4 +238,3 @@ func (h *BranchHandler) Delete(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "branch_deleted"})
 }
-

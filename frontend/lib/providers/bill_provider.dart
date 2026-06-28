@@ -3,13 +3,15 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
-import 'package:frontend/services/api_bills.dart';
+import 'package:frontend/services/api_service.dart';
 
 double _toDouble(dynamic v) {
   if (v == null) return 0.0;
   if (v is num) return v.toDouble();
   return double.tryParse(v.toString()) ?? 0.0;
 }
+
+const String kManualDiscountPromotionCode = 'SYS_MANUAL_DISCOUNT';
 
 class BillProvider extends ChangeNotifier {
   BillProvider() {
@@ -38,14 +40,101 @@ class BillProvider extends ChangeNotifier {
   bool _showThankYouOverlay = false;
   bool get showThankYouOverlay => _showThankYouOverlay;
 
+  // The cashier's currently-open dialog name, propagated to the customer
+  // display via pos_mirror_state. Examples: 'receipt', 'hold_bill', 'return'.
+  // Null when no dialog is open. Consumed by customer_screen to render
+  // matching overlays (e.g. _ReceiptConfirmationOverlay when value == 'receipt').
+  String? _activeDialog;
+  String? get activeDialog => _activeDialog;
+
   bool isLoading = false;
+  Map<String, dynamic>? _returnReferenceBill;
+  final List<Map<String, dynamic>> _returnLines = [];
+  double? _mirroredReturnCreditAmount;
+  double? _mirroredNetSettlementAmount;
+  Map<String, dynamic>? _assignedMember;
 
   String? get billId => _billId;
   double get subtotal => _purchaseAmount;
   double get discount => _totalDiscount;
+  double get amountAfterDiscount =>
+      (_purchaseAmount - _totalDiscount).clamp(0.0, double.infinity).toDouble();
   double get tax => _vatAmount;
   double get total => _totalAmount;
   List<Map<String, dynamic>> get items => List.unmodifiable(_items);
+  List<Map<String, dynamic>> get discounts =>
+      List.unmodifiable(_extractDiscounts(_currentBill));
+  Map<String, dynamic>? get manualDiscountDetail {
+    for (final discount in discounts) {
+      final code = discount['promotionCode']?.toString() ?? '';
+      if (code == kManualDiscountPromotionCode) {
+        return Map<String, dynamic>.from(discount);
+      }
+    }
+    return null;
+  }
+
+  double get manualDiscountInputValue =>
+      _toDouble(manualDiscountDetail?['amount']);
+  bool get isManualDiscountPercentMode =>
+      (manualDiscountDetail?['unit']?.toString() ?? '').toLowerCase() ==
+      'percentage';
+  Map<String, dynamic>? get assignedMember => _assignedMember == null
+      ? null
+      : Map<String, dynamic>.from(_assignedMember!);
+  String? get memberIdInBill {
+    final memberId =
+        _currentBill?['memberId']?.toString() ??
+        _currentBill?['member_id']?.toString();
+    if (memberId == null || memberId.isEmpty) {
+      return null;
+    }
+    return memberId;
+  }
+
+  bool get hasMemberInBill => memberIdInBill != null;
+  String get memberDisplayName {
+    if (_assignedMember != null) {
+      final code = _assignedMember!['code']?.toString();
+      final name = _assignedMember!['name']?.toString();
+      if (code != null && code.isNotEmpty && name != null && name.isNotEmpty) {
+        return '$code - $name';
+      }
+      if (name != null && name.isNotEmpty) {
+        return name;
+      }
+    }
+    return memberIdInBill ?? '-';
+  }
+
+  Map<String, dynamic>? get returnReferenceBill => _returnReferenceBill == null
+      ? null
+      : Map<String, dynamic>.from(_returnReferenceBill!);
+  List<Map<String, dynamic>> get returnLines => List.unmodifiable(_returnLines);
+  bool get hasReturnItems => _returnLines.isNotEmpty;
+  String? get returnReferenceBillId => _returnReferenceBill == null
+      ? null
+      : _returnReferenceBill!['id']?.toString();
+  int get returnLineCount => _returnLines.fold<int>(
+    0,
+    (sum, line) =>
+        sum +
+        (_toDouble(line['qty']) <= 0 ? 1 : _toDouble(line['qty']).toInt()),
+  );
+  double get returnCreditAmount {
+    if (_mirroredReturnCreditAmount != null) {
+      return _mirroredReturnCreditAmount!;
+    }
+    double sum = 0;
+    for (final line in _returnLines) {
+      final amount = _toDouble(line['lineTotal'] ?? line['amount']);
+      sum += amount.abs();
+    }
+    return sum;
+  }
+
+  double get netSettlementAmount =>
+      _mirroredNetSettlementAmount ?? (_totalAmount - returnCreditAmount);
 
   // taxRate เอาไว้ให้ UI เดิมใช้ต่อ
   double get taxRate {
@@ -75,6 +164,8 @@ class BillProvider extends ChangeNotifier {
     );
     _items = _extractItems(bill);
     _backfillTotalsIfNeeded();
+    _mirroredReturnCreditAmount = null;
+    _mirroredNetSettlementAmount = null;
 
     // Restore cash-payment waiting state if present in payload
     _awaitingCashPayment = bill['awaitingCashPayment'] == true;
@@ -90,11 +181,92 @@ class BillProvider extends ChangeNotifier {
 
     _showThankYouOverlay = bill['showThankYouOverlay'] == true;
 
+    final rawMember = bill['member'];
+    if (rawMember is Map<String, dynamic>) {
+      _assignedMember = Map<String, dynamic>.from(rawMember);
+    } else {
+      final memberId =
+          bill['memberId']?.toString() ?? bill['member_id']?.toString();
+      if (memberId == null || memberId.isEmpty) {
+        _assignedMember = null;
+      } else if (_assignedMember?['id']?.toString() != memberId) {
+        _assignedMember = {'id': memberId};
+      }
+    }
+
     if (sync) {
       _syncToLocalStorage();
     }
 
     notifyListeners();
+  }
+
+  void _resetBillState({bool notify = true}) {
+    _billId = null;
+    _currentBill = null;
+    _items = [];
+    _purchaseAmount = 0.0;
+    _totalDiscount = 0.0;
+    _vatAmount = 0.0;
+    _totalAmount = 0.0;
+    _awaitingCashPayment = false;
+    _awaitingCashAmount = 0.0;
+    _awaitingQrPayment = false;
+    _showThankYouOverlay = false;
+    _returnReferenceBill = null;
+    _returnLines.clear();
+    _mirroredReturnCreditAmount = null;
+    _mirroredNetSettlementAmount = null;
+    _assignedMember = null;
+    if (kIsWeb) {
+      html.window.localStorage.remove('bill_state');
+    }
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  void resetCurrentBillState() {
+    _resetBillState();
+  }
+
+  /// Update state from a pos-mirror broadcast (customer display window).
+  /// Read-only — does not persist to localStorage.
+  void updateFromMirrorState(Map<String, dynamic> state) {
+    _items = List<Map<String, dynamic>>.from(
+      (state['items'] as List? ?? []).map(
+        (e) => Map<String, dynamic>.from(e as Map),
+      ),
+    );
+    _purchaseAmount = _toDouble(state['subtotal']);
+    _totalDiscount = _toDouble(state['discount']);
+    _vatAmount = _toDouble(state['tax']);
+    _totalAmount = _toDouble(state['total']);
+    _returnLines
+      ..clear()
+      ..addAll(
+        (state['returnItems'] as List? ?? []).whereType<Map>().map(
+          (e) => Map<String, dynamic>.from(e),
+        ),
+      );
+    _mirroredReturnCreditAmount = state.containsKey('returnCreditAmount')
+        ? _toDouble(state['returnCreditAmount'])
+        : null;
+    _mirroredNetSettlementAmount = state.containsKey('netSettlementAmount')
+        ? _toDouble(state['netSettlementAmount'])
+        : null;
+    _awaitingCashPayment = state['isAwaitingCash'] == true;
+    _awaitingCashAmount = _toDouble(state['cashAmount']);
+    _awaitingQrPayment = state['isAwaitingQr'] == true;
+    _showThankYouOverlay = state['showThankYou'] == true;
+    _assignedMember = state['member'] as Map<String, dynamic>?;
+    // Mirror cashier's open-dialog state so customer overlays can react.
+    _activeDialog = state['activeDialog'] as String?;
+    notifyListeners();
+  }
+
+  void loadBillSnapshot(Map<String, dynamic> bill) {
+    _applyBill(Map<String, dynamic>.from(bill));
   }
 
   void _syncToLocalStorage() {
@@ -155,26 +327,68 @@ class BillProvider extends ChangeNotifier {
     return [];
   }
 
+  List<Map<String, dynamic>> _extractDiscounts(Map<String, dynamic>? bill) {
+    if (bill == null) {
+      return const [];
+    }
+    final raw = bill['discounts'];
+    if (raw is! List) {
+      return const [];
+    }
+    return raw.whereType<Map<String, dynamic>>().toList();
+  }
+
+  double _calculatePersistedDiscountAmount({bool includeManual = true}) {
+    double total = 0.0;
+    for (final discount in _extractDiscounts(_currentBill)) {
+      final code = discount['promotionCode']?.toString() ?? '';
+      if (!includeManual && code == kManualDiscountPromotionCode) {
+        continue;
+      }
+      final unit = (discount['unit']?.toString() ?? '').toLowerCase();
+      final amount = _toDouble(discount['amount']);
+      if (unit == 'thb') {
+        total += amount;
+      } else if (unit == 'percentage') {
+        total += _purchaseAmount * (amount / 100.0);
+      }
+    }
+    return total;
+  }
+
+  double _currentVatRatio() {
+    final netBase = _totalAmount > 0 ? _totalAmount : amountAfterDiscount;
+    if (netBase <= 0 || _vatAmount <= 0) {
+      return 0.0;
+    }
+    return (_vatAmount / netBase).clamp(0.0, 1.0);
+  }
+
   void _backfillTotalsIfNeeded() {
     final subtotalFromItems = _calculateSubtotalFromItems(_items);
     if (_purchaseAmount <= 0 && subtotalFromItems > 0) {
       _purchaseAmount = subtotalFromItems;
     }
     if (_totalAmount <= 0 && subtotalFromItems > 0) {
-      final base = (_purchaseAmount - _totalDiscount).clamp(0, double.infinity);
-      _totalAmount = base + _vatAmount;
+      _totalAmount = amountAfterDiscount;
     }
   }
 
   /// Set a local-only discount amount, clamp and sync to storage and listeners.
   void applyLocalDiscount({required double discountAmount}) {
-    // Clamp discount between 0 and subtotal
-    final numClamped = discountAmount.clamp(0.0, _purchaseAmount);
-    _totalDiscount = numClamped.toDouble();
+    final persistedWithoutManual = _calculatePersistedDiscountAmount(
+      includeManual: false,
+    );
+    final manualDiscount = discountAmount
+        .clamp(0.0, _purchaseAmount)
+        .toDouble();
+    _totalDiscount = (persistedWithoutManual + manualDiscount)
+        .clamp(0.0, _purchaseAmount)
+        .toDouble();
 
-    // Recalculate total based on current subtotal, discount, and VAT
-    final base = (_purchaseAmount - _totalDiscount).clamp(0.0, double.infinity);
-    _totalAmount = base + _vatAmount;
+    final netAfterDiscount = amountAfterDiscount;
+    _vatAmount = netAfterDiscount * _currentVatRatio();
+    _totalAmount = netAfterDiscount;
 
     // Keep currentBill in sync so it can be broadcast to other tabs
     if (_currentBill != null) {
@@ -184,6 +398,7 @@ class BillProvider extends ChangeNotifier {
     }
     _currentBill!['purchaseAmount'] = _purchaseAmount;
     _currentBill!['totalDiscount'] = _totalDiscount;
+    _currentBill!['amountAfterDiscount'] = amountAfterDiscount;
     _currentBill!['vatAmount'] = _vatAmount;
     _currentBill!['totalAmount'] = _totalAmount;
 
@@ -275,11 +490,88 @@ class BillProvider extends ChangeNotifier {
     return sum;
   }
 
+  void startReturnSession({required Map<String, dynamic> referenceBill}) {
+    final refId =
+        referenceBill['id']?.toString() ??
+        referenceBill['billId']?.toString() ??
+        '';
+    if (refId.isEmpty) {
+      throw Exception('ไม่พบบิลอ้างอิง');
+    }
+    _returnReferenceBill = {
+      'id': refId,
+      'createdAt': referenceBill['createdAt']?.toString(),
+      'customerName': referenceBill['customerName']?.toString(),
+      'status': referenceBill['status']?.toString(),
+    };
+    _returnLines.clear();
+    notifyListeners();
+  }
+
+  void setReturnLineFromDetail({
+    required Map<String, dynamic> detail,
+    required int qty,
+  }) {
+    if (_returnReferenceBill == null) {
+      throw Exception('ยังไม่ได้เลือกบิลอ้างอิง');
+    }
+
+    final partCode = detail['partCode']?.toString() ?? '';
+    final addressCode = detail['addressCode']?.toString() ?? '';
+    final codeKey = '$partCode|$addressCode';
+    if (partCode.isEmpty) {
+      throw Exception('รายการสินค้าไม่มี partCode');
+    }
+
+    final originalQty = _toDouble(detail['qty'] ?? detail['quantity']).toInt();
+    final remainingQty = _toDouble(
+      detail['remainingQty'] ??
+          detail['returnableQty'] ??
+          detail['qty'] ??
+          detail['quantity'],
+    ).toInt();
+    final unitPrice = _toDouble(
+      detail['price'] ?? detail['unitPrice'] ?? detail['unit_price'],
+    );
+    final safeQty = qty.clamp(0, remainingQty <= 0 ? 0 : remainingQty);
+
+    _returnLines.removeWhere(
+      (line) =>
+          '${line['partCode'] ?? ''}|${line['addressCode'] ?? ''}' == codeKey,
+    );
+
+    if (safeQty > 0) {
+      _returnLines.add({
+        'type': 'return',
+        'referenceBillId': _returnReferenceBill!['id'],
+        'partCode': partCode,
+        'addressCode': addressCode,
+        'name':
+            detail['nameTh']?.toString() ??
+            detail['name']?.toString() ??
+            'สินค้า',
+        'qty': safeQty,
+        'price': unitPrice,
+        'lineTotal': -(unitPrice * safeQty),
+        'originalQty': originalQty,
+        'remainingQty': remainingQty,
+      });
+    }
+
+    notifyListeners();
+  }
+
+  void clearReturnSession() {
+    _returnReferenceBill = null;
+    _returnLines.clear();
+    notifyListeners();
+  }
+
   Future<void> switchBill({required String token, String? targetBillId}) async {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.switchBill(
+      final bill = await ApiService.switchBill(
         token: token,
         targetBillId: targetBillId,
       );
@@ -291,12 +583,66 @@ class BillProvider extends ChangeNotifier {
   }
 
   Future<void> _ensureBill({required String token}) async {
-    if (_billId == null) {
-      await switchBill(token: token, targetBillId: '');
+    if (_billId != null) {
+      final currentStatus = (_currentBill?['status']?.toString() ?? '')
+          .toLowerCase()
+          .trim();
+      if (currentStatus == 'new') {
+        return;
+      }
+      if (currentStatus.isNotEmpty) {
+        await startNewBill(token: token);
+        return;
+      }
+
+      try {
+        final latest = await ApiService.getBill(token: token, billId: _billId!);
+        final status = (latest['status']?.toString() ?? '').toLowerCase();
+        if (status == 'new') {
+          _applyBill(latest);
+          return;
+        }
+      } catch (_) {
+        // fall through and try to recover an active bill from the backend
+      }
+    }
+
+    await startNewBill(token: token);
+  }
+
+  Future<void> startNewBill({required String token}) async {
+    isLoading = true;
+    notifyListeners();
+    try {
+      try {
+        final created = await ApiService.createBill(token: token);
+        final newBillId = created['id']?.toString() ?? '';
+        if (newBillId.isEmpty) {
+          throw Exception('New bill id was not returned');
+        }
+        final bill = await ApiService.getBill(token: token, billId: newBillId);
+        _applyBill(bill);
+      } catch (_) {
+        final activeBills = await ApiService.getBills(
+          token: token,
+          limit: 1,
+          offset: 0,
+          statuses: const ['new'],
+          includeDetails: true,
+          scope: 'pos',
+        );
+        if (activeBills.isEmpty) {
+          rethrow;
+        }
+        _applyBill(activeBills.first);
+      }
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
   }
 
-  Future<void> addItemByBarcode({
+  Future<Map<String, dynamic>> addItemByBarcode({
     required String token,
     required String barcode,
     int qty = 1,
@@ -309,7 +655,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.addItemToBillByBarcode(
+      final bill = await ApiService.addItemToBillByBarcode(
         token: token,
         billId: _billId!,
         barcode: barcode,
@@ -319,13 +665,14 @@ class BillProvider extends ChangeNotifier {
       if (_items.isEmpty) {
         await _reloadBill(token: token);
       }
+      return _currentBill ?? bill;
     } finally {
       isLoading = false;
       notifyListeners();
     }
   }
 
-  Future<void> addItem({
+  Future<Map<String, dynamic>> addItem({
     required String token,
     required String partCode,
     required String addressCode,
@@ -339,7 +686,7 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.addItemToBill(
+      final bill = await ApiService.addItemToBill(
         token: token,
         billId: _billId!,
         partCode: partCode,
@@ -350,6 +697,7 @@ class BillProvider extends ChangeNotifier {
       if (_items.isEmpty) {
         await _reloadBill(token: token);
       }
+      return _currentBill ?? bill;
     } finally {
       isLoading = false;
       notifyListeners();
@@ -357,7 +705,14 @@ class BillProvider extends ChangeNotifier {
   }
 
   Future<void> clearBill({required String token}) async {
-    await switchBill(token: token);
+    if (_billId != null) {
+      try {
+        await ApiService.cancelBill(token: token, billId: _billId!);
+      } catch (_) {
+        // Force-clear local state even if bill is already completed/cancelled on backend
+      }
+    }
+    _resetBillState();
   }
 
   Future<void> removeItem({
@@ -375,13 +730,41 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.removeItemFromBill(
+      await ApiService.removeItemFromBill(
         token: token,
         billId: _billId!,
         partCode: partCode,
         addressCode: addressCode,
         qty: qty,
         isRemoveAll: isRemoveAll,
+      );
+      await _reloadBill(token: token);
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateItemLineTotal({
+    required String token,
+    required String partCode,
+    required String addressCode,
+    required double lineTotal,
+  }) async {
+    await _ensureBill(token: token);
+    if (_billId == null) {
+      throw Exception('Bill id is not initialized');
+    }
+
+    isLoading = true;
+    notifyListeners();
+    try {
+      final bill = await ApiService.updateItemPriceInBill(
+        token: token,
+        billId: _billId!,
+        partCode: partCode,
+        addressCode: addressCode,
+        lineTotal: lineTotal,
       );
       _applyBill(bill);
       if (_items.isEmpty && (_currentBill?['details'] != null)) {
@@ -393,7 +776,12 @@ class BillProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> payCurrentBill({required String token}) async {
+  Future<void> payCurrentBill({
+    required String token,
+    String paymentMethod = 'cash',
+    String? paymentRef,
+    Object? paymentMeta,
+  }) async {
     if (_billId == null) {
       throw Exception('Bill id is not initialized');
     }
@@ -401,9 +789,12 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.payBill(
+      final bill = await ApiService.payBill(
         token: token,
         billId: _billId!,
+        paymentMethod: paymentMethod,
+        paymentRef: paymentRef,
+        paymentMeta: paymentMeta,
       );
       _applyBill(bill);
     } finally {
@@ -412,9 +803,109 @@ class BillProvider extends ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>> createReturnNote({
+    required String token,
+    required String settlementMode,
+    String? purchaseBillId,
+    String? paymentMethod,
+    String? paymentRef,
+    Object? paymentMeta,
+  }) async {
+    if (_returnReferenceBill == null) {
+      throw Exception('ยังไม่ได้เลือกบิลอ้างอิง');
+    }
+    if (_returnLines.isEmpty) {
+      throw Exception('ยังไม่มีรายการคืนสินค้า');
+    }
+
+    final referenceBillId =
+        _returnReferenceBill!['id']?.toString() ??
+        _returnReferenceBill!['referenceBillId']?.toString() ??
+        '';
+    if (referenceBillId.isEmpty) {
+      throw Exception('ไม่พบเลขที่บิลอ้างอิง');
+    }
+
+    final lines = _returnLines
+        .map((line) {
+          return <String, dynamic>{
+            'partCode': line['partCode']?.toString() ?? '',
+            'addressCode': line['addressCode']?.toString() ?? '',
+            'qty': _toDouble(line['qty']).toInt(),
+          };
+        })
+        .where((line) {
+          return (line['partCode'] as String).isNotEmpty &&
+              (line['addressCode'] as String).isNotEmpty &&
+              (line['qty'] as int) > 0;
+        })
+        .toList();
+
+    if (lines.isEmpty) {
+      throw Exception('ยังไม่มีรายการคืนสินค้าที่ถูกต้อง');
+    }
+
+    return ApiService.createReturnNote(
+      token: token,
+      referenceBillId: referenceBillId,
+      settlementMode: settlementMode,
+      purchaseBillId: purchaseBillId,
+      paymentMethod: paymentMethod,
+      paymentRef: paymentRef,
+      paymentMeta: paymentMeta,
+      lines: lines,
+    );
+  }
+
+  Future<void> holdCurrentBill({required String token}) async {
+    if (_billId == null) {
+      throw Exception('Bill id is not initialized');
+    }
+    isLoading = true;
+    notifyListeners();
+    try {
+      final bill = await ApiService.holdBill(token: token, billId: _billId!);
+      _applyBill(bill);
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> cancelCurrentBill({required String token}) async {
+    if (_billId == null) {
+      throw Exception('Bill id is not initialized');
+    }
+    isLoading = true;
+    notifyListeners();
+    try {
+      await ApiService.cancelBill(token: token, billId: _billId!);
+      _resetBillState(notify: false);
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteCurrentBill({required String token}) async {
+    if (_billId == null) {
+      throw Exception('Bill id is not initialized');
+    }
+    isLoading = true;
+    notifyListeners();
+    try {
+      await ApiService.deleteBill(token: token, billId: _billId!);
+      _resetBillState(notify: false);
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> setManualDiscount({
     required String token,
-    required String promotionCode,
+    required bool isPercentMode,
+    required double inputValue,
   }) async {
     await _ensureBill(token: token);
     if (_billId == null) {
@@ -424,12 +915,86 @@ class BillProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
-      final bill = await ApiBillsService.addBillDiscount(
+      final bill = await ApiService.addBillDiscount(
         token: token,
         billId: _billId!,
-        promotionCode: promotionCode,
+        unit: isPercentMode ? 'percentage' : 'THB',
+        amount: inputValue,
       );
       _applyBill(bill);
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> clearManualDiscount({required String token}) async {
+    await _ensureBill(token: token);
+    if (_billId == null) {
+      throw Exception('Bill id is not initialized');
+    }
+
+    final manualDiscount = manualDiscountDetail;
+    if (manualDiscount == null) {
+      applyLocalDiscount(discountAmount: 0.0);
+      return;
+    }
+
+    isLoading = true;
+    notifyListeners();
+    try {
+      final bill = await ApiService.removeBillDiscount(
+        token: token,
+        billId: _billId!,
+        promotionCode: kManualDiscountPromotionCode,
+      );
+      _applyBill(bill);
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> assignMemberByPhone({
+    required String token,
+    required String phone,
+  }) async {
+    await _ensureBill(token: token);
+    if (_billId == null) {
+      throw Exception('Bill id is not initialized');
+    }
+
+    isLoading = true;
+    notifyListeners();
+    try {
+      final result = await ApiService.addMemberToBillByPhone(
+        token: token,
+        billId: _billId!,
+        phone: phone,
+      );
+      final member = result['member'];
+      if (member is Map<String, dynamic>) {
+        _assignedMember = Map<String, dynamic>.from(member);
+      }
+      await _reloadBill(token: token);
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> unassignMember({required String token}) async {
+    await _ensureBill(token: token);
+    if (_billId == null) {
+      throw Exception('Bill id is not initialized');
+    }
+
+    isLoading = true;
+    notifyListeners();
+    try {
+      await ApiService.removeMemberFromBill(token: token, billId: _billId!);
+      _assignedMember = null;
+      await _reloadBill(token: token);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -439,10 +1004,7 @@ class BillProvider extends ChangeNotifier {
   Future<void> _reloadBill({required String token}) async {
     if (_billId == null) return;
     try {
-      final latest = await ApiBillsService.getBill(
-        token: token,
-        billId: _billId!,
-      );
+      final latest = await ApiService.getBill(token: token, billId: _billId!);
       _applyBill(latest);
     } catch (_) {
       // ignore sync errors

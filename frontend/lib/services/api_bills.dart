@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
 
 class ApiBillsService {
-  static const String baseUrl = 'http://localhost:8080';
+  static String get baseUrl => ApiConfig.apiBaseUrl;
 
   // Helper: ดึง List<Map> จาก response ที่อาจเป็นหลายรูปแบบ
   static List<Map<String, dynamic>> _extractListFromResponse(
@@ -15,7 +16,7 @@ class ApiBillsService {
 
     if (decoded is Map<String, dynamic>) {
       // ลองดู key มาตรฐานก่อน
-      final listKeys = ['items', 'data', 'users', 'parts', 'results'];
+      final listKeys = ['items', 'data', 'users', 'parts', 'results', 'bills'];
       for (final key in listKeys) {
         if (decoded[key] is List) {
           return (decoded[key] as List)
@@ -69,15 +70,38 @@ class ApiBillsService {
     throw Exception('Unexpected $endpointName response format: $decoded');
   }
 
+  static bool _looksLikeBillObject(Map<String, dynamic> payload) {
+    return payload.containsKey('purchaseAmount') ||
+        payload.containsKey('totalAmount') ||
+        payload.containsKey('status') ||
+        payload.containsKey('details') ||
+        payload.containsKey('discounts');
+  }
+
   // GET /bills?limit=&offset=
   static Future<List<Map<String, dynamic>>> getBills({
     required String token,
     int limit = 20,
     int offset = 0,
+    List<String>? statuses,
+    bool includeDetails = false,
+    String scope = 'pos',
   }) async {
+    final queryParams = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      'scope': scope,
+    };
+    if (statuses != null && statuses.isNotEmpty) {
+      queryParams['statuses'] = statuses.join(',');
+    }
+    if (includeDetails) {
+      queryParams['includeDetails'] = 'true';
+    }
+
     final uri = Uri.parse(
       '$baseUrl/bills',
-    ).replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
+    ).replace(queryParameters: queryParams);
 
     final response = await http.get(
       uri,
@@ -97,7 +121,7 @@ class ApiBillsService {
     return _extractListFromResponse(decoded, '/bills');
   }
 
-  // /bills/switch — สร้างบิลใหม่ (targetBillId ว่าง) หรือสลับไปบิลอื่น
+  // PUT /bills/switch — สร้างบิลใหม่ (targetBillId ว่าง) หรือสลับไปบิลอื่น
   static Future<Map<String, dynamic>> switchBill({
     required String token,
     String? targetBillId,
@@ -125,7 +149,7 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/switch');
   }
 
-  // /bills/:id/add-item — เพิ่มสินค้าจาก partCode + addressCode
+  // PUT /bills/:id/add-item — เพิ่มสินค้าจาก partCode + addressCode
   static Future<Map<String, dynamic>> addItemToBill({
     required String token,
     required String billId,
@@ -158,7 +182,7 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id/add-item');
   }
 
-  // /bills/:id/add-item-by-barcode — เพิ่มสินค้าจากบาร์โค้ด
+  // PUT /bills/:id/add-item-by-barcode — เพิ่มสินค้าจากบาร์โค้ด
   static Future<Map<String, dynamic>> addItemToBillByBarcode({
     required String token,
     required String billId,
@@ -189,7 +213,7 @@ class ApiBillsService {
     );
   }
 
-  // /bills/:id/remove-item — ลบ/ลดจำนวนสินค้าในบิล
+  // PUT /bills/:id/remove-item — ลบ/ลดจำนวนสินค้าในบิล
   static Future<Map<String, dynamic>> removeItemFromBill({
     required String token,
     required String billId,
@@ -224,13 +248,15 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id/remove-item');
   }
 
-  // /bills/:id/add-discount — ใช้ promotionCode
-  static Future<Map<String, dynamic>> addBillDiscount({
+  // PUT /bills/:id/update-item-price — แก้ยอดราคาของรายการสินค้าในบิล
+  static Future<Map<String, dynamic>> updateItemPriceInBill({
     required String token,
     required String billId,
-    required String promotionCode,
+    required String partCode,
+    required String addressCode,
+    required double lineTotal,
   }) async {
-    final uri = Uri.parse('$baseUrl/bills/$billId/add-discount');
+    final uri = Uri.parse('$baseUrl/bills/$billId/update-item-price');
 
     final response = await http.put(
       uri,
@@ -238,7 +264,58 @@ class ApiBillsService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-      body: jsonEncode({'promotionCode': promotionCode}),
+      body: jsonEncode({
+        'partCode': partCode,
+        'addressCode': addressCode,
+        'lineTotal': lineTotal,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to update item price: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    final payload = _extractObjectFromResponse(
+      decoded,
+      '/bills/:id/update-item-price',
+    );
+    if (_looksLikeBillObject(payload)) {
+      return payload;
+    }
+    return getBill(token: token, billId: billId);
+  }
+
+  // PUT /bills/:id/add-discount — ใช้ promotionCode หรือ manual unit+amount
+  static Future<Map<String, dynamic>> addBillDiscount({
+    required String token,
+    required String billId,
+    String? promotionCode,
+    String? unit,
+    double? amount,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/$billId/add-discount');
+
+    final body = <String, dynamic>{};
+    if (promotionCode != null && promotionCode.isNotEmpty) {
+      body['promotionCode'] = promotionCode;
+    }
+    if (unit != null && unit.isNotEmpty) {
+      body['unit'] = unit;
+    }
+    if (amount != null) {
+      body['amount'] = amount;
+    }
+
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(body),
     );
 
     if (response.statusCode != 200) {
@@ -248,10 +325,17 @@ class ApiBillsService {
     }
 
     final decoded = jsonDecode(response.body);
-    return _extractObjectFromResponse(decoded, '/bills/:id/add-discount');
+    final payload = _extractObjectFromResponse(
+      decoded,
+      '/bills/:id/add-discount',
+    );
+    if (_looksLikeBillObject(payload)) {
+      return payload;
+    }
+    return getBill(token: token, billId: billId);
   }
 
-  // /bills/:id/remove-discount — ลบส่วนลด
+  // PUT /bills/:id/remove-discount — ลบส่วนลด
   static Future<Map<String, dynamic>> removeBillDiscount({
     required String token,
     required String billId,
@@ -275,15 +359,29 @@ class ApiBillsService {
     }
 
     final decoded = jsonDecode(response.body);
-    return _extractObjectFromResponse(decoded, '/bills/:id/remove-discount');
+    final payload = _extractObjectFromResponse(
+      decoded,
+      '/bills/:id/remove-discount',
+    );
+    if (_looksLikeBillObject(payload)) {
+      return payload;
+    }
+    return getBill(token: token, billId: billId);
   }
 
-  // /bills/:id/payment — ชำระเงิน
+  // PUT /bills/:id/payment — ชำระเงิน
   static Future<Map<String, dynamic>> payBill({
     required String token,
     required String billId,
+    String paymentMethod = 'cash',
+    String? paymentRef,
   }) async {
     final uri = Uri.parse('$baseUrl/bills/$billId/payment');
+
+    final body = <String, dynamic>{'paymentMethod': paymentMethod};
+    if (paymentRef != null && paymentRef.isNotEmpty) {
+      body['paymentRef'] = paymentRef;
+    }
 
     final response = await http.put(
       uri,
@@ -291,6 +389,7 @@ class ApiBillsService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
+      body: jsonEncode(body),
     );
 
     if (response.statusCode != 200) {
@@ -303,7 +402,7 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id/payment');
   }
 
-  // /bills/:id — ดึงบิลเต็ม ๆ (ใช้ตอน refresh)
+  // GET /bills/:id — ดึงบิลเต็ม ๆ (ใช้ตอน refresh)
   static Future<Map<String, dynamic>> getBill({
     required String token,
     required String billId,
@@ -328,7 +427,7 @@ class ApiBillsService {
     return _extractObjectFromResponse(decoded, '/bills/:id');
   }
 
-  // /bills/:id/cancel — ยกเลิกบิล (ต้องมี endpoint นี้ที่ backend)
+  // /bills/:id/cancel — ยกเลิกบิล
   static Future<void> cancelBill({
     required String token,
     required String billId,
@@ -346,6 +445,94 @@ class ApiBillsService {
     if (response.statusCode != 200) {
       throw Exception(
         'Failed to cancel bill: ${response.statusCode} ${response.body}',
+      );
+    }
+  }
+
+  // POST /bills - สร้างบิลใหม่ (ว่าง) ใช้ branchId/posId จาก session
+  static Future<Map<String, dynamic>> createBill({
+    required String token,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills');
+
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      // ตาม Postman ใช้ body ว่าง ๆ "{}"
+      body: jsonEncode({}),
+    );
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } catch (_) {
+      decoded = null;
+    }
+    if (response.statusCode == 409 && decoded is Map<String, dynamic>) {
+      final existingBillId = decoded['existingBillId']?.toString() ?? '';
+      if (existingBillId.isNotEmpty) {
+        return {'id': existingBillId, 'existing': true};
+      }
+    }
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(
+        'Failed to create bill: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    if (decoded == null) {
+      throw Exception('Unexpected /bills response format: ${response.body}');
+    }
+    return _extractObjectFromResponse(decoded, '/bills');
+  }
+
+  // PUT /bills/:id/hold - เปลี่ยนสถานะบิลเป็น hold
+  static Future<Map<String, dynamic>> holdBill({
+    required String token,
+    required String billId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/$billId/hold');
+
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to hold bill: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/bills/:id/hold');
+  }
+
+  // DELETE /bills/:id - ลบบิลพร้อมรายละเอียดทั้งหมด
+  static Future<void> deleteBill({
+    required String token,
+    required String billId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/bills/$billId');
+
+    final response = await http.delete(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception(
+        'Failed to delete bill: ${response.statusCode} ${response.body}',
       );
     }
   }

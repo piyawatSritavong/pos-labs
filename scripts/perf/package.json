@@ -1,0 +1,11 @@
+{
+  "name": "pos-prod-perf-harness",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "pos:full-day": "node pos-full-day-perf.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

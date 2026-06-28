@@ -174,10 +174,16 @@ func (r *reportRepositoryPG) GetBillsWithItemsByDate(ctx context.Context, date t
 }
 
 func (r *reportRepositoryPG) GetAllParts(ctx context.Context) ([]PartMaster, error) {
+	// Note: the raw "image" column stores a (potentially large) base64 blob.
+	// Transferring it for every part made the parts report huge and slow, and a
+	// blob is unusable in a CSV anyway — so we emit a lightweight presence flag
+	// ('Y' / '') instead of the full image data. CSV structure is unchanged.
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT 
+		SELECT
 			"code", "bar_code", "category_id", "unit_id", "name", "name_th",
-			"details", "cost", "price", "image", "is_active"
+			COALESCE("receipt_name", ''), "details", "cost", "price",
+			CASE WHEN "image" IS NULL OR "image" = '' THEN '' ELSE 'Y' END AS "image",
+			"is_active"
 		FROM "part_master"
 		ORDER BY "code" ASC
 	`)
@@ -189,7 +195,7 @@ func (r *reportRepositoryPG) GetAllParts(ctx context.Context) ([]PartMaster, err
 	var parts []PartMaster
 	for rows.Next() {
 		var p PartMaster
-		var barCode, categoryID, unitID, nameTH, details, image sql.NullString
+		var barCode, categoryID, unitID, nameTH, receiptName, details, image sql.NullString
 		var cost sql.NullFloat64
 		var isActive sql.NullBool
 
@@ -200,6 +206,7 @@ func (r *reportRepositoryPG) GetAllParts(ctx context.Context) ([]PartMaster, err
 			&unitID,
 			&p.Name,
 			&nameTH,
+			&receiptName,
 			&details,
 			&cost,
 			&p.Price,
@@ -221,6 +228,9 @@ func (r *reportRepositoryPG) GetAllParts(ctx context.Context) ([]PartMaster, err
 		}
 		if nameTH.Valid {
 			p.NameTH = nameTH.String
+		}
+		if receiptName.Valid {
+			p.ReceiptName = receiptName.String
 		}
 		if details.Valid {
 			p.Details = details.String

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 type addressRepositoryPG struct {
@@ -33,11 +35,87 @@ func (r *addressRepositoryPG) GetByCode(ctx context.Context, code string) (*Addr
 	return &a, nil
 }
 
+// Search lists addresses with optional server-side filtering by free-text query
+// (part code / part name / store name) and/or storeID, plus LIMIT/OFFSET paging.
+// This lets the Addresses page filter+page on the server instead of loading the
+// whole catalog and filtering in Dart. Empty q/storeID behaves like List.
+func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, limit, offset int) ([]Address, error) {
+	var conds []string
+	var args []interface{}
+	argn := 1
+
+	if s := strings.TrimSpace(q); s != "" {
+		like := "%" + s + "%"
+		conds = append(conds, fmt.Sprintf(
+			`(a."part_code" ILIKE $%d OR p."name" ILIKE $%d OR p."name_th" ILIKE $%d OR s."label" ILIKE $%d OR s."label_th" ILIKE $%d)`,
+			argn, argn, argn, argn, argn,
+		))
+		args = append(args, like)
+		argn++
+	}
+	if sid := strings.TrimSpace(storeID); sid != "" {
+		conds = append(conds, fmt.Sprintf(`a."store_id" = $%d`, argn))
+		args = append(args, sid)
+		argn++
+	}
+
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	query := `
+		SELECT
+			a."code", a."part_code", a."store_id", a."shelf", a."qty",
+			a."min", a."max", a."rop", a."remarks",
+			COALESCE(NULLIF(p."name_th", ''), p."name", '') AS part_name,
+			COALESCE(NULLIF(s."label_th", ''), s."label", a."store_id") AS store_name
+		FROM "address_master" a
+		LEFT JOIN "part_master"  p ON p."code" = a."part_code"
+		LEFT JOIN "store_master" s ON s."id"   = a."store_id"` +
+		where +
+		fmt.Sprintf(` ORDER BY a."code" LIMIT $%d OFFSET $%d`, argn, argn+1)
+	args = append(args, limit, offset)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var addresses []Address
+	for rows.Next() {
+		var a Address
+		if err := rows.Scan(
+			&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty,
+			&a.Min, &a.Max, &a.Rop, &a.Remarks,
+			&a.PartName, &a.StoreName,
+		); err != nil {
+			return nil, err
+		}
+		addresses = append(addresses, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return addresses, nil
+}
+
 func (r *addressRepositoryPG) List(ctx context.Context, limit, offset int) ([]Address, error) {
+	// LEFT JOIN part_master + store_master so the Addresses page can display
+	// product name and store label without a second round-trip. COALESCE protects
+	// against NULL rows older seed data may have left.
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT "code", "part_code", "store_id", "shelf", "qty", "min", "max", "rop", "remarks"
-		FROM "address_master"
-		ORDER BY "code"
+		SELECT
+			a."code", a."part_code", a."store_id", a."shelf", a."qty",
+			a."min", a."max", a."rop", a."remarks",
+			COALESCE(NULLIF(p."name_th", ''), p."name", '') AS part_name,
+			COALESCE(NULLIF(s."label_th", ''), s."label", a."store_id") AS store_name
+		FROM "address_master" a
+		LEFT JOIN "part_master"  p ON p."code" = a."part_code"
+		LEFT JOIN "store_master" s ON s."id"   = a."store_id"
+		ORDER BY a."code"
 		LIMIT $1 OFFSET $2
 	`, limit, offset)
 	if err != nil {
@@ -48,7 +126,11 @@ func (r *addressRepositoryPG) List(ctx context.Context, limit, offset int) ([]Ad
 	var addresses []Address
 	for rows.Next() {
 		var a Address
-		if err := rows.Scan(&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty, &a.Min, &a.Max, &a.Rop, &a.Remarks); err != nil {
+		if err := rows.Scan(
+			&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty,
+			&a.Min, &a.Max, &a.Rop, &a.Remarks,
+			&a.PartName, &a.StoreName,
+		); err != nil {
 			return nil, err
 		}
 		addresses = append(addresses, a)

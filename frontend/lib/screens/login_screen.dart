@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../theme/app_theme.dart';
 import 'home_screen.dart';
 import 'customer_screen.dart';
+import 'backoffice_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,9 +18,29 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
+  late final TextEditingController _usernameController;
   String _username = '';
   String _password = '';
   bool _obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // บน Web รองรับการ pre-fill username ผ่าน URL parameter (?username=pos1)
+    // start-pos.bat บน Windows POS จะเปิด kiosk ด้วย URL นี้
+    String initial = '';
+    if (kIsWeb) {
+      initial = Uri.base.queryParameters['username']?.trim() ?? '';
+    }
+    _usernameController = TextEditingController(text: initial);
+    _username = initial;
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    super.dispose();
+  }
 
   Future<void> _submit() async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
@@ -30,13 +53,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await auth.login(_username, _password);
-      
+
       // Navigate based on account type
       if (!mounted) return;
-      
+
       if (auth.isCustomerDisplay) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const CustomerScreen()),
+          (route) => false,
+        );
+      } else if (auth.hasBackofficeAccess) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const BackofficeScreen()),
           (route) => false,
         );
       } else {
@@ -46,9 +74,10 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -67,8 +96,28 @@ class _LoginScreenState extends State<LoginScreen> {
               key: _formKey,
               child: Column(
                 children: [
+                  // ── ไจ๊เฮง brand logo ────────────────────────────────────
+                  Container(
+                    width: 140,
+                    height: 140,
+                    margin: const EdgeInsets.only(bottom: 24),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.asset(
+                      'assets/images/logoJaiHeng.jpg',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.storefront,
+                        size: 64,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
                   // Username
                   TextFormField(
+                    controller: _usernameController,
                     decoration: const InputDecoration(
                       labelText: 'Username',
                       border: OutlineInputBorder(),
@@ -135,7 +184,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 8),
                   const Text(
-                    'ทดสอบ: email = test@test.com, password = 123456',
+                    'ทดสอบ POS: username = pos1, password = pos123456',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ],

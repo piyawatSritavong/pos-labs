@@ -13,12 +13,16 @@ This backend is a Go service using Gin, PostgreSQL, and token-based session auth
 
 Environment variables (see `docker-compose.yml` for defaults):
 
-- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSLMODE`
+- `DATABASE_URL` – full PostgreSQL URL (used first when set, e.g. Supabase)
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSLMODE` – local fallback connection settings
+- `DB_MAX_OPEN_CONNS`, `DB_MAX_IDLE_CONNS`, `DB_CONN_MAX_LIFETIME` – connection pool settings
 - `PORT` – HTTP port (default `8080`)
-- `ENV` – `development` or `production`
+- `APP_ENV` or `ENV` – `development` or `production`
 - `SESSION_SECRET` – Secret for session token generation (not used with DB sessions, but kept for compatibility)
 - `SESSION_DURATION` – Session expiration duration (e.g., `4h`, `24h`, default: `4h`)
 - `CORS_ALLOWED_ORIGINS` – Comma-separated list of allowed origins for CORS (production only, e.g., `https://app.example.com,https://www.example.com`)
+- `SERVE_STATIC` – serve Flutter Web static files and SPA fallback (default `true`; set `false` on Render)
+- `AUTO_MIGRATE`, `AUTO_SEED_CORE`, `AUTO_SEED_MOCK`, `AUTO_ENSURE_BARCODES` – startup database mutation controls
 
 All database connections are configured to use **UTF-8** encoding and **UTC** timezone:
 
@@ -51,7 +55,25 @@ This configuration ensures:
 
 ### Migrations and Seeding
 
-On startup (`cmd/server/main.go`):
+The legacy local/Windows entrypoint (`cmd/server`) keeps the original startup behavior and runs migrations/seeds automatically unless the `AUTO_*` env vars disable it.
+
+For cloud deployments, use the API entrypoint and run database setup explicitly:
+
+```bash
+go run ./cmd/migrate up
+go run ./cmd/seed --core
+go run ./cmd/seed --real-data ../deploy/windows/seed-real-data.sql
+```
+
+The canonical cloud entrypoint is:
+
+```bash
+go run ./cmd/api
+```
+
+With `APP_ENV=production`, `cmd/api` defaults startup mutations and static serving to off unless explicitly enabled.
+
+On legacy startup (`cmd/server/main.go`):
 
 1. Connects to PostgreSQL using `internal/db.Connect`.
 2. Runs any pending migrations via `internal/db.RunMigrations`, reading from `file://migrations`.
@@ -131,7 +153,8 @@ On startup (`cmd/server/main.go`):
 ### HTTP API
 
 #### Health
-- `GET /health` – Health check, returns `{"status": "ok", "db": "up"}` or `{"status": "unhealthy", "db": "down"}`
+- `GET /health` – Liveness check, returns `{"status": "ok"}`
+- `GET /ready` and `GET /health/db` – Database readiness checks
 
 #### Authentication
 - `POST /auth/login` – Login with `{ "username": "...", "password": "..." }`. Returns `token`, `name`, `role_id`, `expires`.
@@ -336,13 +359,15 @@ docker-compose up --build
 From `backend/`:
 
 ```bash
-go run ./cmd/server
+go run ./cmd/api
 ```
 
 Ensure PostgreSQL is running and the configuration env vars are set. The server will:
 - Run migrations automatically.
 - Seed core data if the database is empty.
 - Seed mock data if `ENV=development`.
+
+`go run ./cmd/server` is still available for the Windows/local bundle path.
 
 ### Testing the API
 
@@ -383,5 +408,3 @@ Permissions follow the pattern `perm.{resource}.{action}`:
 - **User Branches**: `perm.user_branch.read`, `perm.user_branch.write`
 
 The `role.admin` role automatically receives all permissions. The `role.cashier` role receives limited permissions (parts read, bills read/write).
-
-

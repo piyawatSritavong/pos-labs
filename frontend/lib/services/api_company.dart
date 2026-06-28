@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
 
 class ApiCompanyService {
-  static const String baseUrl = 'http://localhost:8080';
+  static String get baseUrl => ApiConfig.apiBaseUrl;
 
   // Helper: ดึง Map<String,dynamic> จาก response ที่อาจเป็นหลายรูปแบบ
   static Map<String, dynamic> _extractObjectFromResponse(
@@ -48,7 +49,9 @@ class ApiCompanyService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to load company: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to load company: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/company');
@@ -67,29 +70,37 @@ class ApiCompanyService {
     String? logoUrl,
     required double taxRate,
     required String taxType,
+    // Optional. Backend leaves existing value unchanged if omitted (null).
+    String? receiptFooter,
   }) async {
     final uri = Uri.parse('$baseUrl/company');
+    final body = <String, dynamic>{
+      'companyName': companyName,
+      'companyNameTh': companyNameTh,
+      'companyAddress': companyAddress,
+      'companyAddressTh': companyAddressTh,
+      'phone': phone,
+      'email': email,
+      'website': website,
+      'logoUrl': logoUrl ?? '',
+      'taxRate': taxRate,
+      'taxType': taxType,
+    };
+    if (receiptFooter != null) {
+      body['receiptFooter'] = receiptFooter;
+    }
     final response = await http.put(
       uri,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-      body: jsonEncode({
-        'companyName': companyName,
-        'companyNameTh': companyNameTh,
-        'companyAddress': companyAddress,
-        'companyAddressTh': companyAddressTh,
-        'phone': phone,
-        'email': email,
-        'website': website,
-        'logoUrl': logoUrl ?? '',
-        'taxRate': taxRate,
-        'taxType': taxType,
-      }),
+      body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to update company: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to update company: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/company');

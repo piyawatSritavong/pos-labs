@@ -46,6 +46,9 @@ class CompanyProvider extends ChangeNotifier {
     String? logoUrl,
     required double taxRate,
     required String taxType,
+    // Optional — trailing line printed at the bottom of every POS receipt.
+    // Null/missing = leave the existing value in DB unchanged.
+    String? receiptFooter,
   }) async {
     _isLoading = true;
     _error = null;
@@ -64,6 +67,7 @@ class CompanyProvider extends ChangeNotifier {
         logoUrl: logoUrl,
         taxRate: taxRate,
         taxType: taxType,
+        receiptFooter: receiptFooter,
       );
       
       // Refresh data after update

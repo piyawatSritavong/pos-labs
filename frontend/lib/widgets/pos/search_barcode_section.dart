@@ -7,7 +7,9 @@ import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
 class SearchBarcodeSection extends StatefulWidget {
-  const SearchBarcodeSection({super.key});
+  const SearchBarcodeSection({super.key, this.itemsPerPage = 9});
+
+  final int itemsPerPage;
 
   @override
   State<SearchBarcodeSection> createState() => SearchBarcodeSectionState();
@@ -22,9 +24,12 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
   int _currentPage = 0;
 
   List<List<Product>> _chunkedProducts() {
+    final pageSize = widget.itemsPerPage;
     final chunks = <List<Product>>[];
-    for (var i = 0; i < _products.length; i += 9) {
-      final end = i + 9 > _products.length ? _products.length : i + 9;
+    for (var i = 0; i < _products.length; i += pageSize) {
+      final end = i + pageSize > _products.length
+          ? _products.length
+          : i + pageSize;
       chunks.add(_products.sublist(i, end));
     }
     return chunks;
@@ -36,17 +41,48 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
-  Product _mapProduct(Map<String, dynamic> json) {
+  Product _mapProduct(Map<String, dynamic> json, {String? posId}) {
     final rawAddresses = (json['addresses'] as List?) ?? [];
 
     final barcode = json['barCode']?.toString() ?? json['barcode']?.toString();
 
     Map<String, dynamic>? defaultAddress;
+    final vehicleStoreId = posId == null || posId.trim().isEmpty
+        ? null
+        : 'vehicle_${posId.trim()}';
+
+    if (vehicleStoreId != null) {
+      for (final addr in rawAddresses) {
+        if (addr is! Map<String, dynamic>) continue;
+        final store = addr['store'];
+        final storeId = store is Map
+            ? store['id']?.toString()
+            : addr['storeId']?.toString();
+        final qty = _toDouble(addr['qty']);
+        if (storeId == vehicleStoreId && qty > 0) {
+          defaultAddress = addr;
+          break;
+        }
+      }
+    }
 
     for (final addr in rawAddresses) {
-      if (addr is Map<String, dynamic> && addr['is_default'] == true) {
+      if (defaultAddress != null) break;
+      if (addr is Map<String, dynamic> &&
+          (addr['isDefault'] == true || addr['is_default'] == true)) {
         defaultAddress = addr;
         break;
+      }
+    }
+
+    if (defaultAddress == null) {
+      for (final addr in rawAddresses) {
+        if (addr is! Map<String, dynamic>) continue;
+        final qty = _toDouble(addr['qty']);
+        if (qty > 0) {
+          defaultAddress = addr;
+          break;
+        }
       }
     }
 
@@ -59,20 +95,21 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
 
     final defaultAddressCode =
         defaultAddress?['addressCode']?.toString() ??
-            defaultAddress?['code']?.toString();
+        defaultAddress?['code']?.toString();
 
     return Product(
       id: json['id']?.toString() ?? json['code']?.toString() ?? '',
       name: json['nameTh'] ?? json['name_th'] ?? json['name'] ?? '',
       price: _toDouble(json['price'] ?? json['unitPrice']),
       code: json['code']?.toString() ?? '',
+      receiptName: json['receiptName']?.toString(),
       defaultAddressCode: defaultAddressCode,
       barcode: barcode,
     );
   }
 
   Future<void> searchByBarcode(String barcode) async {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final auth = context.read<AuthProvider>();
     final token = auth.token;
     if (token == null) return;
     final trimmed = barcode.trim().toUpperCase();
@@ -87,11 +124,29 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
 
     setState(() => _isLoading = true);
     try {
-      final raw = await ApiPartsService.getPartByCode(token: token, code: trimmed);
-      final product = _mapProduct(raw);
+      if (_lastAutoAddedBarcode != trimmed) {
+        try {
+          final billSnapshot = await _addScannedBarcode(
+            token: token,
+            barcode: trimmed,
+          );
+          final product = _mapProductFromBill(billSnapshot, trimmed);
+          _products = product == null ? [] : [product];
+          _lastAutoAddedBarcode = trimmed;
+          return;
+        } catch (e) {
+          debugPrint('direct add by barcode failed: $e');
+        }
+      }
+
+      final raw = await ApiPartsService.getPartByCode(
+        token: token,
+        code: trimmed,
+      );
+      final product = _mapProduct(raw, posId: auth.posId);
       _products = [product];
       if (_lastAutoAddedBarcode != trimmed) {
-        final added = await _autoAddProduct(product);
+        final added = await _autoAddProduct(product, scannedBarcode: trimmed);
         if (added) {
           _lastAutoAddedBarcode = trimmed;
         }
@@ -105,7 +160,58 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
     }
   }
 
-  Future<bool> _autoAddProduct(Product product) async {
+  Future<Map<String, dynamic>> _addScannedBarcode({
+    required String token,
+    required String barcode,
+  }) {
+    return context.read<BillProvider>().addItemByBarcode(
+      token: token,
+      barcode: barcode,
+      qty: 1,
+    );
+  }
+
+  Product? _mapProductFromBill(Map<String, dynamic> bill, String barcode) {
+    final rawItems =
+        (bill['items'] as List?) ?? (bill['details'] as List?) ?? [];
+    if (rawItems.isEmpty) return null;
+
+    Map<String, dynamic>? item;
+    for (final raw in rawItems.reversed) {
+      if (raw is Map<String, dynamic>) {
+        item = raw;
+        break;
+      }
+    }
+    if (item == null) return null;
+
+    final partCode =
+        item['partCode']?.toString() ?? item['part_code']?.toString() ?? '';
+    final addressCode =
+        item['addressCode']?.toString() ??
+        item['address_code']?.toString() ??
+        '';
+    final name =
+        item['partName']?.toString() ??
+        item['name']?.toString() ??
+        item['receiptName']?.toString() ??
+        partCode;
+
+    return Product(
+      id: partCode,
+      name: name,
+      price: _toDouble(item['price']),
+      code: partCode,
+      receiptName: item['receiptName']?.toString(),
+      defaultAddressCode: addressCode,
+      barcode: barcode,
+    );
+  }
+
+  Future<bool> _autoAddProduct(
+    Product product, {
+    required String scannedBarcode,
+  }) async {
     if (_isAutoAdding) return false;
     _isAutoAdding = true;
     final messenger = ScaffoldMessenger.of(context);
@@ -121,6 +227,33 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
     }
 
     try {
+      Object? barcodeError;
+      final barcodeForAdd = scannedBarcode.trim().isNotEmpty
+          ? scannedBarcode.trim()
+          : product.barcode?.trim();
+      if (barcodeForAdd != null && barcodeForAdd.isNotEmpty) {
+        try {
+          await bill.addItemByBarcode(
+            token: token,
+            barcode: barcodeForAdd,
+            qty: 1,
+          );
+          return true;
+        } catch (e) {
+          final catalogBarcode = product.barcode?.trim();
+          if (catalogBarcode != null &&
+              catalogBarcode.isNotEmpty &&
+              catalogBarcode != barcodeForAdd) {
+            await bill.addItemByBarcode(
+              token: token,
+              barcode: catalogBarcode,
+              qty: 1,
+            );
+            return true;
+          }
+          barcodeError = e;
+        }
+      }
       if (product.defaultAddressCode != null &&
           product.defaultAddressCode!.isNotEmpty) {
         await bill.addItem(
@@ -130,14 +263,10 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
           qty: 1,
         );
         return true;
-      } else if (product.barcode != null && product.barcode!.isNotEmpty) {
-        await bill.addItemByBarcode(
-          token: token,
-          barcode: product.barcode!,
-          qty: 1,
-        );
-        return true;
       } else {
+        if (barcodeError != null) {
+          throw barcodeError;
+        }
         messenger.showSnackBar(
           const SnackBar(
             content: Text('ไม่พบ default store หรือ barcode สำหรับสินค้านี้'),
@@ -175,16 +304,16 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
   @override
   Widget build(BuildContext context) {
     final pages = _chunkedProducts();
-    final currentPageIndex =
-        pages.isEmpty ? 0 : _currentPage.clamp(0, pages.length - 1).toInt();
-    final currentPageCount =
-        pages.isEmpty ? 0 : pages[currentPageIndex].length;
+    final currentPageIndex = pages.isEmpty
+        ? 0
+        : _currentPage.clamp(0, pages.length - 1).toInt();
+    final currentPageCount = pages.isEmpty ? 0 : pages[currentPageIndex].length;
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colorSurface,
         borderRadius: BorderRadius.circular(AppSizes.radius),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: context.colorBorder),
         boxShadow: AppShadows.soft,
       ),
       padding: const EdgeInsets.all(24),
@@ -200,7 +329,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
               const Spacer(),
               Text(
                 '$currentPageCount รายการ',
-                style: const TextStyle(color: AppColors.muted),
+                style: TextStyle(color: context.colorMuted),
               ),
             ],
           ),
@@ -227,14 +356,18 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
                                     shrinkWrap: true,
                                     padding: EdgeInsets.zero,
                                     itemCount: pageItems.length,
-                                    separatorBuilder: (_, __) =>
+                                    separatorBuilder: (context, index) =>
                                         const SizedBox(height: 12),
                                     itemBuilder: (context, index) {
                                       final product = pageItems[index];
                                       return _ProductCard(
                                         product: product,
                                         onAdd: () async {
-                                          await _autoAddProduct(product);
+                                          await _autoAddProduct(
+                                            product,
+                                            scannedBarcode:
+                                                product.barcode ?? product.code,
+                                          );
                                         },
                                       );
                                     },
@@ -253,8 +386,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
                                 if (_pageController.hasClients) {
                                   _pageController.animateToPage(
                                     index,
-                                    duration:
-                                        const Duration(milliseconds: 300),
+                                    duration: const Duration(milliseconds: 300),
                                     curve: Curves.easeOut,
                                   );
                                 }
@@ -262,13 +394,14 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
                               child: Container(
                                 width: 12,
                                 height: 12,
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 5),
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                ),
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: index == _currentPage
-                                      ? AppColors.primary
-                                      : AppColors.border,
+                                      ? context.colorPrimary
+                                      : context.colorBorder,
                                 ),
                               ),
                             ),
@@ -291,10 +424,13 @@ class _EmptyProductsState extends StatelessWidget {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.inventory_2_outlined, size: 48, color: AppColors.muted),
-          SizedBox(height: 8),
-          Text('ยิงบาร์โค้ด/พิมค้นหา', style: TextStyle(color: AppColors.muted)),
+        children: [
+          Icon(Icons.inventory_2_outlined, size: 48, color: context.colorMuted),
+          const SizedBox(height: 8),
+          Text(
+            'ยิงบาร์โค้ด/พิมค้นหา',
+            style: TextStyle(color: context.colorMuted),
+          ),
         ],
       ),
     );
@@ -312,9 +448,9 @@ class _ProductCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colorSurface,
         borderRadius: BorderRadius.circular(AppSizes.radius),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: context.colorBorder),
         boxShadow: AppShadows.soft,
       ),
       child: Row(
@@ -323,10 +459,10 @@ class _ProductCard extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
+              color: context.colorPrimary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.build, color: AppColors.primary),
+            child: Icon(Icons.build, color: context.colorPrimary),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -346,13 +482,13 @@ class _ProductCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   'รหัส ${product.code}',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                  style: TextStyle(color: context.colorMuted, fontSize: 13),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   '฿${product.price.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: AppColors.primary,
+                  style: TextStyle(
+                    color: context.colorPrimary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -364,10 +500,12 @@ class _ProductCard extends StatelessWidget {
             height: 40,
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: const BorderSide(color: AppColors.primary),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                foregroundColor: context.colorPrimary,
+                side: BorderSide(color: context.colorPrimary),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(999),
                 ),

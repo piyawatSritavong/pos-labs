@@ -23,6 +23,7 @@ class _EditCompanyDialogState extends State<EditCompanyDialog> {
   late TextEditingController _websiteController;
   late TextEditingController _logoUrlController;
   late TextEditingController _taxRateController;
+  late TextEditingController _receiptFooterController;
   late String _taxType;
   bool _isLoading = false;
 
@@ -63,7 +64,12 @@ class _EditCompanyDialogState extends State<EditCompanyDialog> {
     _taxRateController = TextEditingController(
       text: taxRatePercent.toStringAsFixed(2),
     );
-    
+
+    // Receipt footer — editable trailing line at the bottom of every POS receipt.
+    _receiptFooterController = TextEditingController(
+      text: widget.company['receiptFooter']?.toString() ?? '',
+    );
+
     _taxType = widget.company['taxType']?.toString() ?? 'xvat';
   }
 
@@ -78,6 +84,7 @@ class _EditCompanyDialogState extends State<EditCompanyDialog> {
     _websiteController.dispose();
     _logoUrlController.dispose();
     _taxRateController.dispose();
+    _receiptFooterController.dispose();
     super.dispose();
   }
 
@@ -124,6 +131,7 @@ class _EditCompanyDialogState extends State<EditCompanyDialog> {
         logoUrl: _logoUrlController.text.trim(),
         taxRate: taxRate,
         taxType: _taxType,
+        receiptFooter: _receiptFooterController.text,
       );
 
       if (mounted) {
@@ -304,6 +312,20 @@ class _EditCompanyDialogState extends State<EditCompanyDialog> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 16),
+                // Receipt footer — multi-line editable text printed at the bottom
+                // of every POS receipt. Empty string = no footer line shown.
+                TextFormField(
+                  controller: _receiptFooterController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'ข้อความท้ายใบเสร็จ (Receipt Footer)',
+                    helperText:
+                        'ข้อความที่จะพิมพ์ใต้ใบเสร็จทุกใบ — เว้นว่างหากไม่ต้องการ',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
                 ),
               ],
             ),

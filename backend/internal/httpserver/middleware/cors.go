@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"os"
 	"strings"
 
 	"backend/internal/config"
@@ -11,67 +10,23 @@ import (
 
 // CORS returns a CORS middleware that is environment-aware
 func CORS(cfg config.Config) gin.HandlerFunc {
+	allowedOrigins := parseAllowedOrigins(cfg.CORSAllowedOrigins)
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
 
-		// Determine allowed origins based on environment
-		var allowedOrigins []string
-		if cfg.Env == "development" {
-			// Development: Allow common localhost origins
-			allowedOrigins = []string{
-				"http://localhost:3000",
-				"http://localhost:3001",
-				"http://localhost:5173", // Vite default
-				"http://localhost:8080",
-				"http://localhost:8081",
-				"http://127.0.0.1:3000",
-				"http://127.0.0.1:5173",
-				"http://127.0.0.1:8080",
-			}
-		} else {
-			// Production: Use environment variable for allowed origins
-			// Format: comma-separated list, e.g., "https://app.example.com,https://www.example.com"
-			allowedOriginsStr := getEnv("CORS_ALLOWED_ORIGINS", "")
-			if allowedOriginsStr != "" {
-				allowedOrigins = strings.Split(allowedOriginsStr, ",")
-				// Trim whitespace from each origin
-				for i := range allowedOrigins {
-					allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
-				}
-			} else {
-				// Fallback: no origins allowed if not configured
-				allowedOrigins = []string{}
-			}
-		}
-
-		// Check if origin is allowed
-		allowed := false
-		if origin != "" {
-			for _, allowedOrigin := range allowedOrigins {
-				if origin == allowedOrigin {
-					allowed = true
-					break
-				}
-			}
-		}
-
-		// Set CORS headers
-		if allowed {
+		allowed := originAllowed(origin, allowedOrigins, cfg)
+		if allowed && origin != "" {
 			c.Header("Access-Control-Allow-Origin", origin)
-		} else if cfg.Env == "development" && origin != "" {
-			// In development, allow any localhost origin even if not in the list
-			// This provides flexibility during development
-			if strings.HasPrefix(origin, "http://localhost:") || 
-			   strings.HasPrefix(origin, "http://127.0.0.1:") {
-				c.Header("Access-Control-Allow-Origin", origin)
-				allowed = true
-			}
+			c.Header("Vary", "Origin")
 		}
 
 		if allowed {
-			c.Header("Access-Control-Allow-Credentials", "true")
+			if cfg.CORSAllowCredentials {
+				c.Header("Access-Control-Allow-Credentials", "true")
+			}
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-POS-Secret")
+			c.Header("Access-Control-Expose-Headers", "Content-Length")
 			c.Header("Access-Control-Max-Age", "3600")
 		}
 
@@ -85,11 +40,35 @@ func CORS(cfg config.Config) gin.HandlerFunc {
 	}
 }
 
-// getEnv is a helper to get environment variables (same pattern as config package)
-func getEnv(key, def string) string {
-	if v, ok := os.LookupEnv(key); ok && v != "" {
-		return v
+func parseAllowedOrigins(raw string) []string {
+	if raw == "" {
+		return nil
 	}
-	return def
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		origin := strings.TrimSpace(part)
+		if origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }
 
+func originAllowed(origin string, allowedOrigins []string, cfg config.Config) bool {
+	if origin == "" {
+		return false
+	}
+	for _, allowedOrigin := range allowedOrigins {
+		if origin == allowedOrigin {
+			return true
+		}
+	}
+	if !cfg.IsProduction() {
+		return strings.HasPrefix(origin, "http://localhost:") ||
+			strings.HasPrefix(origin, "http://127.0.0.1:") ||
+			strings.HasPrefix(origin, "https://localhost:") ||
+			strings.HasPrefix(origin, "https://127.0.0.1:")
+	}
+	return false
+}

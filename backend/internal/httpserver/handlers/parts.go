@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"backend/internal/config"
 	"backend/internal/repository"
@@ -33,7 +35,12 @@ func (h *PartsHandler) List(c *gin.Context) {
 		}
 	}
 
-	items, err := h.parts.ListParts(c.Request.Context(), limit, offset)
+	var branchIDPtr *string
+	if b := strings.TrimSpace(c.Query("branchId")); b != "" {
+		branchIDPtr = &b
+	}
+
+	items, err := h.parts.ListParts(c.Request.Context(), limit, offset, branchIDPtr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_list_parts"})
 		return
@@ -42,12 +49,13 @@ func (h *PartsHandler) List(c *gin.Context) {
 	out := make([]gin.H, 0, len(items))
 	for _, p := range items {
 		out = append(out, gin.H{
-			"code":     p.Code,
-			"barCode":  p.BarCode,
-			"name":     p.Name,
-			"nameTh":   p.NameTH,
-			"price":    p.Price,
-			"isActive": p.IsActive,
+			"code":        p.Code,
+			"barCode":     p.BarCode,
+			"name":        p.Name,
+			"nameTh":      p.NameTH,
+			"receiptName": p.ReceiptName,
+			"price":       p.Price,
+			"isActive":    p.IsActive,
 			"category": gin.H{
 				"id":      p.CategoryID,
 				"label":   p.CategoryLabel,
@@ -58,7 +66,9 @@ func (h *PartsHandler) List(c *gin.Context) {
 				"label":   p.UnitLabel,
 				"labelTh": p.UnitLabelTH,
 			},
-			"totalStock": p.TotalStock,
+			"totalStock":   p.TotalStock,
+			"reorderPoint": p.ReorderPoint,
+			"minStock":     p.MinStock,
 		})
 	}
 
@@ -76,28 +86,42 @@ func (h *PartsHandler) Get(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	// Get part detail without branch filtering (general endpoint)
+	// Get part detail without branch filtering (general endpoint).
+	// If lookup by code misses, fall back to bar_code so a scan of either
+	// the part code or the printed barcode resolves to the same part.
+	start := time.Now()
 	part, addresses, err := h.parts.GetPartDetail(ctx, code, nil)
+	logSlowTiming("parts.get.detail_by_code", start, "code", code, "found", err == nil)
 	if err != nil {
-		if repository.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})
+		if !repository.IsNotFoundError(err) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_part"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_part"})
-		return
+		start = time.Now()
+		part, addresses, err = h.parts.GetPartByBarcode(ctx, code, "")
+		logSlowTiming("parts.get.detail_by_barcode", start, "barcode", code, "found", err == nil)
+		if err != nil {
+			if repository.IsNotFoundError(err) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_part"})
+			return
+		}
 	}
 
 	// Build response shape as requested
 	resp := gin.H{
-		"code":      part.Code,
-		"barCode":   part.BarCode,
-		"name":      part.Name,
-		"nameTh":    part.NameTH,
-		"details":   part.Details,
-		"cost":      part.Cost,
-		"price":     part.Price,
-		"image":     part.Image,
-		"isActive":  part.IsActive,
+		"code":        part.Code,
+		"barCode":     part.BarCode,
+		"name":        part.Name,
+		"nameTh":      part.NameTH,
+		"receiptName": part.ReceiptName,
+		"details":     part.Details,
+		"cost":        part.Cost,
+		"price":       part.Price,
+		"image":       part.Image,
+		"isActive":    part.IsActive,
 		"category": gin.H{
 			"id":      part.CategoryID,
 			"label":   part.CategoryLabel,
@@ -121,12 +145,13 @@ func (h *PartsHandler) Get(c *gin.Context) {
 				"label":   a.StoreLabel,
 				"labelTh": a.StoreLabelTH,
 			},
-			"shelf":   a.Shelf,
-			"qty":     a.Qty,
-			"min":     a.Min,
-			"max":     a.Max,
-			"rop":     a.Rop,
-			"remarks": a.Remarks,
+			"shelf":     a.Shelf,
+			"qty":       a.Qty,
+			"min":       a.Min,
+			"max":       a.Max,
+			"rop":       a.Rop,
+			"remarks":   a.Remarks,
+			"isDefault": a.IsDefault,
 		})
 	}
 	resp["addresses"] = addrs
@@ -136,9 +161,9 @@ func (h *PartsHandler) Get(c *gin.Context) {
 
 // Search searches for parts with filters and returns detailed results
 // Query parameters:
-//   - q: universal search query (searches in: part code, barcode, part name, name_th, 
-//       category name, category name_th, address code, store address shelf, 
-//       store address remarks, store label, store label_th)
+//   - q: universal search query (searches in: part code, barcode, part name, name_th,
+//     category name, category name_th, address code, store address shelf,
+//     store address remarks, store label, store label_th)
 //   - categoryId: filter by category ID (optional)
 //   - isActive: filter by active status (true/false) (optional)
 //   - crossBranch: if true, search across all branches; if false, only session branch (default: false)
@@ -147,7 +172,7 @@ func (h *PartsHandler) Get(c *gin.Context) {
 func (h *PartsHandler) Search(c *gin.Context) {
 	// Parse query parameters
 	query := c.Query("q")
-	categoryID := c.Query("categoryId") 
+	categoryID := c.Query("categoryId")
 	isActiveStr := c.Query("isActive")
 	crossBranchStr := c.Query("crossBranch")
 
@@ -207,26 +232,26 @@ func (h *PartsHandler) Search(c *gin.Context) {
 		return
 	}
 
+	// Load addresses for every result in a single query (avoids N+1).
+	// crossBranch ignores the branch filter; otherwise filter by branch when set.
+	addrBranchID := branchID
+	if crossBranch {
+		addrBranchID = nil
+	}
+	codes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		codes = append(codes, part.Code)
+	}
+	addressesByCode, err := h.parts.GetAddressesByPartCodes(ctx, codes, addrBranchID)
+	if err != nil {
+		// Degrade gracefully: return parts without addresses rather than failing.
+		addressesByCode = map[string][]repository.PartAddress{}
+	}
+
 	// Build response with addresses for each part
 	out := make([]gin.H, 0, len(parts))
 	for _, part := range parts {
-		// Get addresses for this part (filtered by branch if not crossBranch)
-		var addresses []repository.PartAddress
-		if crossBranch {
-			// Get all addresses
-			_, addresses, err = h.parts.GetPartDetail(ctx, part.Code, nil)
-		} else {
-			// Get addresses filtered by branch
-			if branchID != nil {
-				_, addresses, err = h.parts.GetPartDetail(ctx, part.Code, branchID)
-			} else {
-				_, addresses, err = h.parts.GetPartDetail(ctx, part.Code, nil)
-			}
-		}
-		if err != nil {
-			// Log error but continue with empty addresses
-			addresses = []repository.PartAddress{}
-		}
+		addresses := addressesByCode[part.Code]
 
 		// Build addresses array
 		addrs := make([]gin.H, 0, len(addresses))
@@ -239,25 +264,27 @@ func (h *PartsHandler) Search(c *gin.Context) {
 					"label":   a.StoreLabel,
 					"labelTh": a.StoreLabelTH,
 				},
-				"shelf":   a.Shelf,
-				"qty":     a.Qty,
-				"min":     a.Min,
-				"max":     a.Max,
-				"rop":     a.Rop,
-				"remarks": a.Remarks,
+				"shelf":     a.Shelf,
+				"qty":       a.Qty,
+				"min":       a.Min,
+				"max":       a.Max,
+				"rop":       a.Rop,
+				"remarks":   a.Remarks,
+				"isDefault": a.IsDefault,
 			})
 		}
 
 		out = append(out, gin.H{
-			"code":      part.Code,
-			"barCode":   part.BarCode,
-			"name":      part.Name,
-			"nameTh":    part.NameTH,
-			"details":   part.Details,
-			"cost":      part.Cost,
-			"price":     part.Price,
-			"image":     part.Image,
-			"isActive":  part.IsActive,
+			"code":        part.Code,
+			"barCode":     part.BarCode,
+			"name":        part.Name,
+			"nameTh":      part.NameTH,
+			"receiptName": part.ReceiptName,
+			"details":     part.Details,
+			"cost":        part.Cost,
+			"price":       part.Price,
+			"image":       part.Image,
+			"isActive":    part.IsActive,
 			"category": gin.H{
 				"id":      part.CategoryID,
 				"label":   part.CategoryLabel,
@@ -277,4 +304,3 @@ func (h *PartsHandler) Search(c *gin.Context) {
 		"parts": out,
 	})
 }
-

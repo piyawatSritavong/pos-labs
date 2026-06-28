@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
 
 class ApiPosService {
-  static const String baseUrl = 'http://localhost:8080';
+  static String get baseUrl => ApiConfig.apiBaseUrl;
 
   // Helper: ดึง List<Map> จาก response ที่อาจเป็นหลายรูปแบบ
   static List<Map<String, dynamic>> _extractListFromResponse(
@@ -44,9 +45,9 @@ class ApiPosService {
     int limit = 50,
     int offset = 0,
   }) async {
-    final uri = Uri.parse('$baseUrl/pos').replace(
-      queryParameters: {'limit': '$limit', 'offset': '$offset'},
-    );
+    final uri = Uri.parse(
+      '$baseUrl/pos',
+    ).replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
     final response = await http.get(
       uri,
       headers: {
@@ -55,7 +56,9 @@ class ApiPosService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to load POS devices: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'Failed to load POS devices: ${response.statusCode} ${response.body}',
+      );
     }
     final decoded = jsonDecode(response.body);
     return _extractListFromResponse(decoded, '/pos');

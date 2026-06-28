@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 type sessionRepositoryPG struct {
@@ -63,6 +65,49 @@ func (r *sessionRepositoryPG) GetValidByID(ctx context.Context, id string, ip st
 	return &s, nil
 }
 
+func (r *sessionRepositoryPG) GetValidWithUserByID(ctx context.Context, id string, ip string, now time.Time) (*Session, *User, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT
+			s."id", s."user_id", s."branch_id", s."pos_id", s."ip", s."user_agent", s."created_at", s."expires_at", s."last_seen_at",
+			u."id", u."username", u."role_id", u."name", u."password", u."is_active", u."is_superuser", u."custom_permissions",
+			COALESCE(ub."branch_id", '') AS user_branch_id
+		FROM "session" s
+		JOIN "user" u ON u."id" = s."user_id"
+		LEFT JOIN (
+			SELECT "user_id", MIN("branch_id") AS "branch_id"
+			FROM "user_branch"
+			GROUP BY "user_id"
+		) ub ON ub."user_id" = u."id"
+		WHERE s."id" = $1
+		  AND s."expires_at" > $2
+	`, id, now)
+
+	var s Session
+	var u User
+	var sessionBranchID, sessionPOSID sql.NullString
+	var perms pq.StringArray
+	if err := row.Scan(
+		&s.ID, &s.UserID, &sessionBranchID, &sessionPOSID, &s.IP, &s.UserAgent, &s.CreatedAt, &s.ExpiresAt, &s.LastSeen,
+		&u.ID, &u.Username, &u.RoleID, &u.Name, &u.PasswordHash, &u.IsActive, &u.IsSuperuser, &perms, &u.BranchID,
+	); err != nil {
+		return nil, nil, err
+	}
+	if sessionBranchID.Valid {
+		s.BranchID = sessionBranchID.String
+	}
+	if sessionPOSID.Valid {
+		s.POSID = sessionPOSID.String
+	}
+	if perms != nil {
+		u.CustomPermissions = []string(perms)
+	}
+	if s.IP != "" && ip != "" && s.IP != ip {
+		return nil, nil, sql.ErrNoRows
+	}
+
+	return &s, &u, nil
+}
+
 func (r *sessionRepositoryPG) DeleteByID(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM "session" WHERE "id" = $1`, id)
 	return err
@@ -110,5 +155,3 @@ func (r *sessionRepositoryPG) Touch(ctx context.Context, id string, now time.Tim
 	`, now, id)
 	return err
 }
-
-

@@ -1,0 +1,1815 @@
+{
+  "info": {
+    "name": "POS Labs Backend API",
+    "_postman_id": "c1c2b3c4-d5e6-47f8-9012-3456789abcde",
+    "description": "Postman collection for POS Labs Go backend (auth, health, sample resources).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST /auth/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\",\n  \"branchId\": \"00000\",\n  \"posId\": \"POS001\",\n  \"posSecret\": \"<pos_secret_from_get_pos_secret_endpoint>\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  var data = pm.response.json();",
+                  "  if (data && data.token) {",
+                  "    pm.collectionVariables.set('auth_token', data.token);",
+                  "  }",
+                  "} catch (e) {",
+                  "  // ignore JSON parse errors",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "logout"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /auth/me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Get current user info. Returns name, roleId, isActive, and optionally branchId and posId (if set in session at login). Requires authentication."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "GET /users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["users"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                }
+              ]
+            },
+            "description": "List users. Requires 'users:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /users/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/admin",
+              "host": ["{{base_url}}"],
+              "path": ["users", "admin"]
+            },
+            "description": "Get user by ID. Requires 'users:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"user001\",\n  \"roleId\": \"role.cashier\",\n  \"name\": \"Test User\",\n  \"password\": \"password123\",\n  \"isActive\": true,\n  \"isSuperuser\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users",
+              "host": ["{{base_url}}"],
+              "path": ["users"]
+            },
+            "description": "Create new user. User ID will be auto-generated as UUID without dashes. Password will be hashed automatically. Requires 'users:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /users/:id",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"user001\",\n  \"roleId\": \"role.cashier\",\n  \"name\": \"Updated User Name\",\n  \"password\": \"newpassword123\",\n  \"isActive\": true,\n  \"isSuperuser\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/user001",
+              "host": ["{{base_url}}"],
+              "path": ["users", "user001"]
+            },
+            "description": "Update user. Password is optional - only updates if provided. Requires 'users:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /users/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/user001",
+              "host": ["{{base_url}}"],
+              "path": ["users", "user001"]
+            },
+            "description": "Delete user. Cannot delete superusers. Requires 'users:delete' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Members",
+      "item": [
+        {
+          "name": "GET /members",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/members?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["members"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Optional search on id/code/name/phone/email."
+                }
+              ]
+            },
+            "description": "List members. Supports optional q search. Requires 'members:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /members/search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/members/search?q=0812345678&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["members", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "0812345678",
+                  "description": "Search keyword."
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Search members. Requires 'members:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /members/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/members/0812345678",
+              "host": ["{{base_url}}"],
+              "path": ["members", "0812345678"]
+            },
+            "description": "Get member by id. Requires 'members:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /members",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Member One\",\n  \"phone\": \"0812345678\",\n  \"email\": \"member1@example.com\",\n  \"points\": 0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/members",
+              "host": ["{{base_url}}"],
+              "path": ["members"]
+            },
+            "description": "Create member. Member id is derived from phone digits. Requires 'members:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /members/:id",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Member One Updated\",\n  \"phone\": \"0812345678\",\n  \"email\": \"member1.updated@example.com\",\n  \"points\": 10\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/members/0812345678",
+              "host": ["{{base_url}}"],
+              "path": ["members", "0812345678"]
+            },
+            "description": "Update member by id. Phone must match id digits. Requires 'members:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /members/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/members/0812345678",
+              "host": ["{{base_url}}"],
+              "path": ["members", "0812345678"]
+            },
+            "description": "Delete member by id. Requires 'members:delete' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Parts",
+      "item": [
+        {
+          "name": "GET /parts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parts?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["parts"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /parts/search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parts/search?q=Sample&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["parts", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "Sample",
+                  "description": "Universal search query - searches in: part code, barcode, part name, name_th, category name, category name_th, address code, store address shelf, store address remarks, store label, store label_th - optional"
+                },
+                {
+                  "key": "categoryId",
+                  "value": "",
+                  "description": "Filter by category ID - optional"
+                },
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "description": "Filter by active status (true/false) - optional"
+                },
+                {
+                  "key": "crossBranch",
+                  "value": "",
+                  "description": "If true, search across all branches; if false (default), only session branch - optional"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                }
+              ]
+            },
+            "description": "Universal search for parts with filters. Returns list of parts with full details (like GET /parts/:code) including addresses array. If crossBranch is not specified or false, only shows parts from session's branch (via branch_store). If crossBranch is true, shows parts from all branches. Universal search query (q) searches across ALL part-related fields: part code, barcode, part name, name_th, category name, category name_th, address code, store address shelf, store address remarks, store label, and store label_th. Requires 'parts:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /parts/:code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/parts/P0001",
+              "host": ["{{base_url}}"],
+              "path": ["parts", "P0001"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Bills",
+      "item": [
+        {
+          "name": "GET /bills",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["bills"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                },
+                {
+                  "key": "date",
+                  "value": "",
+                  "description": "Filter by single date. Accepts ISO string (RFC3339) or yyyy-mm-dd format. If provided, filters bills for that specific day. Mutually exclusive with date_from/date_to. If no date parameters provided, defaults to current date in UTC+7 (00:00 to 23:59 UTC+7)."
+                },
+                {
+                  "key": "date_from",
+                  "value": "",
+                  "description": "Start date for date range filter. Accepts ISO string (RFC3339) or yyyy-mm-dd format. Filters bills from start of this date (00:00 UTC). Use with date_to for range filtering. If no date parameters provided, defaults to current date in UTC+7."
+                },
+                {
+                  "key": "date_to",
+                  "value": "",
+                  "description": "End date for date range filter. Accepts ISO string (RFC3339) or yyyy-mm-dd format. Filters bills until end of this date (23:59 UTC+7). Use with date_from for range filtering. If no date parameters provided, defaults to current date in UTC+7."
+                },
+                {
+                  "key": "memberId",
+                  "value": "",
+                  "description": "Optional filter by member id."
+                }
+              ]
+            },
+            "description": "List bills with pagination and optional date/member filtering. Returns paginated list of bills ordered by created_at DESC. Each bill includes `member` object (`id`, `code`, `name`) when a member is assigned, otherwise `member` is null. Supports date filtering: use 'date' for single day, or 'date_from'/'date_to' for date range. Date formats: ISO string (RFC3339) or yyyy-mm-dd. If no date parameters provided, defaults to current date in UTC+7 timezone (00:00 to 23:59 UTC+7). Supports optional memberId filter. Requires 'bills:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /bills/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001"]
+            },
+            "description": "Get bill by ID with full details and discounts. Uses branchId and posId from session (set at login). Returns full bill with item details, discount details, and calculated amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount). Amounts are automatically calculated based on items, discounts, and company taxType. Requires 'bills:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /bills",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills",
+              "host": ["{{base_url}}"],
+              "path": ["bills"]
+            },
+            "description": "Creates a new empty bill. Uses branchId and posId from session (set at login). Returns the generated bill ID (format: YYYYMMDD + 6-digit counter, e.g., '20251204000001'). POS must not have an existing bill with status 'new' - hold that bill first. Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-item",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partCode\": \"P0001\",\n  \"addressCode\": \"ADDR0001\",\n  \"qty\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/add-item",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "add-item"]
+            },
+            "description": "Add item to bill by part code. Bill status must be 'new' to add items. Validates that part exists in the branch (from session). Checks if sufficient inventory exists at the address master and atomically reduces it before adding to bill. Returns error 'not_enough_inventory' (400) if insufficient inventory. If item already exists in bill, increments quantity. Otherwise, inserts new bill item detail. Request body: { \"partCode\": \"P0001\", \"addressCode\": \"ADDR0001\", \"qty\": 1 }. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after adding item. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-item-by-barcode",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"barcode\": \"8850000001\",\n  \"qty\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251206000001/add-item-by-barcode",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251206000001", "add-item-by-barcode"]
+            },
+            "description": "Add item to bill by barcode. Bill status must be 'new' to add items. Gets part by barcode, validates it exists in the branch (from session), and uses the default address (is_default=true). Checks if sufficient inventory exists at the address master and atomically reduces it before adding to bill. Returns error 'not_enough_inventory' (400) if insufficient inventory. If item already exists in bill, increments quantity. Otherwise, inserts new bill item detail. Request body: { \"barcode\": \"1234567890123\", \"qty\": 1 }. Returns error 'no_default_store' if part exists in multiple stores but no default is configured. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after adding item. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-item-by-barcode - Test: Item NOT in branch stores",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"barcode\": \"8850000012\",\n  \"qty\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251206000001/add-item-by-barcode",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251206000001", "add-item-by-barcode"]
+            },
+            "description": "TEST CASE 1: Add item by barcode that exists in database but NOT in current branch's branch_store. Barcode 8850000012 (Part P0012) exists ONLY in store_00001 (branch 00001) and does NOT exist in branch 00000's stores (main/tmp_store/no_default_store). Expected: Should return error 'part_not_found' with message 'Part does not exist in this branch'. Login with branchId: 00000 to test this scenario."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-item-by-barcode - Test: Item in both stores (use default)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"barcode\": \"8850000001\",\n  \"qty\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251206000001/add-item-by-barcode",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251206000001", "add-item-by-barcode"]
+            },
+            "description": "TEST CASE 2: Add item by barcode that exists in BOTH stores of branch 00000 (main and tmp_store). Barcode 8850000001 exists in both stores. Expected: Should use address from 'main' store (is_default=true) instead of tmp_store. Login with branchId: 00000 to test this scenario. Verify the addressCode in response is from 'main' store (ADDR0001)."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-item-by-barcode - Test: No default store error",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"barcode\": \"8850000011\",\n  \"qty\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251206000001/add-item-by-barcode",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251206000001", "add-item-by-barcode"]
+            },
+            "description": "TEST CASE 3: Test error handling when no default store exists. Barcode 8850000011 (Part P0011) exists in both tmp_store and no_default_store, but NEITHER store is marked as default (is_default=false) for branch 00000. Expected: Backend should return error 'no_default_store' with message indicating that frontend should use add-item endpoint to select a specific store address. Login with branchId: 00000 to test this scenario."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/remove-item",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partCode\": \"P0001\",\n  \"addressCode\": \"ADDR0001\",\n  \"qty\": 1,\n  \"isRemoveAll\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/remove-item",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "remove-item"]
+            },
+            "description": "Remove item from bill by part code. Bill status must be 'new' to remove items. Request body: { \"partCode\": \"P0001\", \"addressCode\": \"ADDR0001\", \"qty\": 1 (optional, default: 1), \"isRemoveAll\": false (optional) }. If isRemoveAll is true, deletes the item completely regardless of qty. If false: removes the specified qty (default 1). If qty to remove >= existing qty, deletes the item. Automatically returns inventory to the address master after removing items. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after removal. Returns 400 if item not found. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-discount",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"promotionCode\": \"PROMO001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/add-discount",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "add-discount"]
+            },
+            "description": "Apply discount to bill using promotion code from promotion_master. Bill status must be 'new' to modify discounts. Request body: { \"promotionCode\": \"PROMO001\" }. Validates promotion exists in promotion_master. Supports THB (fixed amount) and percentage discounts. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) based on company taxType. If promotion already exists in bill, updates it. Returns 404 if promotion not found. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/remove-discount",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"promotionCode\": \"PROMO001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/remove-discount",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "remove-discount"]
+            },
+            "description": "Remove discount from bill by promotion code. Bill status must be 'new' to modify discounts. Request body: { \"promotionCode\": \"PROMO001\" }. Validates discount exists in bill. Automatically recalculates bill amounts (purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount) after removal. Returns 400 if discount not found in bill. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/hold",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/hold",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "hold"]
+            },
+            "description": "Hold bill. Changes status from 'new' to 'hold'. Only bills with status 'new' can be held. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/add-member-by-phone",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"0812345678\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/add-member-by-phone",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "add-member-by-phone"]
+            },
+            "description": "Assign member to bill by member phone number. Bill status must be 'new'. Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/remove-member",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/remove-member",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "remove-member"]
+            },
+            "description": "Remove member from bill. Bill status must be 'new'. Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/payment",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentMethod\": \"cash\",\n  \"paymentRef\": \"REF123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/payment",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "payment"]
+            },
+            "description": "Process payment for bill. Accepts paymentMethod (cash, bank, credit, debit, other) and/or paymentRef. Updates status to 'completed'. Can only process bills with status 'new'. Bill status must be 'new' to process payment. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/:id/cancel",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001", "cancel"]
+            },
+            "description": "Cancel a bill. Updates status to 'cancelled'. Does not delete the bill. Can only cancel bills with status 'new' or 'hold'. Uses branchId and posId from session (set at login). Requires 'bills:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /bills/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bills/20251204000001",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "20251204000001"]
+            },
+            "description": "Delete a bill permanently. Cannot delete bills with status 'completed' - returns error 'cannot_delete_completed_bill' (400). For non-completed bills, automatically returns inventory to address master for all items before deletion. Cascade deletes all related bill items and discounts. Cannot be undone. Uses branchId and posId from session (set at login). Requires 'bills:delete' permission (admin only)."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /bills/switch",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetBillId\": \"20251204000002\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bills/switch",
+              "host": ["{{base_url}}"],
+              "path": ["bills", "switch"]
+            },
+            "description": "Switch bills or create new bill. Uses branchId and posId from session (set at login). If targetBillId is not provided or empty: creates a new bill. If targetBillId is provided: switches to that bill (holds current 'new' bill, resumes target). Backend automatically finds and holds the current 'new' bill for the same POS. Returns full bill details. Requires 'bills:write' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Company",
+      "item": [
+        {
+          "name": "GET /company",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/company",
+              "host": ["{{base_url}}"],
+              "path": ["company"]
+            },
+            "description": "Get company settings. Requires 'company:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /company",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyName\": \"Updated Company Name\",\n  \"companyNameTh\": \"ชื่อบริษัทที่อัปเดต\",\n  \"companyAddress\": \"123 Updated Street\",\n  \"companyAddressTh\": \"123 ถนนที่อัปเดต\",\n  \"phone\": \"02-123-4567\",\n  \"email\": \"info@example.com\",\n  \"website\": \"https://example.com\",\n  \"logoUrl\": \"\",\n  \"taxRate\": 0.07,\n  \"taxType\": \"xvat\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/company",
+              "host": ["{{base_url}}"],
+              "path": ["company"]
+            },
+            "description": "Update company settings. Requires 'company:write' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Branches",
+      "item": [
+        {
+          "name": "GET /branches",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/branches?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["branches"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "List branches. Requires 'branch:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /branches/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/branches/00000",
+              "host": ["{{base_url}}"],
+              "path": ["branches", "00000"]
+            },
+            "description": "Get branch by ID with stores array. Returns branch details including all stores linked to the branch via branch_store table. Stores are ordered by is_default DESC (default stores first). Requires 'branch:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /branches",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": \"00001\",\n  \"companyId\": \"0000000000000\",\n  \"branchName\": \"Branch 2\",\n  \"branchNameTh\": \"สาขา 2\",\n  \"branchAddress\": \"456 Branch Street\",\n  \"branchAddressTh\": \"456 ถนนสาขา\",\n  \"phone\": \"02-234-5678\",\n  \"email\": \"branch2@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/branches",
+              "host": ["{{base_url}}"],
+              "path": ["branches"]
+            },
+            "description": "Create new branch. Requires 'branch:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /branches/:id",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyId\": \"0000000000000\",\n  \"branchName\": \"Updated Branch Name\",\n  \"branchNameTh\": \"ชื่อสาขาที่อัปเดต\",\n  \"branchAddress\": \"456 Updated Street\",\n  \"branchAddressTh\": \"456 ถนนที่อัปเดต\",\n  \"phone\": \"02-234-5678\",\n  \"email\": \"updated@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/branches/00000",
+              "host": ["{{base_url}}"],
+              "path": ["branches", "00000"]
+            },
+            "description": "Update branch. Requires 'branch:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /branches/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/branches/00001",
+              "host": ["{{base_url}}"],
+              "path": ["branches", "00001"]
+            },
+            "description": "Delete branch. Cannot delete if only 1 record exists. Requires 'branch:delete' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "POS",
+      "item": [
+        {
+          "name": "GET /pos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["pos"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "List POS. Returns array of POS objects with posId, branchId, posName, and isActive. posSecret is NOT returned for security. Use GET /pos/:id/secret to retrieve secrets. Requires 'pos:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /pos/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos/POS001",
+              "host": ["{{base_url}}"],
+              "path": ["pos", "POS001"]
+            },
+            "description": "Get POS by ID. Returns posId, branchId, posName, and isActive. posSecret is NOT returned for security. Use GET /pos/:id/secret to retrieve the secret. Requires 'pos:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /pos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"posId\": \"POS002\",\n  \"branchId\": \"00000\",\n  \"posName\": \"POS 2\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/pos",
+              "host": ["{{base_url}}"],
+              "path": ["pos"]
+            },
+            "description": "Create new POS. pos_secret is automatically generated and not returned in the response. Use GET /pos/:id/secret to retrieve the secret. Requires 'pos:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /pos/:id/toggle-activate",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos/POS001/toggle-activate",
+              "host": ["{{base_url}}"],
+              "path": ["pos", "POS001", "toggle-activate"]
+            },
+            "description": "Toggle POS active status. Switches is_active between true and false. Returns updated POS details. Requires 'pos:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /pos/:id/secret",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos/POS001/secret",
+              "host": ["{{base_url}}"],
+              "path": ["pos", "POS001", "secret"]
+            },
+            "description": "Retrieve POS secret. Returns the current posSecret for the specified POS. This secret is required when logging in with posId. Requires 'pos:secret' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /pos/:id/secret",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos/POS001/secret",
+              "host": ["{{base_url}}"],
+              "path": ["pos", "POS001", "secret"]
+            },
+            "description": "Refresh/regenerate POS secret. Generates a new random secret and updates it in the database. Returns the new secret. Use this if the secret is compromised or needs to be rotated. Requires 'pos:secret' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /pos/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/pos/POS002",
+              "host": ["{{base_url}}"],
+              "path": ["pos", "POS002"]
+            },
+            "description": "Delete POS. Requires 'pos:delete' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Promotions",
+      "item": [
+        {
+          "name": "GET /promotions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/promotions?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["promotions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                }
+              ]
+            },
+            "description": "List promotions with pagination. Returns array of promotion objects with code, details, unit (THB or percentage), and amount. Requires 'promotions:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /promotions/:code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/promotions/PROMO001",
+              "host": ["{{base_url}}"],
+              "path": ["promotions", "PROMO001"]
+            },
+            "description": "Get promotion by code. Returns promotion details including code, details, unit (THB or percentage), and amount. Requires 'promotions:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /promotions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"PROMO002\",\n  \"details\": \"10% discount on all items\",\n  \"unit\": \"percentage\",\n  \"amount\": 10\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/promotions",
+              "host": ["{{base_url}}"],
+              "path": ["promotions"]
+            },
+            "description": "Create new promotion. Request body: { \"code\": \"PROMO002\", \"details\": \"...\", \"unit\": \"THB\" or \"percentage\", \"amount\": number }. Unit must be 'THB' or 'percentage'. Amount must be greater than 0. Code must be unique. Requires 'promotions:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /promotions/:code",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"details\": \"Updated promotion details\",\n  \"unit\": \"THB\",\n  \"amount\": 50\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/promotions/PROMO001",
+              "host": ["{{base_url}}"],
+              "path": ["promotions", "PROMO001"]
+            },
+            "description": "Update promotion by code. Code comes from path parameter. Request body: { \"details\": \"...\", \"unit\": \"THB\" or \"percentage\", \"amount\": number }. Unit must be 'THB' or 'percentage'. Amount must be greater than 0. Returns 404 if promotion not found. Requires 'promotions:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /promotions/:code",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/promotions/PROMO002",
+              "host": ["{{base_url}}"],
+              "path": ["promotions", "PROMO002"]
+            },
+            "description": "Delete promotion by code. Returns 404 if promotion not found. Requires 'promotions:delete' permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Addresses",
+      "item": [
+        {
+          "name": "GET /addresses",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/addresses?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["addresses"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Max items to return (1-500, default: 20)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of items to skip (default: 0)"
+                }
+              ]
+            },
+            "description": "List addresses with pagination. Returns array of address objects with code, partCode, storeId, shelf, qty, min, max, rop, and remarks. Requires 'addresses:read' permission (admin only)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /addresses/:code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/addresses/ADDR0001",
+              "host": ["{{base_url}}"],
+              "path": ["addresses", "ADDR0001"]
+            },
+            "description": "Get address by code. Returns address details including code, partCode, storeId, shelf, qty, min, max, rop, and remarks. Requires 'addresses:read' permission (admin only)."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /addresses",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"ADDR0001\",\n  \"partCode\": \"P0001\",\n  \"storeId\": \"main\",\n  \"shelf\": \"A-01\",\n  \"qty\": 100,\n  \"min\": 10,\n  \"max\": 200,\n  \"rop\": 20,\n  \"remarks\": \"Main store location\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/addresses",
+              "host": ["{{base_url}}"],
+              "path": ["addresses"]
+            },
+            "description": "Create new address. Request body: { \"code\": \"ADDR0001\", \"partCode\": \"P0001\" (required), \"storeId\": \"main\" (required), \"shelf\": \"A-01\", \"qty\": 100, \"min\": 10, \"max\": 200, \"rop\": 20, \"remarks\": \"...\" }. partCode and storeId are required (NOT NULL). Code must be unique. Requires 'addresses:write' permission (admin only)."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /addresses/:code",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partCode\": \"P0001\",\n  \"storeId\": \"main\",\n  \"shelf\": \"A-02\",\n  \"qty\": 150,\n  \"min\": 15,\n  \"max\": 250,\n  \"rop\": 25,\n  \"remarks\": \"Updated location\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/addresses/ADDR0001",
+              "host": ["{{base_url}}"],
+              "path": ["addresses", "ADDR0001"]
+            },
+            "description": "Update address by code. Code comes from path parameter. Request body: { \"partCode\": \"P0001\" (required), \"storeId\": \"main\" (required), \"shelf\": \"A-02\", \"qty\": 150, \"min\": 15, \"max\": 250, \"rop\": 25, \"remarks\": \"...\" }. partCode and storeId are required (NOT NULL). Returns 404 if address not found. Requires 'addresses:write' permission (admin only)."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /addresses/:code",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/addresses/ADDR0001",
+              "host": ["{{base_url}}"],
+              "path": ["addresses", "ADDR0001"]
+            },
+            "description": "Delete address by code. Returns 404 if address not found. Requires 'addresses:delete' permission (admin only)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "QR Image",
+      "item": [
+        {
+          "name": "GET /assets/qr-image",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/assets/qr-image",
+              "host": ["{{base_url}}"],
+              "path": ["assets", "qr-image"]
+            },
+            "description": "Retrieve QR code image. Returns the QR code image file as raw binary data. Supports PNG and JPG formats. Response is binary image (not JSON), so it can be used directly in <img src=\"\"> tags or Flutter Image.network(). Returns 404 JSON error if no image exists. Requires 'qr_image:read' permission (admin and cashier)."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /assets/qr-image",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "image/png",
+                "description": "Set to 'image/png' or 'image/jpeg' based on image format"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<binary image data>",
+              "options": {
+                "raw": {
+                  "language": "plain"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/assets/qr-image",
+              "host": ["{{base_url}}"],
+              "path": ["assets", "qr-image"]
+            },
+            "description": "Upload or replace the QR code image. Accepts raw binary image data in request body. Content-Type header should be 'image/png' or 'image/jpeg'. Only one image is stored at a time (replaces existing). Maximum file size: 5MB. Requires 'qr_image:write' permission (admin only)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Branches",
+      "item": [
+        {
+          "name": "GET /user-branches/user/:user_id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-branches/user/admin",
+              "host": ["{{base_url}}"],
+              "path": ["user-branches", "user", "admin"]
+            },
+            "description": "List user-branch associations by user ID. Requires 'user_branch:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /user-branches/branch/:branch_id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-branches/branch/00000",
+              "host": ["{{base_url}}"],
+              "path": ["user-branches", "branch", "00000"]
+            },
+            "description": "List user-branch associations by branch ID. Requires 'user_branch:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /user-branches/:user_id/:branch_id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-branches/admin/00000",
+              "host": ["{{base_url}}"],
+              "path": ["user-branches", "admin", "00000"]
+            },
+            "description": "Get specific user-branch association. Requires 'user_branch:read' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /user-branches",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"admin\",\n  \"branchId\": \"00000\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user-branches",
+              "host": ["{{base_url}}"],
+              "path": ["user-branches"]
+            },
+            "description": "Create user-branch association. Requires 'user_branch:write' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /user-branches/:user_id/:branch_id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-branches/admin/00000",
+              "host": ["{{base_url}}"],
+              "path": ["user-branches", "admin", "00000"]
+            },
+            "description": "Delete user-branch association. Requires 'user_branch:write' permission."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "auth_token",
+      "value": ""
+    }
+  ]
+}
+
+

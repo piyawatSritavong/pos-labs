@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/google/uuid"
@@ -88,6 +89,19 @@ func SeedCoreData(db *sql.DB) error {
 		{"perm.reports_bill.read", "Read bill reports", "read", "reports_bill", "Export bill reports as CSV"},
 		{"perm.reports_parts.read", "Read parts reports", "read", "reports_parts", "Export parts reports as CSV"},
 		{"perm.reports_inventory.read", "Read inventory reports", "read", "reports_inventory", "Export inventory reports as CSV"},
+		{"perm.members.read", "Read members", "read", "members", "Read member master data"},
+		{"perm.members.write", "Write members", "write", "members", "Create/update member master data"},
+		{"perm.members.delete", "Delete members", "delete", "members", "Delete member master data"},
+		{"perm.transfers.read", "Read transfers", "read", "transfers", "Read inventory transfers"},
+		{"perm.transfers.write", "Write transfers", "write", "transfers", "Create/update inventory transfers"},
+		{"perm.transfers.approve", "Approve transfers", "approve", "transfers", "Approve/dispatch/cancel inventory transfers"},
+		{"perm.stock_count.read", "Read stock counts", "read", "stock_count", "Read stock count records"},
+		{"perm.stock_count.write", "Write stock counts", "write", "stock_count", "Create/submit stock count records"},
+		{"perm.daily_close.read", "Read daily closes", "read", "daily_close", "Read daily close records"},
+		{"perm.daily_close.write", "Write daily closes", "write", "daily_close", "Create daily close records"},
+		{"perm.cash_reconciliation.read", "Read cash reconciliations", "read", "cash_reconciliation", "Read cash reconciliation records"},
+		{"perm.cash_reconciliation.write", "Write cash reconciliations", "write", "cash_reconciliation", "Create cash reconciliation records"},
+		{"perm.reports_variance.read", "Read variance reports", "read", "reports_variance", "View stock variance reports"},
 	}
 
 	for _, p := range permissions {
@@ -103,7 +117,9 @@ func SeedCoreData(db *sql.DB) error {
 	if _, err := tx.Exec(`
 		INSERT INTO "role"("id", "name", "detail")
 		VALUES ('role.admin', 'Admin', 'System administrator'),
-		       ('role.cashier', 'Cashier', 'Point of sale cashier')
+		       ('role.cashier', 'Cashier', 'Point of sale cashier'),
+		       ('role.hq_manager', 'HQ Manager', 'Headquarter manager'),
+		       ('role.van_staff', 'Van Staff', 'Van sales staff')
 	`); err != nil {
 		return err
 	}
@@ -117,16 +133,93 @@ func SeedCoreData(db *sql.DB) error {
 	}
 
 	cashierPerms := []string{
+		"perm.branch.read",
 		"perm.parts.read",
+		"perm.addresses.read", // needed for POS add-item flow (stock lookup) and Addresses page
 		"perm.bills.read",
 		"perm.bills.write",
 		"perm.promotions.read",
 		"perm.qr_image.read",
+		"perm.members.read",
+		"perm.transfers.read",
+		"perm.transfers.write",
+		"perm.daily_close.read",
+		"perm.daily_close.write",
 	}
 	for _, pid := range cashierPerms {
 		if _, err := tx.Exec(`
 			INSERT INTO "role_permission"("role_id", "permission_id")
 			VALUES ('role.cashier', $1)
+		`, pid); err != nil {
+			return err
+		}
+	}
+
+	hqManagerPerms := []string{
+		"perm.branch.read",
+		"perm.users.read",
+		"perm.users.write",
+		"perm.users.delete",
+		"perm.user_branch.read",
+		"perm.user_branch.write",
+		"perm.parts.read",
+		"perm.parts.write",
+		"perm.parts.delete",
+		"perm.addresses.read",
+		"perm.addresses.write",
+		"perm.addresses.delete",
+		"perm.promotions.read",
+		"perm.promotions.write",
+		"perm.promotions.delete",
+		"perm.members.read",
+		"perm.members.write",
+		"perm.members.delete",
+		"perm.bills.read",
+		"perm.bills.write",
+		"perm.qr_image.read",
+		"perm.qr_image.write",
+		"perm.reports_bill.read",
+		"perm.reports_parts.read",
+		"perm.reports_inventory.read",
+		"perm.transfers.read",
+		"perm.transfers.write",
+		"perm.transfers.approve",
+		"perm.stock_count.read",
+		"perm.daily_close.read",
+		"perm.cash_reconciliation.read",
+		"perm.cash_reconciliation.write",
+		"perm.reports_variance.read",
+	}
+	for _, pid := range hqManagerPerms {
+		if _, err := tx.Exec(`
+			INSERT INTO "role_permission"("role_id", "permission_id")
+			VALUES ('role.hq_manager', $1)
+		`, pid); err != nil {
+			return err
+		}
+	}
+
+	vanStaffPerms := []string{
+		"perm.branch.read",
+		"perm.parts.read",
+		"perm.bills.read",
+		"perm.bills.write",
+		"perm.promotions.read",
+		"perm.qr_image.read",
+		"perm.members.read",
+		"perm.members.write",
+		"perm.transfers.read",
+		"perm.transfers.write",
+		"perm.stock_count.read",
+		"perm.stock_count.write",
+		"perm.daily_close.read",
+		"perm.daily_close.write",
+		"perm.reports_variance.read",
+	}
+	for _, pid := range vanStaffPerms {
+		if _, err := tx.Exec(`
+			INSERT INTO "role_permission"("role_id", "permission_id")
+			VALUES ('role.van_staff', $1)
 		`, pid); err != nil {
 			return err
 		}
@@ -145,6 +238,20 @@ func SeedCoreData(db *sql.DB) error {
 		INSERT INTO "user"("id", "username", "role_id", "name", "password", "is_active", "is_superuser")
 		VALUES ($1, 'admin', 'role.admin', 'Administrator', $2, true, true)
 	`, adminID, string(adminPasswordHash)); err != nil {
+		return err
+	}
+
+	// POS cashier user "pos1" — created out-of-box so the Windows POS can login
+	// immediately after first start, even before the real product data is loaded.
+	pos1PasswordHash, err := bcrypt.GenerateFromPassword([]byte("pos123456"), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	pos1ID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	if _, err := tx.Exec(`
+		INSERT INTO "user"("id", "username", "role_id", "name", "password", "is_active", "is_superuser")
+		VALUES ($1, 'pos1', 'role.cashier', 'POS Cashier 1', $2, true, false)
+	`, pos1ID, string(pos1PasswordHash)); err != nil {
 		return err
 	}
 
@@ -178,34 +285,50 @@ func SeedCoreData(db *sql.DB) error {
 		return err
 	}
 
-	// POS setting (default POS) - pos_secret will be generated by repository
-	// We need to generate a secret for the seed
-	posSecretBytes := make([]byte, 32)
-	if _, err := rand.Read(posSecretBytes); err != nil {
-		return err
-	}
-	posSecret := hex.EncodeToString(posSecretBytes)
-
+	// Link pos1 → branch '00000' so login can resolve POSID/branchID.
 	if _, err := tx.Exec(`
-		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active")
-		VALUES ($1, $2, $3, $4, $5)
-	`, "POS001", "00000", "POS 1", posSecret, true); err != nil {
+		INSERT INTO "user_branch"("user_id", "branch_id") VALUES ($1, '00000')
+	`, pos1ID); err != nil {
 		return err
 	}
 
-	// store_master (updated to include branch_id)
+	// store_master (updated to include branch_id). The POS vehicle store is the
+	// stock source used by sales from this POS.
 	if _, err := tx.Exec(`
 		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
-		VALUES ('main', '00000', 'Main Store', 'คลังหลัก', true)
+		VALUES
+			('main', '00000', 'Main Store', 'คลังหลัก', true),
+			('vehicle_POS001', '00000', 'POS 1 Vehicle Store', 'POS 1 รถ', false)
 	`); err != nil {
 		return err
 	}
 
-	// branch_store (link branch to store)
+	// branch_store (link branch to stores)
 	if _, err := tx.Exec(`
 		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
-		VALUES ('00000', 'main', true)
+		VALUES
+			('00000', 'main', true),
+			('00000', 'vehicle_POS001', false)
 	`); err != nil {
+		return err
+	}
+
+	// POS setting (default POS). The pos_secret comes from the POS_SECRET env var
+	// if set (so .env on the Windows POS controls it and Flutter --dart-define can
+	// match), otherwise we fall back to a fresh random 32-byte hex for dev.
+	posSecret := os.Getenv("POS_SECRET")
+	if posSecret == "" {
+		posSecretBytes := make([]byte, 32)
+		if _, err := rand.Read(posSecretBytes); err != nil {
+			return err
+		}
+		posSecret = hex.EncodeToString(posSecretBytes)
+	}
+
+	if _, err := tx.Exec(`
+		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active", "vehicle_store_id")
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, "POS001", "00000", "POS 1", posSecret, true, "vehicle_POS001"); err != nil {
 		return err
 	}
 

@@ -34,17 +34,18 @@ type BillWithItems struct {
 
 // PartMaster represents a row from part_master table
 type PartMaster struct {
-	Code       string
-	BarCode    string
-	CategoryID string
-	UnitID     string
-	Name       string
-	NameTH     string
-	Details    string
-	Cost       float64
-	Price      float64
-	Image      string
-	IsActive   bool
+	Code        string
+	BarCode     string
+	CategoryID  string
+	UnitID      string
+	Name        string
+	NameTH      string
+	ReceiptName string
+	Details     string
+	Cost        float64
+	Price       float64
+	Image       string
+	IsActive    bool
 }
 
 type ReportRepository interface {

@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
 
 class ApiPartsService {
-  static const String baseUrl = 'http://localhost:8080';
+  static String get baseUrl => ApiConfig.apiBaseUrl;
 
   // Helper: ดึง List<Map> จาก response ที่อาจเป็นหลายรูปแบบ
   static List<Map<String, dynamic>> _extractListFromResponse(
