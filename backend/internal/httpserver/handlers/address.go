@@ -33,7 +33,12 @@ func (h *AddressHandler) List(c *gin.Context) {
 		}
 	}
 
-	addresses, err := h.addresses.List(c.Request.Context(), limit, offset)
+	// Optional server-side filters so the Addresses page can search + page on the
+	// server instead of loading the whole catalog and filtering client-side.
+	q := c.Query("q")
+	storeID := c.Query("storeId")
+
+	addresses, err := h.addresses.Search(c.Request.Context(), q, storeID, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_list_addresses"})
 		return

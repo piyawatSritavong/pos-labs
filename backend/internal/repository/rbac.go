@@ -3,10 +3,22 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
+
+// Role is a selectable user role with its display name.
+type Role struct {
+	ID     string
+	Name   string
+	Detail string
+}
 
 type RBACRepository interface {
 	UserHasPermission(ctx context.Context, userID, resource, action string) (bool, error)
+	ListRoles(ctx context.Context) ([]Role, error)
+	RoleExists(ctx context.Context, id string) (bool, error)
+	// CreateRole inserts a role and its permission grants in one transaction.
+	CreateRole(ctx context.Context, id, name, detail string, permissionIDs []string) error
 }
 
 type rbacRepositoryPG struct {
@@ -50,4 +62,66 @@ func (r *rbacRepositoryPG) UserHasPermission(ctx context.Context, userID, resour
 		return false, err
 	}
 	return true, nil
+}
+
+func (r *rbacRepositoryPG) ListRoles(ctx context.Context) ([]Role, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT "id", COALESCE("name", ''), COALESCE("detail", '')
+		FROM "role"
+		ORDER BY "id"
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Role
+	for rows.Next() {
+		var role Role
+		if err := rows.Scan(&role.ID, &role.Name, &role.Detail); err != nil {
+			return nil, err
+		}
+		out = append(out, role)
+	}
+	return out, rows.Err()
+}
+
+func (r *rbacRepositoryPG) RoleExists(ctx context.Context, id string) (bool, error) {
+	var v int
+	err := r.db.QueryRowContext(ctx, `SELECT 1 FROM "role" WHERE "id" = $1`, id).Scan(&v)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (r *rbacRepositoryPG) CreateRole(ctx context.Context, id, name, detail string, permissionIDs []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO "role"("id", "name", "detail") VALUES ($1, $2, $3)`,
+		id, name, detail,
+	); err != nil {
+		return err
+	}
+	for _, pid := range permissionIDs {
+		pid = strings.TrimSpace(pid)
+		if pid == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO "role_permission"("role_id", "permission_id")
+			 VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			id, pid,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

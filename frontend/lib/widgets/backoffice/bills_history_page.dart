@@ -86,6 +86,9 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
     final dateTime = bill['dateTime']?.toString() ?? '';
     final method = _paymentLabel(bill['paymentMethod']?.toString() ?? '');
     final total = bill['totalAmount']?.toString() ?? '';
+    // Operator: prefer the resolved display name (e.g. "Administrator").
+    final operator =
+        (bill['createdByName'] ?? bill['createdBy'] ?? '').toString();
     String memberText = '';
     final member = bill['member'];
     if (member is Map<String, dynamic>) {
@@ -100,13 +103,15 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
     if (dateTime.isEmpty &&
         method.isEmpty &&
         total.isEmpty &&
-        memberText.isEmpty) {
+        memberText.isEmpty &&
+        operator.isEmpty) {
       return '';
     }
     return [
       if (dateTime.isNotEmpty) dateTime,
       if (method.isNotEmpty) method,
       if (memberText.isNotEmpty) memberText,
+      if (operator.isNotEmpty) 'พนักงาน: $operator',
       if (total.isNotEmpty) '฿$total',
     ].join('  •  ');
   }

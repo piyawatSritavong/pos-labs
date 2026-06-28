@@ -39,6 +39,33 @@ func (r *userRepositoryPG) GetByID(ctx context.Context, id string) (*User, error
 	return &u, nil
 }
 
+func (r *userRepositoryPG) GetByIDs(ctx context.Context, ids []string) (map[string]*User, error) {
+	result := make(map[string]*User, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT "id", "username", "role_id", "name", "is_active", "is_superuser"
+		FROM "user"
+		WHERE "id" = ANY($1)
+	`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Username, &u.RoleID, &u.Name, &u.IsActive, &u.IsSuperuser); err != nil {
+			return nil, err
+		}
+		result[u.ID] = &u
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (r *userRepositoryPG) GetByUsername(ctx context.Context, username string) (*User, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT "id", "username", "role_id", "name", "password", "is_active", "is_superuser", "custom_permissions"

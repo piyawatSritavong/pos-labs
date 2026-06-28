@@ -267,16 +267,16 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
   final _scanController = TextEditingController();
   final _notesController = TextEditingController();
   final List<_RestockLine> _lines = [];
-  List<Map<String, dynamic>> _parts = [];
+  // Kept for draft enrichment lookups; no longer preloaded with the whole
+  // catalog — part search is server-side now (see the Autocomplete below).
+  final List<Map<String, dynamic>> _parts = [];
   String? _draftId;
-  bool _loadingParts = true;
   bool _saving = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadParts());
   }
 
   @override
@@ -284,23 +284,6 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
     _scanController.dispose();
     _notesController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadParts() async {
-    final token = context.read<AuthProvider>().token ?? '';
-    if (token.isEmpty) return;
-    setState(() {
-      _loadingParts = true;
-      _error = null;
-    });
-    try {
-      final parts = await ApiService.getParts(token: token, limit: 2000);
-      if (mounted) setState(() => _parts = parts);
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loadingParts = false);
-    }
   }
 
   Future<void> loadDraft(String id) async {
@@ -481,7 +464,6 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loadingParts) return const Center(child: CircularProgressIndicator());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -526,23 +508,26 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
                 const SizedBox(height: 12),
                 Autocomplete<Map<String, dynamic>>(
                   displayStringForOption: _partLabel,
-                  optionsBuilder: (value) {
-                    final q = value.text.trim().toLowerCase();
-                    if (q.isEmpty) return const Iterable.empty();
-                    return _parts
-                        .where((part) {
-                          final code =
-                              part['code']?.toString().toLowerCase() ?? '';
-                          final barcode =
-                              part['barCode']?.toString().toLowerCase() ?? '';
-                          final name = (part['nameTh'] ?? part['name'] ?? '')
-                              .toString()
-                              .toLowerCase();
-                          return code.contains(q) ||
-                              barcode.contains(q) ||
-                              name.contains(q);
-                        })
-                        .take(20);
+                  // Server-side search (no full-catalog preload). Min 2 chars to
+                  // avoid noisy queries; Autocomplete uses the latest result.
+                  optionsBuilder: (value) async {
+                    final q = value.text.trim();
+                    if (q.length < 2) {
+                      return const Iterable<Map<String, dynamic>>.empty();
+                    }
+                    final token = context.read<AuthProvider>().token ?? '';
+                    if (token.isEmpty) {
+                      return const Iterable<Map<String, dynamic>>.empty();
+                    }
+                    try {
+                      return await ApiService.searchParts(
+                        token: token,
+                        query: q,
+                        limit: 20,
+                      );
+                    } catch (_) {
+                      return const Iterable<Map<String, dynamic>>.empty();
+                    }
                   },
                   onSelected: _addPart,
                   fieldViewBuilder: (context, controller, focusNode, _) {

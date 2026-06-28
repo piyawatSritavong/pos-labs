@@ -174,10 +174,16 @@ func (r *reportRepositoryPG) GetBillsWithItemsByDate(ctx context.Context, date t
 }
 
 func (r *reportRepositoryPG) GetAllParts(ctx context.Context) ([]PartMaster, error) {
+	// Note: the raw "image" column stores a (potentially large) base64 blob.
+	// Transferring it for every part made the parts report huge and slow, and a
+	// blob is unusable in a CSV anyway — so we emit a lightweight presence flag
+	// ('Y' / '') instead of the full image data. CSV structure is unchanged.
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT 
+		SELECT
 			"code", "bar_code", "category_id", "unit_id", "name", "name_th",
-			COALESCE("receipt_name", ''), "details", "cost", "price", "image", "is_active"
+			COALESCE("receipt_name", ''), "details", "cost", "price",
+			CASE WHEN "image" IS NULL OR "image" = '' THEN '' ELSE 'Y' END AS "image",
+			"is_active"
 		FROM "part_master"
 		ORDER BY "code" ASC
 	`)

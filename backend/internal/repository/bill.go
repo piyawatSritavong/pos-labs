@@ -53,6 +53,11 @@ type BillRepository interface {
 	GetByID(ctx context.Context, id string) (*Bill, error)
 	List(ctx context.Context, limit, offset int, dateFrom, dateTo *time.Time, memberID, branchID, posID *string, statuses []string) ([]Bill, error)
 	GetFullByID(ctx context.Context, id string) (*Bill, []BillDetail, []BillDiscountDetail, error)
+	// GetDetailsByBillIDs / GetDiscountsByBillIDs load items/discounts for many
+	// bills in a single query each (avoids N+1 when listing bills with details).
+	// Results are keyed by bill ID.
+	GetDetailsByBillIDs(ctx context.Context, ids []string) (map[string][]BillDetail, error)
+	GetDiscountsByBillIDs(ctx context.Context, ids []string) (map[string][]BillDiscountDetail, error)
 	GetNewBillByPOS(ctx context.Context, posID string) (*Bill, error)
 	UpdateStatus(ctx context.Context, billID, status, updatedBy string) error
 	UpdateMember(ctx context.Context, billID, memberID, updatedBy string) error

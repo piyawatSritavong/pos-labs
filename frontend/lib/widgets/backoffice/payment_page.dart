@@ -23,7 +23,7 @@ class _QrPaymentSettingsSectionState
   bool _isUploading = false;
   String? _error;
 
-  // Van Staff assignment
+  // POS Staff assignment
   List<Map<String, dynamic>> _vanStaff = [];
   final Set<String> _assignedIds = {};
   bool _isLoadingVanStaff = false;
@@ -138,7 +138,7 @@ class _QrPaymentSettingsSectionState
                 child: _buildQrPanel(),
               ),
               const SizedBox(width: 24),
-              // Right: Van Staff assignment
+              // Right: POS Staff assignment
               Expanded(child: _buildAssignmentPanel()),
             ],
           ),
@@ -232,13 +232,13 @@ class _QrPaymentSettingsSectionState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'มอบหมาย QR ให้ Van Staff',
+              'มอบหมาย QR ให้ POS Staff',
               style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             const Text(
-              'เลือก Van Staff ที่จะใช้ QR นี้สำหรับรับชำระเงิน',
+              'เลือก POS Staff ที่จะใช้ QR นี้สำหรับรับชำระเงิน',
               style: TextStyle(color: AppColors.muted, fontSize: 13),
             ),
             const SizedBox(height: 16),
@@ -251,7 +251,7 @@ class _QrPaymentSettingsSectionState
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 32),
                 child: Center(
-                    child: Text('ไม่พบบัญชี Van Staff',
+                    child: Text('ไม่พบบัญชี POS Staff',
                         style: TextStyle(color: AppColors.muted))),
               )
             else

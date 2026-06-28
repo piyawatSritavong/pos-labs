@@ -60,7 +60,7 @@ class _PosManagementSectionState extends State<PosManagementSection> {
               Row(
                 children: [
                   const Text(
-                    'Van Staff',
+                    'POS Staff',
                     style: TextStyle(
                         fontSize: 16, fontWeight: FontWeight.bold),
                   ),
@@ -103,7 +103,7 @@ class _PosManagementSectionState extends State<PosManagementSection> {
                         : _vanStaff.isEmpty
                             ? const Center(
                                 child: Text(
-                                  'ไม่มีบัญชี Van Staff',
+                                  'ไม่มีบัญชี POS Staff',
                                   style: TextStyle(color: AppColors.muted),
                                 ),
                               )

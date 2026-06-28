@@ -349,8 +349,8 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
               maxLines: 2,
             ),
             const SizedBox(height: 12),
-            _buildExpenseSection(),
-            const SizedBox(height: 12),
+            // "ข้อมูลเพิ่มเติม / ค่าใช้จ่าย" section hidden by request.
+            // _buildExpenseSection(),
             ElevatedButton(
               onPressed: _isClosing ? null : _doClose,
               child: _isClosing
@@ -443,6 +443,7 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildExpenseSection() {
     return Container(
       padding: const EdgeInsets.all(14),

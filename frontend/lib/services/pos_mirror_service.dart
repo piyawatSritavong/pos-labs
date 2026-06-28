@@ -70,7 +70,7 @@ class PosMirrorService {
     _debounceTimer = Timer(const Duration(milliseconds: 300), _sendState);
   }
 
-  /// Call when Van Staff opens a dialog. Pass null when the dialog closes.
+  /// Call when POS Staff opens a dialog. Pass null when the dialog closes.
   /// Sends immediately (no debounce) so the Admin sees the change right away.
   void notifyDialog(String? name) {
     _activeDialog = name;
@@ -93,7 +93,7 @@ class PosMirrorService {
     _sendState();
   }
 
-  /// Call when Van Staff taps a cart action (pay, hold, clear, discount_N, qty_add, qty_remove).
+  /// Call when POS Staff taps a cart action (pay, hold, clear, discount_N, qty_add, qty_remove).
   /// The action name is broadcast for 2 seconds then auto-clears.
   void notifyLastAction(String action) {
     _lastActionTimer?.cancel();

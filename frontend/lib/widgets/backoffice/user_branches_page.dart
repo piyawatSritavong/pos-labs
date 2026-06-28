@@ -261,7 +261,7 @@ class _UserBranchesSectionState extends State<UserBranchesSection> {
                                         : roleId == 'role.hq_manager'
                                             ? 'HQ Manager'
                                             : roleId == 'role.van_staff'
-                                                ? 'Van Staff'
+                                                ? 'POS Staff'
                                                 : roleId;
                                 return ListTile(
                                   leading: const Icon(Icons.person_outline),

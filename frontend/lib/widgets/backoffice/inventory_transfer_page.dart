@@ -641,12 +641,11 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
   // Source branch (Super Admin can pick; HQ Manager fixed to authBranchId)
   String? _fromBranchId;
 
-  // Destination: selected Van Staff user + branch mapping
+  // Destination: selected POS Staff user + branch mapping
   String? _selectedVanStaffOptionKey;
 
   List<Map<String, dynamic>> _vanStaff = [];
   Map<String, List<String>> _vanStaffBranchIdsByUserId = {};
-  List<Map<String, dynamic>> _parts = [];
   bool _isLoadingData = true;
 
   // Item rows: each entry has 'partCode' (String) and a qty TextEditingController
@@ -673,14 +672,10 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
 
   Future<void> _loadData({String? branchId}) async {
     try {
+      // Parts are searched server-side in the Autocomplete below, so we no
+      // longer preload the whole catalog here.
       final results = await Future.wait<dynamic>([
         ApiService.getUsers(token: widget.token, limit: 200, offset: 0),
-        ApiService.getParts(
-          token: widget.token,
-          limit: 500,
-          offset: 0,
-          branchId: branchId,
-        ),
       ]);
       final users = (results[0] as List)
           .whereType<Map<String, dynamic>>()
@@ -725,9 +720,6 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
       setState(() {
         _vanStaff = vanStaff;
         _vanStaffBranchIdsByUserId = vanStaffBranchIds;
-        _parts = (results[1] as List)
-            .whereType<Map<String, dynamic>>()
-            .toList();
         _isLoadingData = false;
       });
     } catch (_) {
@@ -820,7 +812,7 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
     }
     final to = selectedOption?.branchId ?? '';
     if (from.isEmpty || to.isEmpty) {
-      setState(() => _error = 'กรุณาเลือกสาขาต้นทางและ Van Staff ปลายทาง');
+      setState(() => _error = 'กรุณาเลือกสาขาต้นทางและ POS Staff ปลายทาง');
       return;
     }
 
@@ -937,7 +929,6 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
                               setState(() {
                                 _fromBranchId = v;
                                 _selectedVanStaffOptionKey = null;
-                                _parts = [];
                               });
                               if (v != null) _loadData(branchId: v);
                             },
@@ -958,14 +949,14 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
                             ),
                           ),
                         const SizedBox(height: 10),
-                        // ── Destination Van Staff ──
+                        // ── Destination POS Staff ──
                         DropdownButtonFormField<String>(
                           key: ValueKey(
                             'create_transfer_destination_${selectedDestinationKey ?? ''}',
                           ),
                           initialValue: selectedDestinationKey,
                           decoration: const InputDecoration(
-                            labelText: 'Van Staff ปลายทาง (รถ)',
+                            labelText: 'POS Staff ปลายทาง (รถ)',
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
@@ -983,7 +974,7 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
                         if (destinationOptions.isEmpty) ...[
                           const SizedBox(height: 8),
                           const Text(
-                            'ไม่พบ Van Staff ปลายทาง',
+                            'ไม่พบ POS Staff ปลายทาง',
                             style: TextStyle(
                               color: AppColors.muted,
                               fontSize: 12,
@@ -1028,30 +1019,24 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
                                     initialValue: TextEditingValue(
                                       text: row['partCode'] as String,
                                     ),
-                                    optionsBuilder: (textEditingValue) {
-                                      final q = textEditingValue.text
-                                          .toLowerCase();
-                                      if (q.isEmpty) {
-                                        return const [];
+                                    // Server-side search (min 2 chars) instead of
+                                    // filtering a preloaded catalog in Dart.
+                                    optionsBuilder: (textEditingValue) async {
+                                      final q = textEditingValue.text.trim();
+                                      if (q.length < 2) {
+                                        return const Iterable<
+                                            Map<String, dynamic>>.empty();
                                       }
-                                      return _parts
-                                          .where((p) {
-                                            final code =
-                                                (p['partCode'] ??
-                                                        p['code'] ??
-                                                        '')
-                                                    .toString()
-                                                    .toLowerCase();
-                                            final name =
-                                                (p['nameTh'] ??
-                                                        p['nameEn'] ??
-                                                        '')
-                                                    .toString()
-                                                    .toLowerCase();
-                                            return code.contains(q) ||
-                                                name.contains(q);
-                                          })
-                                          .take(20);
+                                      try {
+                                        return await ApiService.searchParts(
+                                          token: widget.token,
+                                          query: q,
+                                          limit: 20,
+                                        );
+                                      } catch (_) {
+                                        return const Iterable<
+                                            Map<String, dynamic>>.empty();
+                                      }
                                     },
                                     displayStringForOption: (p) =>
                                         (p['partCode'] ?? p['code'] ?? '')

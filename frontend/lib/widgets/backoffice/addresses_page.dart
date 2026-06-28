@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -15,23 +17,44 @@ class AddressesManagementSection extends StatefulWidget {
 
 class _AddressesManagementSectionState
     extends State<AddressesManagementSection> {
+  // Server-side search + paging: one page of /addresses at a time, filtered by
+  // q/storeId on the backend instead of loading the whole catalog into Dart.
+  static const int _pageSize = 50;
+
   bool _isLoading = false;
   String? _errorMessage;
 
-  // ข้อมูลทั้งหมดจาก /addresses
-  List<Map<String, dynamic>> _allAddresses = [];
+  // Current page of results.
+  List<Map<String, dynamic>> _addresses = [];
 
-  // filter
+  // Stores seen so far across loaded pages — used to populate the Store filter
+  // without fetching the entire catalog (the text search also matches store
+  // name server-side, so this only needs to grow as the user browses).
+  final Map<String, String> _knownStores = {};
+
+  // Filters + paging state.
   String? _selectedStoreId;
-  String _searchKeyword = '';
+  String _query = '';
+  int _offset = 0;
+  bool _hasMore = false;
+
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
-    _loadAddresses();
+    _load(resetOffset: true);
   }
 
-  Future<void> _loadAddresses() async {
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load({bool resetOffset = false}) async {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
 
@@ -42,24 +65,34 @@ class _AddressesManagementSectionState
       return;
     }
 
+    if (resetOffset) _offset = 0;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      // limit=2000 loads the full 1,566-row catalog in one request.
-      // Backend MaxLimit raised to 2000 in config.go.
       final items = await ApiService.getAddresses(
         token: token,
-        limit: 2000,
-        offset: 0,
+        limit: _pageSize,
+        offset: _offset,
+        query: _query,
+        storeId: _selectedStoreId,
       );
 
+      if (!mounted) return;
       setState(() {
-        _allAddresses = items;
+        _addresses = items;
+        _hasMore = items.length == _pageSize;
+        for (final a in items) {
+          final storeId = (a['storeId'] ?? '').toString();
+          if (storeId.isEmpty) continue;
+          _knownStores[storeId] = (a['storeName'] ?? storeId).toString();
+        }
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = e.toString();
       });
@@ -72,42 +105,28 @@ class _AddressesManagementSectionState
     }
   }
 
-  List<Map<String, dynamic>> get _filteredAddresses {
-    Iterable<Map<String, dynamic>> list = _allAddresses;
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      _query = value.trim();
+      _load(resetOffset: true);
+    });
+  }
 
-    if (_selectedStoreId != null && _selectedStoreId!.isNotEmpty) {
-      list = list.where(
-        (a) => (a['storeId'] ?? '').toString() == _selectedStoreId,
-      );
-    }
+  Future<void> _nextPage() async {
+    if (!_hasMore || _isLoading) return;
+    _offset += _pageSize;
+    await _load();
+  }
 
-    if (_searchKeyword.isNotEmpty) {
-      final q = _searchKeyword.toLowerCase();
-      list = list.where((a) {
-        final partCode = (a['partCode'] ?? '').toString().toLowerCase();
-        final partName = (a['partName'] ?? '').toString().toLowerCase();
-        final storeName = (a['storeName'] ?? '').toString().toLowerCase();
-        return partCode.contains(q) ||
-            partName.contains(q) ||
-            storeName.contains(q);
-      });
-    }
-
-    return list.toList();
+  Future<void> _prevPage() async {
+    if (_offset <= 0 || _isLoading) return;
+    _offset = (_offset - _pageSize).clamp(0, _offset);
+    await _load();
   }
 
   List<DropdownMenuItem<String>> _buildStoreDropdownItems() {
-    final Map<String, String> stores = {};
-
-    for (final a in _allAddresses) {
-      final storeId = (a['storeId'] ?? '').toString();
-      if (storeId.isEmpty) continue;
-
-      final storeName = (a['storeName'] ?? storeId).toString();
-      stores[storeId] = storeName;
-    }
-
-    return stores.entries
+    return _knownStores.entries
         .map(
           (e) => DropdownMenuItem<String>(value: e.key, child: Text(e.value)),
         )
@@ -116,8 +135,6 @@ class _AddressesManagementSectionState
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filteredAddresses;
-
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 1200),
@@ -148,6 +165,7 @@ class _AddressesManagementSectionState
                         setState(() {
                           _selectedStoreId = value;
                         });
+                        _load(resetOffset: true);
                       },
                     ),
                   ),
@@ -155,28 +173,25 @@ class _AddressesManagementSectionState
                   SizedBox(
                     width: 320,
                     child: TextField(
+                      controller: _searchController,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.search),
                         hintText: 'Search by part code, name, store...',
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
-                      onChanged: (value) {
-                        setState(() {
-                          _searchKeyword = value;
-                        });
-                      },
+                      onChanged: _onSearchChanged,
                       onSubmitted: (value) {
-                        setState(() {
-                          _searchKeyword = value;
-                        });
+                        _debounce?.cancel();
+                        _query = value.trim();
+                        _load(resetOffset: true);
                       },
                     ),
                   ),
                   const SizedBox(width: 12),
                   IconButton(
                     tooltip: 'Refresh',
-                    onPressed: _isLoading ? null : _loadAddresses,
+                    onPressed: _isLoading ? null : () => _load(),
                     icon: const Icon(Icons.refresh),
                   ),
                 ],
@@ -198,11 +213,29 @@ class _AddressesManagementSectionState
                         ? const Center(child: CircularProgressIndicator())
                         : _errorMessage != null
                         ? _buildErrorState()
-                        : filtered.isEmpty
+                        : _addresses.isEmpty
                         ? const Center(child: Text('No addresses found.'))
-                        : _buildDataTable(filtered),
+                        : _buildDataTable(_addresses),
                   ),
                 ),
+              ),
+              const SizedBox(height: 12),
+              // Server-side pagination controls.
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    tooltip: 'Previous',
+                    onPressed: (_isLoading || _offset <= 0) ? null : _prevPage,
+                  ),
+                  Text('Page ${(_offset ~/ _pageSize) + 1}'),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    tooltip: 'Next',
+                    onPressed: (_isLoading || !_hasMore) ? null : _nextPage,
+                  ),
+                ],
               ),
             ],
           ),
@@ -220,12 +253,103 @@ class _AddressesManagementSectionState
         Text(_errorMessage ?? 'Unknown error', textAlign: TextAlign.center),
         const SizedBox(height: 12),
         ElevatedButton.icon(
-          onPressed: _loadAddresses,
+          onPressed: () => _load(),
           icon: const Icon(Icons.refresh),
           label: const Text('Retry'),
         ),
       ],
     );
+  }
+
+  // Edit the low-stock thresholds (Min / ROP / Max) for one address. ROP is the
+  // reorder point the POS "สต็อกใกล้หมด" alert uses (per product). Current
+  // qty/shelf/remarks are re-sent so a partial update never wipes them.
+  Future<void> _editThreshold(Map<String, dynamic> a) async {
+    final code = (a['code'] ?? '').toString();
+    if (code.isEmpty) return;
+    final minC = TextEditingController(text: (a['min'] ?? '').toString());
+    final ropC = TextEditingController(text: (a['rop'] ?? '').toString());
+    final maxC = TextEditingController(text: (a['max'] ?? '').toString());
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('ตั้งค่าแจ้งเตือนสต๊อก — ${(a['partCode'] ?? '')}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: minC,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Min (ขั้นต่ำ)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ropC,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'ROP (จุดสั่งซื้อ — ใช้แจ้งเตือนสต๊อกใกล้หมด)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: maxC,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Max (สูงสุด)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('ยกเลิก'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('บันทึก'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final token = context.read<AuthProvider>().token ?? '';
+    if (token.isEmpty) return;
+    int? toInt(dynamic v) => int.tryParse((v ?? '').toString().trim());
+    try {
+      await ApiService.updateAddress(
+        token: token,
+        code: code,
+        partCode: (a['partCode'] ?? '').toString(),
+        storeId: (a['storeId'] ?? '').toString(),
+        shelf: (a['shelf'] ?? '').toString(),
+        qty: toInt(a['qty']),
+        remarks: (a['remarks'] ?? '').toString(),
+        min: toInt(minC.text),
+        rop: toInt(ropC.text),
+        max: toInt(maxC.text),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('บันทึกค่าแจ้งเตือนแล้ว')),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
+      );
+    }
   }
 
   Widget _buildDataTable(List<Map<String, dynamic>> items) {
@@ -246,6 +370,7 @@ class _AddressesManagementSectionState
               DataColumn(label: Text('Qty')),
               DataColumn(label: Text('Min / ROP')),
               DataColumn(label: Text('Max')),
+              DataColumn(label: Text('ตั้งค่าแจ้งเตือน')),
             ],
             rows: items.map((a) {
               final partCode = (a['partCode'] ?? '').toString();
@@ -271,6 +396,13 @@ class _AddressesManagementSectionState
                     ),
                   ),
                   DataCell(Text(max.isEmpty ? '-' : max)),
+                  DataCell(
+                    IconButton(
+                      icon: const Icon(Icons.edit_notifications_outlined),
+                      tooltip: 'ตั้งค่าจุดแจ้งเตือน (Min/ROP/Max)',
+                      onPressed: () => _editThreshold(a),
+                    ),
+                  ),
                 ],
               );
             }).toList(),

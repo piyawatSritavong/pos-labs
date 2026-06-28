@@ -66,7 +66,9 @@ func (h *PartsHandler) List(c *gin.Context) {
 				"label":   p.UnitLabel,
 				"labelTh": p.UnitLabelTH,
 			},
-			"totalStock": p.TotalStock,
+			"totalStock":   p.TotalStock,
+			"reorderPoint": p.ReorderPoint,
+			"minStock":     p.MinStock,
 		})
 	}
 
@@ -230,26 +232,26 @@ func (h *PartsHandler) Search(c *gin.Context) {
 		return
 	}
 
+	// Load addresses for every result in a single query (avoids N+1).
+	// crossBranch ignores the branch filter; otherwise filter by branch when set.
+	addrBranchID := branchID
+	if crossBranch {
+		addrBranchID = nil
+	}
+	codes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		codes = append(codes, part.Code)
+	}
+	addressesByCode, err := h.parts.GetAddressesByPartCodes(ctx, codes, addrBranchID)
+	if err != nil {
+		// Degrade gracefully: return parts without addresses rather than failing.
+		addressesByCode = map[string][]repository.PartAddress{}
+	}
+
 	// Build response with addresses for each part
 	out := make([]gin.H, 0, len(parts))
 	for _, part := range parts {
-		// Get addresses for this part (filtered by branch if not crossBranch)
-		var addresses []repository.PartAddress
-		if crossBranch {
-			// Get all addresses
-			_, addresses, err = h.parts.GetPartDetail(ctx, part.Code, nil)
-		} else {
-			// Get addresses filtered by branch
-			if branchID != nil {
-				_, addresses, err = h.parts.GetPartDetail(ctx, part.Code, branchID)
-			} else {
-				_, addresses, err = h.parts.GetPartDetail(ctx, part.Code, nil)
-			}
-		}
-		if err != nil {
-			// Log error but continue with empty addresses
-			addresses = []repository.PartAddress{}
-		}
+		addresses := addressesByCode[part.Code]
 
 		// Build addresses array
 		addrs := make([]gin.H, 0, len(addresses))

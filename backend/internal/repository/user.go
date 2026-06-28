@@ -18,6 +18,9 @@ type User struct {
 
 type UserRepository interface {
 	GetByID(ctx context.Context, id string) (*User, error)
+	// GetByIDs loads many users in one query, keyed by user ID — used to resolve
+	// created_by/updated_by ids to display names without N+1.
+	GetByIDs(ctx context.Context, ids []string) (map[string]*User, error)
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	List(ctx context.Context, limit, offset int) ([]User, error)
 	Create(ctx context.Context, user *User) error

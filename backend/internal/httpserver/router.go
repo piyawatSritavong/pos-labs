@@ -25,6 +25,10 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 
+	// Per-request timing log (greppable "[timing] ..." lines) for measuring
+	// endpoint latency before/after performance work.
+	r.Use(middleware.Timing())
+
 	// CORS middleware (environment-aware)
 	r.Use(middleware.CORS(cfg))
 
@@ -118,7 +122,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 			cfg.CashDrawerKickCommand, err, printer.DefaultDrawerKickCommandHex)
 		drawerKickCommand, drawerKickHex = printer.MustDrawerKickCommand(printer.DefaultDrawerKickCommandHex)
 	}
-	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo, partRepo, memberRepo, companyRepo, promotionRepo, addressRepo)
+	billsHandler := handlers.NewBillsHandler(billRepo, branchRepo, posRepo, partRepo, memberRepo, companyRepo, promotionRepo, addressRepo, userRepo)
 	// Wire the 80mm receipt printer target — see config.ReceiptPrinter
 	// (defaults to "LPT1"). Handler reports printer_not_configured if empty.
 	billsHandler.PrinterTarget = cfg.ReceiptPrinter
@@ -336,6 +340,20 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	usersDelete.Use(authMw.RequirePermission("users", "delete"))
 	{
 		usersDelete.DELETE("/:id", userHandler.Delete)
+	}
+
+	// Roles: list + create custom roles (gated by the users permission, since
+	// role management is part of user administration).
+	rolesHandler := handlers.NewRolesHandler(rbacRepo)
+	rolesRead := r.Group("/roles")
+	rolesRead.Use(authMw.RequirePermission("users", "read"))
+	{
+		rolesRead.GET("", rolesHandler.List)
+	}
+	rolesWrite := r.Group("/roles")
+	rolesWrite.Use(authMw.RequirePermission("users", "write"))
+	{
+		rolesWrite.POST("", rolesHandler.Create)
 	}
 
 	// User Branches (CRUD)

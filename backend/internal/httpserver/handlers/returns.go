@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -90,6 +91,42 @@ func (h *ReturnNotesHandler) completePrint(idempotencyKey string, success bool) 
 	h.printMu.Lock()
 	defer h.printMu.Unlock()
 	delete(h.recentPrints, key)
+}
+
+// batchMemberOutputs resolves member objects for many IDs in a single GetByIDs
+// query (avoids the per-row GetByID N+1 when listing return notes). Keyed by
+// member ID; missing IDs are absent (→ JSON null on lookup).
+func (h *ReturnNotesHandler) batchMemberOutputs(ctx context.Context, memberIDs []string) map[string]interface{} {
+	ids := make([]string, 0, len(memberIDs))
+	seen := make(map[string]struct{})
+	for _, raw := range memberIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	out := make(map[string]interface{}, len(ids))
+	if len(ids) == 0 {
+		return out
+	}
+	members, err := h.members.GetByIDs(ctx, ids)
+	if err != nil {
+		return out
+	}
+	for id, m := range members {
+		out[id] = gin.H{
+			"id":   m.ID,
+			"code": m.Code,
+			"name": m.Name,
+		}
+	}
+	return out
 }
 
 func (h *ReturnNotesHandler) buildMemberOutput(ctx *gin.Context, memberID string) interface{} {
@@ -292,6 +329,12 @@ func (h *ReturnNotesHandler) List(c *gin.Context) {
 		return
 	}
 
+	memberIDs := make([]string, 0, len(notes))
+	for _, note := range notes {
+		memberIDs = append(memberIDs, note.MemberID)
+	}
+	memberByID := h.batchMemberOutputs(c.Request.Context(), memberIDs)
+
 	out := make([]gin.H, 0, len(notes))
 	for _, note := range notes {
 		items := make([]repository.ReturnNoteItem, 0)
@@ -311,7 +354,7 @@ func (h *ReturnNotesHandler) List(c *gin.Context) {
 			"status":          note.Status,
 			"settlementMode":  note.SettlementMode,
 			"memberId":        note.MemberID,
-			"member":          h.buildMemberOutput(c, note.MemberID),
+			"member":          memberByID[note.MemberID],
 			"customerName":    note.CustomerName,
 			"purchaseAmount":  note.PurchaseAmount,
 			"refundAmount":    note.RefundAmount,

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/lib/pq"
 )
 
 var nonDigitRegex = regexp.MustCompile(`\D`)
@@ -54,6 +56,39 @@ func (r *memberRepositoryPG) GetByID(ctx context.Context, id string) (*Member, e
 		return nil, err
 	}
 	return &m, nil
+}
+
+// GetByIDs loads many members in one round-trip using `id = ANY($1)`,
+// returning a map keyed by member ID. Missing IDs are simply absent from the map.
+func (r *memberRepositoryPG) GetByIDs(ctx context.Context, ids []string) (map[string]*Member, error) {
+	result := make(map[string]*Member, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT "id", "code", "name", "phone", COALESCE("email", ''), "points", "created_at", "updated_at"
+		FROM "member_master"
+		WHERE "id" = ANY($1)
+	`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var m Member
+		if err := rows.Scan(&m.ID, &m.Code, &m.Name, &m.Phone, &m.Email, &m.Points, &m.CreatedAt, &m.UpdatedAt); err != nil {
+			return nil, err
+		}
+		mm := m
+		result[m.ID] = &mm
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (r *memberRepositoryPG) GetByPhone(ctx context.Context, phone string) (*Member, error) {

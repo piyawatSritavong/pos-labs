@@ -63,7 +63,18 @@ const _hqManagerDefaultPerms = {
   'perm.reports_variance.read',
 };
 
+Set<String> _allPermIds() {
+  final out = <String>{};
+  for (final group in _permGroups) {
+    for (final perm in group.$2) {
+      out.add(perm.$1);
+    }
+  }
+  return out;
+}
+
 Set<String> _defaultPermsForRole(String? roleId) {
+  if (roleId == 'role.admin') return _allPermIds();
   if (roleId == 'role.hq_manager') return {..._hqManagerDefaultPerms};
   if (roleId == 'role.van_staff') return {..._vanStaffDefaultPerms};
   return {};
@@ -152,11 +163,11 @@ const _permGroups = [
 String _roleLabel(String roleId) {
   switch (roleId) {
     case 'role.admin':
-      return 'Super Admin';
+      return 'Admin';
     case 'role.hq_manager':
       return 'HQ Manager';
     case 'role.van_staff':
-      return 'Van Staff';
+      return 'POS Staff';
     default:
       return roleId;
   }
@@ -179,6 +190,7 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
   bool _isLoading = false;
   List<Map<String, dynamic>> _users = [];
   List<Map<String, dynamic>> _branches = [];
+  List<Map<String, dynamic>> _roles = [];
   String _searchTerm = '';
 
   @override
@@ -281,6 +293,7 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
       final results = await Future.wait<dynamic>([
         ApiService.getUsers(token: token, limit: 200, offset: 0),
         ApiService.getBranches(token: token, limit: 200, offset: 0),
+        ApiService.getRoles(token: token),
       ]);
       final users = (results[0] as List)
           .whereType<Map<String, dynamic>>()
@@ -288,10 +301,14 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
       final branches = (results[1] as List)
           .whereType<Map<String, dynamic>>()
           .toList();
+      final roles = (results[2] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
       if (!mounted) return;
       setState(() {
         _users = users;
         _branches = branches;
+        _roles = roles;
       });
     } catch (e) {
       if (!mounted) return;
@@ -318,10 +335,29 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
 
     final isEdit = user != null;
 
-    // Available roles based on caller's role
-    final availableRoles = auth.isSuperAdmin
-        ? [('HQ Manager', 'role.hq_manager'), ('Van Staff', 'role.van_staff')]
-        : [('Van Staff', 'role.van_staff')];
+    // Base roles (Admin + POS Staff) + any custom roles already created, plus a
+    // "create new role" entry (super admin only).
+    const baseRoleIds = {
+      'role.admin',
+      'role.hq_manager',
+      'role.cashier',
+      'role.van_staff',
+    };
+    final customRoles = _roles
+        .where((r) => !baseRoleIds.contains((r['id'] ?? '').toString()))
+        .map(
+          (r) => (
+            (r['name'] ?? r['id'] ?? '').toString(),
+            (r['id'] ?? '').toString(),
+          ),
+        )
+        .toList();
+    final availableRoles = <(String, String)>[
+      if (auth.isSuperAdmin) ('Admin', 'role.admin'),
+      ('POS Staff', 'role.van_staff'),
+      ...customRoles,
+      if (auth.isSuperAdmin) ('➕ สร้างบทบาทใหม่', '__new__'),
+    ];
 
     final usernameController = TextEditingController(
       text: user != null ? '${user['username'] ?? ''}' : '',
@@ -330,6 +366,7 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
       text: user != null ? '${user['name'] ?? ''}' : '',
     );
     final passwordController = TextEditingController();
+    final newRoleNameController = TextEditingController();
 
     bool isActive = user == null
         ? true
@@ -421,6 +458,27 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
                           });
                         },
                       ),
+                      if (selectedRole == '__new__') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: newRoleNameController,
+                          decoration: const InputDecoration(
+                            labelText: 'ชื่อบทบาทใหม่',
+                            hintText: 'เช่น หัวหน้ากะ',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Text(
+                            'ติ๊กสิทธิ์ที่ต้องการให้บทบาทนี้ด้านล่าง',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
                         key: ValueKey(
@@ -616,6 +674,38 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
       nameController.dispose();
       passwordController.dispose();
       return;
+    }
+
+    // If the operator chose "create new role", create it first (with the ticked
+    // permissions) and assign the resulting role id to this user.
+    if (selectedRole == '__new__') {
+      final newRoleName = newRoleNameController.text.trim();
+      if (newRoleName.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('กรุณากรอกชื่อบทบาทใหม่')),
+          );
+        }
+        return;
+      }
+      try {
+        final created = await ApiService.createRole(
+          token: token,
+          name: newRoleName,
+          permissions: selectedPermissions.toList(),
+        );
+        selectedRole = (created['id'] ?? '').toString();
+        if (selectedRole == null || selectedRole!.isEmpty) {
+          throw Exception('ไม่พบรหัสบทบาทใหม่');
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('สร้างบทบาทใหม่ไม่สำเร็จ: $e')),
+          );
+        }
+        return;
+      }
     }
 
     // Build customPermissions list (null = use role defaults, non-null = override)

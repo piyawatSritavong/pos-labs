@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -28,9 +27,9 @@ class BarcodePickItem {
 ///
 /// Media: Direct Thermal DT PP stickers, 32×25 mm, **3 labels per row**.
 /// The printer feeds one row at a time, so each PDF *page* holds exactly one
-/// row of 3 labels. Because every picked item's qty is a multiple of 3
-/// (enforced on [BarcodePrintPage]), each item fills whole rows and no page is
-/// ever a partial row.
+/// row of 3 labels. Labels are packed left-to-right in pick order, filling each
+/// row before the next; any quantity is allowed and only the final row is
+/// padded with blank cells (e.g. 4 labels → [a,b,c] then [d, blank, blank]).
 ///
 /// Why PDF instead of `window.print()`: Flutter Web renders to a CanvasKit
 /// bitmap, so browser printing scales the canvas and cannot guarantee exact mm
@@ -70,16 +69,25 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
         pw.Font.ttf(await rootBundle.load('assets/fonts/Sarabun-Regular.ttf'));
   }
 
-  /// Expand each picked item into individual copies, preserving operator's row
-  /// order. e.g. {P0001, qty:6} → 6 entries.
-  List<BarcodePickItem> _expanded() {
-    final out = <BarcodePickItem>[];
+  /// Flatten every copy in pick order, then pack [_cols] labels per row so each
+  /// row is filled before starting the next. Only the final row is padded with
+  /// blank cells (null). e.g. 4 different items × 1 → [a,b,c] then [d, null,
+  /// null] = 2 rows; a single item qty 1 → [item, null, null].
+  List<List<BarcodePickItem?>> _rows() {
+    final copies = <BarcodePickItem>[];
     for (final it in widget.items) {
       for (var i = 0; i < it.qty; i++) {
-        out.add(it);
+        copies.add(it);
       }
     }
-    return out;
+    final rows = <List<BarcodePickItem?>>[];
+    for (var i = 0; i < copies.length; i += _cols) {
+      rows.add([
+        for (var c = 0; c < _cols; c++)
+          (i + c < copies.length) ? copies[i + c] : null,
+      ]);
+    }
+    return rows;
   }
 
   Future<Uint8List> _buildPdf(PdfPageFormat _) async {
@@ -87,11 +95,9 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
     final doc = pw.Document(
       theme: pw.ThemeData.withFont(base: font, bold: font),
     );
-    final copies = _expanded();
 
-    // Chunk into rows of 3 — each chunk becomes one page.
-    for (var i = 0; i < copies.length; i += _cols) {
-      final rowItems = copies.sublist(i, math.min(i + _cols, copies.length));
+    // One PDF page per printer row; blank cells render as empty space.
+    for (final row in _rows()) {
       doc.addPage(
         pw.Page(
           pageFormat: _rowFormat,
@@ -101,9 +107,7 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
               for (var c = 0; c < _cols; c++) ...[
                 if (c > 0) pw.SizedBox(width: _gapMm * PdfPageFormat.mm),
                 pw.Expanded(
-                  child: c < rowItems.length
-                      ? _buildLabel(rowItems[c])
-                      : pw.SizedBox(),
+                  child: row[c] != null ? _buildLabel(row[c]!) : pw.SizedBox(),
                 ),
               ],
             ],
@@ -156,8 +160,8 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
 
   @override
   Widget build(BuildContext context) {
-    final total = _expanded().length;
-    final rows = (total / _cols).ceil();
+    final total = widget.items.fold<int>(0, (sum, it) => sum + it.qty);
+    final rows = _rows().length;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(

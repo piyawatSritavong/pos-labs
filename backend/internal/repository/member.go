@@ -18,6 +18,9 @@ type Member struct {
 
 type MemberRepository interface {
 	GetByID(ctx context.Context, id string) (*Member, error)
+	// GetByIDs loads many members in one query, keyed by member ID (avoids N+1
+	// when enriching bill/return lists with member info).
+	GetByIDs(ctx context.Context, ids []string) (map[string]*Member, error)
 	GetByPhone(ctx context.Context, phone string) (*Member, error)
 	List(ctx context.Context, limit, offset int) ([]Member, error)
 	Search(ctx context.Context, query string, limit, offset int) ([]Member, error)

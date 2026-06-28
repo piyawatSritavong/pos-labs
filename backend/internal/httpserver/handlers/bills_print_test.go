@@ -3,7 +3,7 @@ package handlers
 import "testing"
 
 func TestBillsHandlerPrintIdempotency(t *testing.T) {
-	h := NewBillsHandler(nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewBillsHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	if !h.beginPrint("checkout:BILL-001") {
 		t.Fatal("first print should be allowed")

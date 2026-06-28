@@ -1855,15 +1855,21 @@ class ApiService {
   // Feature: Inventory Address Management (Backoffice + POS stock mapping)
   // ======================================================================
 
-  // GET /addresses - ดึงรายการที่อยู่สินค้า (store address)
+  // GET /addresses?q=&storeId=&limit=&offset= - ดึงรายการที่อยู่สินค้า (store address)
+  // q/storeId ทำ server-side filter (แทนการโหลดทั้ง catalog แล้ว filter ใน Dart)
   static Future<List<Map<String, dynamic>>> getAddresses({
     required String token,
     int limit = 20,
     int offset = 0,
+    String query = '',
+    String? storeId,
   }) async {
+    final params = <String, String>{'limit': '$limit', 'offset': '$offset'};
+    if (query.isNotEmpty) params['q'] = query;
+    if (storeId != null && storeId.isNotEmpty) params['storeId'] = storeId;
     final uri = Uri.parse(
       '$baseUrl/addresses',
-    ).replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
+    ).replace(queryParameters: params);
     final response = await http.get(
       uri,
       headers: {
@@ -2290,6 +2296,55 @@ class ApiService {
   }
 
   // POST /users
+  // GET /roles — list selectable roles (base + custom).
+  static Future<List<Map<String, dynamic>>> getRoles({
+    required String token,
+  }) async {
+    final uri = Uri.parse('$baseUrl/roles');
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to load roles: ${response.statusCode} ${response.body}',
+      );
+    }
+    return _extractListFromResponse(jsonDecode(response.body), '/roles');
+  }
+
+  // POST /roles — create a custom role with the chosen permissions.
+  // Returns {id, name}.
+  static Future<Map<String, dynamic>> createRole({
+    required String token,
+    required String name,
+    required List<String> permissions,
+    String detail = '',
+  }) async {
+    final uri = Uri.parse('$baseUrl/roles');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'name': name,
+        'detail': detail,
+        'permissions': permissions,
+      }),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(
+        'Failed to create role: ${response.statusCode} ${response.body}',
+      );
+    }
+    return _extractObjectFromResponse(jsonDecode(response.body), '/roles');
+  }
+
   static Future<Map<String, dynamic>> createUser({
     required String token,
     required String username,

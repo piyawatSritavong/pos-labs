@@ -234,6 +234,88 @@ func (h *BillsHandler) buildMemberOutput(ctx context.Context, memberID string) i
 	}
 }
 
+// batchMembers resolves the member object for every bill in a list using a
+// single GetByIDs query (avoids the per-bill GetByID N+1). The result is keyed
+// by member ID; bills with no/unknown member simply miss the map (→ JSON null).
+func (h *BillsHandler) batchMembers(ctx context.Context, bills []repository.Bill) map[string]interface{} {
+	ids := make([]string, 0, len(bills))
+	seen := make(map[string]struct{})
+	for _, b := range bills {
+		id := strings.TrimSpace(b.MemberID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	out := make(map[string]interface{}, len(ids))
+	if len(ids) == 0 {
+		return out
+	}
+	members, err := h.members.GetByIDs(ctx, ids)
+	if err != nil {
+		return out
+	}
+	for id, m := range members {
+		out[id] = gin.H{
+			"id":   m.ID,
+			"code": m.Code,
+			"name": m.Name,
+		}
+	}
+	return out
+}
+
+// resolveUserNames maps user ids → display name (name, else username, else the
+// id) in a single query, so created_by/updated_by show e.g. "Administrator"
+// instead of a raw id. Missing/unknown ids fall back to the id.
+func (h *BillsHandler) resolveUserNames(ctx context.Context, ids ...string) map[string]string {
+	out := make(map[string]string)
+	uniq := make([]string, 0, len(ids))
+	seen := make(map[string]struct{})
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniq = append(uniq, id)
+	}
+	if len(uniq) == 0 || h.users == nil {
+		return out
+	}
+	users, err := h.users.GetByIDs(ctx, uniq)
+	if err != nil {
+		return out
+	}
+	for id, u := range users {
+		name := strings.TrimSpace(u.Name)
+		if name == "" {
+			name = strings.TrimSpace(u.Username)
+		}
+		if name == "" {
+			name = id
+		}
+		out[id] = name
+	}
+	return out
+}
+
+// userDisplayName returns the resolved name for id, or the id itself if unknown.
+func userDisplayName(names map[string]string, id string) string {
+	if n, ok := names[id]; ok && n != "" {
+		return n
+	}
+	return id
+}
+
 func normalizeDiscountUnit(raw string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "thb", "baht", "amount":
@@ -294,6 +376,11 @@ func (h *BillsHandler) respondWithFullBill(c *gin.Context, billID string) {
 	detailOut := buildBillDetailOutput(details)
 	discountOut := buildBillDiscountOutput(discounts)
 	itemCount, totalQty := buildBillItemSummary(details)
+	userNames := h.resolveUserNames(
+		c.Request.Context(),
+		bill.CreatedBy,
+		bill.UpdatedBy,
+	)
 
 	response := gin.H{
 		"id":                  bill.ID,
@@ -314,6 +401,8 @@ func (h *BillsHandler) respondWithFullBill(c *gin.Context, billID string) {
 		"updatedAt":           bill.UpdatedAt.Format(time.RFC3339),
 		"createdBy":           bill.CreatedBy,
 		"updatedBy":           bill.UpdatedBy,
+		"createdByName":       userDisplayName(userNames, bill.CreatedBy),
+		"updatedByName":       userDisplayName(userNames, bill.UpdatedBy),
 		"itemCount":           itemCount,
 		"totalQty":            totalQty,
 		"details":             detailOut,
@@ -333,6 +422,7 @@ type BillsHandler struct {
 	company    repository.CompanyRepository
 	promotions repository.PromotionRepository
 	addresses  repository.AddressRepository
+	users      repository.UserRepository
 	// PrinterTarget is the resolved RECEIPT_PRINTER_TARGET (port name or share name).
 	// Empty disables PrintReceipt; the handler reports a clear error in that case.
 	PrinterTarget  string
@@ -347,7 +437,7 @@ type BillsHandler struct {
 	recentPrints   map[string]time.Time
 }
 
-func NewBillsHandler(bills repository.BillRepository, branches repository.BranchRepository, pos repository.POSRepository, parts repository.PartRepository, members repository.MemberRepository, company repository.CompanyRepository, promotions repository.PromotionRepository, addresses repository.AddressRepository) *BillsHandler {
+func NewBillsHandler(bills repository.BillRepository, branches repository.BranchRepository, pos repository.POSRepository, parts repository.PartRepository, members repository.MemberRepository, company repository.CompanyRepository, promotions repository.PromotionRepository, addresses repository.AddressRepository, users repository.UserRepository) *BillsHandler {
 	return &BillsHandler{
 		bills:          bills,
 		branches:       branches,
@@ -357,6 +447,7 @@ func NewBillsHandler(bills repository.BillRepository, branches repository.Branch
 		company:        company,
 		promotions:     promotions,
 		addresses:      addresses,
+		users:          users,
 		PrinterEnabled: true,
 		PrinterMode:    printer.ModeASCII,
 		recentPrints:   make(map[string]time.Time),
@@ -636,24 +727,50 @@ func (h *BillsHandler) List(c *gin.Context) {
 		return
 	}
 
+	// Enrich the list without N+1: batch-load members and (optionally) details
+	// for the whole page in a couple of queries instead of per bill.
+	memberByID := h.batchMembers(c.Request.Context(), bills)
+	// Resolve creator/updater ids → display names (e.g. "Administrator").
+	creatorIDs := make([]string, 0, len(bills)*2)
+	for _, b := range bills {
+		creatorIDs = append(creatorIDs, b.CreatedBy, b.UpdatedBy)
+	}
+	userNames := h.resolveUserNames(c.Request.Context(), creatorIDs...)
+	var detailsByBill map[string][]repository.BillDetail
+	var discountsByBill map[string][]repository.BillDiscountDetail
+	if includeDetails {
+		billIDs := make([]string, 0, len(bills))
+		for _, b := range bills {
+			billIDs = append(billIDs, b.ID)
+		}
+		var dErr, gErr error
+		detailsByBill, dErr = h.bills.GetDetailsByBillIDs(c.Request.Context(), billIDs)
+		discountsByBill, gErr = h.bills.GetDiscountsByBillIDs(c.Request.Context(), billIDs)
+		if dErr != nil || gErr != nil {
+			err := dErr
+			if err == nil {
+				err = gErr
+			}
+			log.Printf("Error loading bill details for list: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "failed_to_get_bill_details",
+				"message": err.Error(),
+			})
+			return
+		}
+	}
+
 	out := make([]gin.H, 0, len(bills))
 	for _, b := range bills {
-		memberObj := h.buildMemberOutput(c.Request.Context(), b.MemberID)
+		memberObj := memberByID[b.MemberID]
 		var detailOut []gin.H
 		var discountOut []gin.H
 		itemCount := 0
 		totalQty := 0
 
 		if includeDetails {
-			_, details, discounts, fullErr := h.bills.GetFullByID(c.Request.Context(), b.ID)
-			if fullErr != nil {
-				log.Printf("Error loading full bill detail for %s: %v", b.ID, fullErr)
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"error":   "failed_to_get_bill_details",
-					"message": fullErr.Error(),
-				})
-				return
-			}
+			details := detailsByBill[b.ID]
+			discounts := discountsByBill[b.ID]
 			detailOut = buildBillDetailOutput(details)
 			discountOut = buildBillDiscountOutput(discounts)
 			itemCount, totalQty = buildBillItemSummary(details)
@@ -679,10 +796,12 @@ func (h *BillsHandler) List(c *gin.Context) {
 			"dateTime":    b.CreatedAt.Format(time.RFC3339),
 			"createdAt":   b.CreatedAt.Format(time.RFC3339),
 			"updatedAt":   b.UpdatedAt.Format(time.RFC3339),
-			"createdBy":   b.CreatedBy,
-			"updatedBy":   b.UpdatedBy,
-			"itemCount":   itemCount,
-			"totalQty":    totalQty,
+			"createdBy":     b.CreatedBy,
+			"updatedBy":     b.UpdatedBy,
+			"createdByName": userDisplayName(userNames, b.CreatedBy),
+			"updatedByName": userDisplayName(userNames, b.UpdatedBy),
+			"itemCount":     itemCount,
+			"totalQty":      totalQty,
 		}
 		if includeDetails {
 			billOut["details"] = detailOut
@@ -756,6 +875,7 @@ func (h *BillsHandler) Get(c *gin.Context) {
 	detailOut := buildBillDetailOutput(details)
 	discountOut := buildBillDiscountOutput(discounts)
 	itemCount, totalQty := buildBillItemSummary(details)
+	userNames := h.resolveUserNames(c.Request.Context(), b.CreatedBy, b.UpdatedBy)
 
 	response := gin.H{
 		"id":             b.ID,
@@ -777,12 +897,14 @@ func (h *BillsHandler) Get(c *gin.Context) {
 		"dateTime":    b.CreatedAt.Format(time.RFC3339),
 		"createdAt":   b.CreatedAt.Format(time.RFC3339),
 		"updatedAt":   b.UpdatedAt.Format(time.RFC3339),
-		"createdBy":   b.CreatedBy,
-		"updatedBy":   b.UpdatedBy,
-		"itemCount":   itemCount,
-		"totalQty":    totalQty,
-		"details":     detailOut,
-		"items":       detailOut,
+		"createdBy":     b.CreatedBy,
+		"updatedBy":     b.UpdatedBy,
+		"createdByName": userDisplayName(userNames, b.CreatedBy),
+		"updatedByName": userDisplayName(userNames, b.UpdatedBy),
+		"itemCount":     itemCount,
+		"totalQty":      totalQty,
+		"details":       detailOut,
+		"items":         detailOut,
 		"discounts":   discountOut,
 	}
 	attachPaymentOutput(response, b.PaymentMethod, b.PaymentRef)

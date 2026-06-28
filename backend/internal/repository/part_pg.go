@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"backend/internal/config"
+
+	"github.com/lib/pq"
 )
 
 type partRepositoryPG struct {
@@ -52,7 +54,19 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 					FROM "address_master" a2
 					JOIN "branch_store" bs2 ON bs2.store_id = a2.store_id
 					WHERE a2.part_code = p.code AND bs2.branch_id = $3
-				), 0) AS total_stock
+				), 0) AS total_stock,
+				COALESCE((
+					SELECT SUM(a3.rop)
+					FROM "address_master" a3
+					JOIN "branch_store" bs3 ON bs3.store_id = a3.store_id
+					WHERE a3.part_code = p.code AND bs3.branch_id = $3
+				), 0) AS total_rop,
+				COALESCE((
+					SELECT SUM(a4.min)
+					FROM "address_master" a4
+					JOIN "branch_store" bs4 ON bs4.store_id = a4.store_id
+					WHERE a4.part_code = p.code AND bs4.branch_id = $3
+				), 0) AS total_min
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
@@ -80,7 +94,9 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 				COALESCE(p.receipt_name, ''),
 				p.price,
 				COALESCE(p.is_active, false),
-				COALESCE(SUM(a.qty), 0) AS total_stock
+				COALESCE(SUM(a.qty), 0) AS total_stock,
+				COALESCE(SUM(a.rop), 0) AS total_rop,
+				COALESCE(SUM(a.min), 0) AS total_min
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
@@ -116,6 +132,8 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			&s.Price,
 			&s.IsActive,
 			&s.TotalStock,
+			&s.ReorderPoint,
+			&s.MinStock,
 		); err != nil {
 			return nil, err
 		}
@@ -303,6 +321,92 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 	}
 
 	return &d, addrs, nil
+}
+
+// GetAddressesByPartCodes loads addresses for many part codes in one round-trip
+// using `part_code = ANY($1)`, returning them grouped by part code. This
+// replaces the per-part GetPartDetail calls that previously caused N+1 queries
+// when building search/list responses.
+func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []string, branchID *string) (map[string][]PartAddress, error) {
+	result := make(map[string][]PartAddress, len(codes))
+	if len(codes) == 0 {
+		return result, nil
+	}
+
+	var rows *sql.Rows
+	var err error
+	if branchID != nil && *branchID != "" {
+		rows, err = r.db.QueryContext(ctx, `
+			SELECT
+				a.code,
+				a.part_code,
+				a.store_id,
+				s.label,
+				s.label_th,
+				a.shelf,
+				a.qty,
+				a.min,
+				a.max,
+				a.rop,
+				COALESCE(a.remarks, ''),
+				COALESCE(bs.is_default, false) as is_default
+			FROM "address_master" a
+			JOIN "store_master" s ON s.id = a.store_id
+			JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $2
+			WHERE a.part_code = ANY($1)
+			ORDER BY a.part_code, bs.is_default DESC, a.code
+		`, pq.Array(codes), *branchID)
+	} else {
+		rows, err = r.db.QueryContext(ctx, `
+			SELECT
+				a.code,
+				a.part_code,
+				a.store_id,
+				s.label,
+				s.label_th,
+				a.shelf,
+				a.qty,
+				a.min,
+				a.max,
+				a.rop,
+				COALESCE(a.remarks, ''),
+				false as is_default
+			FROM "address_master" a
+			JOIN "store_master" s ON s.id = a.store_id
+			WHERE a.part_code = ANY($1)
+			ORDER BY a.part_code, a.code
+		`, pq.Array(codes))
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var a PartAddress
+		if err := rows.Scan(
+			&a.Code,
+			&a.PartCode,
+			&a.StoreID,
+			&a.StoreLabel,
+			&a.StoreLabelTH,
+			&a.Shelf,
+			&a.Qty,
+			&a.Min,
+			&a.Max,
+			&a.Rop,
+			&a.Remarks,
+			&a.IsDefault,
+		); err != nil {
+			return nil, err
+		}
+		result[a.PartCode] = append(result[a.PartCode], a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string, branchID string) (*PartDetail, []PartAddress, error) {

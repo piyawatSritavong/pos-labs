@@ -206,7 +206,13 @@ func (h *PosMirrorHandler) HandleCustomerDisplayWS(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_pos"})
 		return
 	}
-	if !pos.IsActive || pos.BranchID != branchID || pos.POSSecret != posSecret {
+	// In non-production, accept the dev default secret ("default_if_needed") the
+	// same way the login handler does, so the customer display connects without
+	// having to bake the real POS secret into the web build.
+	allowDevDefaultSecret := !h.cfg.IsProduction() && posSecret == "default_if_needed"
+	if !pos.IsActive ||
+		pos.BranchID != branchID ||
+		(pos.POSSecret != posSecret && !allowDevDefaultSecret) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_pos_credentials"})
 		return
 	}

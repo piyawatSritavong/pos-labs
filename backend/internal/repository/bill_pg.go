@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"backend/internal/config"
+
+	"github.com/lib/pq"
 )
 
 type billRepositoryPG struct {
@@ -273,6 +275,105 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 	}
 
 	return bill, details, discounts, nil
+}
+
+// GetDetailsByBillIDs loads bill items for many bills in one query using
+// `bill_id = ANY($1)`, grouped by bill ID. Mirrors the detail query in
+// GetFullByID but batched to avoid N+1 when listing bills with details.
+func (r *billRepositoryPG) GetDetailsByBillIDs(ctx context.Context, ids []string) (map[string][]BillDetail, error) {
+	result := make(map[string][]BillDetail, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			bid."bill_id", bid."part_code", bid."address_code",
+			bid."unit_id", bid."uni_label", bid."unit_label_th",
+			bid."name",
+			COALESCE(NULLIF(bid."receipt_name", ''), NULLIF(pm."receipt_name", ''), 'ITEM ' || bid."part_code") AS "receipt_name",
+			bid."cost", bid."price", bid."qty",
+			COALESCE((
+				SELECT SUM(am."qty")
+				FROM "address_master" am
+				WHERE am."part_code" = bid."part_code"
+				  AND am."store_id" = b."branch_id"
+			), 0) AS "total_stock"
+		FROM "bill_item_detail" bid
+		JOIN "bill_master" b ON b."id" = bid."bill_id"
+		LEFT JOIN "part_master" pm ON pm."code" = bid."part_code"
+		WHERE bid."bill_id" = ANY($1)
+		ORDER BY bid."bill_id", bid."part_code", bid."address_code"
+	`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var d BillDetail
+		if err := rows.Scan(
+			&d.BillID,
+			&d.PartCode,
+			&d.AddressCode,
+			&d.UnitID,
+			&d.UnitLabel,
+			&d.UnitLabelTH,
+			&d.Name,
+			&d.ReceiptName,
+			&d.Cost,
+			&d.Price,
+			&d.Qty,
+			&d.TotalStock,
+		); err != nil {
+			return nil, err
+		}
+		result[d.BillID] = append(result[d.BillID], d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// GetDiscountsByBillIDs loads bill discounts for many bills in one query using
+// `bill_id = ANY($1)`, grouped by bill ID.
+func (r *billRepositoryPG) GetDiscountsByBillIDs(ctx context.Context, ids []string) (map[string][]BillDiscountDetail, error) {
+	result := make(map[string][]BillDiscountDetail, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			"bill_id", "promotion_code", "unit", "amount"
+		FROM "bill_discount_detail"
+		WHERE "bill_id" = ANY($1)
+		ORDER BY "bill_id", "promotion_code"
+	`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var d BillDiscountDetail
+		if err := rows.Scan(
+			&d.BillID,
+			&d.PromotionCode,
+			&d.Unit,
+			&d.Amount,
+		); err != nil {
+			return nil, err
+		}
+		result[d.BillID] = append(result[d.BillID], d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom, dateTo *time.Time, memberID, branchID, posID *string, statuses []string) ([]Bill, error) {

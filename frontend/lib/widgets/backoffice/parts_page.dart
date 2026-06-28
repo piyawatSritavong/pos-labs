@@ -9,8 +9,28 @@ import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:http/http.dart' as http;
 
-class PartsManagementSection extends StatelessWidget {
+class PartsManagementSection extends StatefulWidget {
   const PartsManagementSection({super.key});
+
+  @override
+  State<PartsManagementSection> createState() =>
+      _PartsManagementSectionState();
+}
+
+class _PartsManagementSectionState extends State<PartsManagementSection> {
+  @override
+  void initState() {
+    super.initState();
+    // Auto-load the first page when the Parts screen opens. Previously the page
+    // only fetched on manual refresh/search, so it usually appeared empty.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final token = context.read<AuthProvider>().token ?? '';
+      if (token.isNotEmpty) {
+        context.read<PartsProvider>().fetchParts(token);
+      }
+    });
+  }
 
   Future<void> _showCreatePartDialog(
     BuildContext context,
@@ -668,6 +688,32 @@ class PartsManagementSection extends StatelessWidget {
                           ),
                   ),
                 ),
+              ),
+              const SizedBox(height: 12),
+              // Server-side pagination (page size = PartsProvider.pageSize).
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    tooltip: 'ก่อนหน้า',
+                    onPressed:
+                        (partsProvider.isLoading || partsProvider.offset <= 0)
+                        ? null
+                        : () => context.read<PartsProvider>().prevPage(token),
+                  ),
+                  Text(
+                    'หน้า ${(partsProvider.offset ~/ PartsProvider.pageSize) + 1}',
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    tooltip: 'ถัดไป',
+                    onPressed:
+                        (partsProvider.isLoading || !partsProvider.hasMore)
+                        ? null
+                        : () => context.read<PartsProvider>().nextPage(token),
+                  ),
+                ],
               ),
             ],
           ),

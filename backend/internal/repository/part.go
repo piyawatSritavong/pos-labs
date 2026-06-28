@@ -40,6 +40,10 @@ type PartSummary struct {
 	Price           float64
 	IsActive        bool
 	TotalStock      int
+	// ReorderPoint / MinStock are summed across the part's addresses. Used for
+	// the per-product low-stock alert (low when TotalStock <= ReorderPoint).
+	ReorderPoint int
+	MinStock     int
 }
 type PartAddress struct {
 	Code         string
@@ -62,6 +66,9 @@ type PartRepository interface {
 	GetPartByBarcode(ctx context.Context, barcode string, branchID string) (*PartDetail, []PartAddress, error)
 	CheckPartExistsInBranch(ctx context.Context, partCode, branchID string) (bool, error)
 	SearchParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID *string, limit, offset int) ([]PartDetail, error)
+	// GetAddressesByPartCodes loads addresses for many parts in a single query
+	// (avoids N+1 when building search/list responses). Result is keyed by part code.
+	GetAddressesByPartCodes(ctx context.Context, codes []string, branchID *string) (map[string][]PartAddress, error)
 }
 
 var ErrNotFound = errors.New("not found")

@@ -14,9 +14,7 @@ import 'package:frontend/widgets/pos/cart_summary_section.dart';
 import 'package:frontend/widgets/pos/search_barcode_section.dart';
 import 'package:frontend/widgets/pos/return_reference_dialog.dart';
 import 'package:frontend/widgets/pos/member_register_dialog.dart';
-import 'package:frontend/widgets/pos/physical_count_dialog.dart';
 import 'package:frontend/widgets/pos/daily_close_dialog.dart';
-import 'package:frontend/widgets/pos/requisition_dialog.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/providers/theme_provider.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
@@ -30,7 +28,13 @@ _ScreenMode _posScreenMode(double width) {
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.embedded = false});
+
+  /// When true the screen is hosted inside the backoffice shell (admin "POS"
+  /// page) instead of being the standalone POS app. In embedded mode the
+  /// backoffice→redirect guard is skipped so an admin can sell like van-staff;
+  /// sales still record created_by = the logged-in admin (from the token).
+  final bool embedded;
 
   static void Function()? openCustomerWindowFn;
 
@@ -53,7 +57,11 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
-      if (auth.isAuthenticated && auth.hasBackofficeAccess) {
+      // Embedded inside the backoffice (admin POS page) → don't bounce back to
+      // the backoffice shell; let the admin use the POS UI directly.
+      if (!widget.embedded &&
+          auth.isAuthenticated &&
+          auth.hasBackofficeAccess) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const BackofficeScreen()),
           (route) => false,
@@ -541,14 +549,6 @@ class _HomeScreenState extends State<HomeScreen> {
             builder: (_) => const MemberRegisterDialog(),
           ).then((_) => PosMirrorService.current?.notifyDialog(null));
         }),
-        tile(Icons.inventory_2_outlined, 'นับสต็อก', null, () {
-          PosMirrorService.current?.notifyDialog('physical_count');
-          showDialog(
-            context: context,
-            builder: (_) =>
-                PhysicalCountDialog(branchId: auth.branchId ?? '', storeId: ''),
-          ).then((_) => PosMirrorService.current?.notifyDialog(null));
-        }),
         tile(Icons.calculate_outlined, 'ปิดวัน', null, () {
           PosMirrorService.current?.notifyDialog('daily_close');
           showDialog(
@@ -559,15 +559,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ).then((_) => PosMirrorService.current?.notifyDialog(null));
         }),
-        tile(
-          Icons.local_shipping_outlined,
-          'เบิกสินค้าเข้ารถ',
-          null,
-          () => showDialog(
-            context: context,
-            builder: (_) => const RequisitionDialog(),
-          ),
-        ),
       ],
       if (auth.isPOSOperator && !auth.isVanStaff) ...[
         tile(Icons.calculate_outlined, 'ปิดวัน', null, () {
@@ -580,15 +571,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ).then((_) => PosMirrorService.current?.notifyDialog(null));
         }),
-        tile(
-          Icons.local_shipping_outlined,
-          'เบิกสินค้าเข้ารถ',
-          null,
-          () => showDialog(
-            context: context,
-            builder: (_) => const RequisitionDialog(),
-          ),
-        ),
       ],
       if (HomeScreen.openCustomerWindowFn != null)
         tile(
@@ -1184,7 +1166,9 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
             ).then((_) => PosMirrorService.current?.notifyDialog(null));
           },
         ),
-        if (auth.isVanStaff) ...[
+        // Admin (in the embedded backoffice POS page) gets the same van-staff
+        // tools so they can do everything a van-staff can.
+        if (auth.isVanStaff || auth.isSuperAdmin) ...[
           SizedBox(width: gap),
           _HeaderIconButton(
             icon: Icons.person_add_outlined,
@@ -1197,21 +1181,8 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
               ).then((_) => PosMirrorService.current?.notifyDialog(null));
             },
           ),
-          SizedBox(width: gap),
-          _HeaderIconButton(
-            icon: Icons.inventory_2_outlined,
-            isCompact: widget.isCompact,
-            onTap: () {
-              PosMirrorService.current?.notifyDialog('physical_count');
-              showDialog(
-                context: context,
-                builder: (context) => PhysicalCountDialog(
-                  branchId: auth.branchId ?? '',
-                  storeId: '',
-                ),
-              ).then((_) => PosMirrorService.current?.notifyDialog(null));
-            },
-          ),
+          // นับสต๊อก (physical count) and เบิกสินค้าเข้ารถ (requisition) are
+          // hidden on the POS by request — only daily close remains here.
           SizedBox(width: gap),
           _HeaderIconButton(
             icon: Icons.calculate_outlined,
@@ -1225,21 +1196,11 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
                   posId: auth.posId ?? '',
                 ),
               ).then((_) => PosMirrorService.current?.notifyDialog(null));
-            },
-          ),
-          SizedBox(width: gap),
-          _HeaderIconButton(
-            icon: Icons.request_page_outlined,
-            isCompact: widget.isCompact,
-            onTap: () {
-              showDialog(
-                context: context,
-                builder: (_) => const RequisitionDialog(),
-              );
             },
           ),
         ],
         if (auth.isPOSOperator && !auth.isVanStaff) ...[
+          // เบิกสินค้าเข้ารถ (requisition) hidden by request — daily close only.
           SizedBox(width: gap),
           _HeaderIconButton(
             icon: Icons.calculate_outlined,
@@ -1253,17 +1214,6 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
                   posId: auth.posId ?? '',
                 ),
               ).then((_) => PosMirrorService.current?.notifyDialog(null));
-            },
-          ),
-          SizedBox(width: gap),
-          _HeaderIconButton(
-            icon: Icons.local_shipping_outlined,
-            isCompact: widget.isCompact,
-            onTap: () {
-              showDialog(
-                context: context,
-                builder: (_) => const RequisitionDialog(),
-              );
             },
           ),
         ],
