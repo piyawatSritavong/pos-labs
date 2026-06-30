@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
+import 'package:frontend/services/api_bills.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
@@ -21,11 +22,100 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
   List<Map<String, dynamic>> _details = [];
   final Map<String, int> _selectedQtyByKey = {};
 
+  // Stage 1 (bill picker): today's completed bills, browsable like the
+  // "ประวัติบิลวันนี้" dialog. Each row has a "คืนของในบิลนี้" button.
+  bool _isLoadingBills = false;
+  String? _billsError;
+  List<Map<String, dynamic>> _todayBills = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTodayBills();
+  }
+
   @override
   void dispose() {
     _invoiceController.dispose();
     PosMirrorService.current?.notifyDialogState(null);
     super.dispose();
+  }
+
+  DateTime? _parseDate(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return DateTime.parse(raw).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _formatTime(DateTime? dt) {
+    if (dt == null) return '-';
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  bool _isToday(DateTime? dt) {
+    if (dt == null) return false;
+    final now = DateTime.now();
+    return dt.year == now.year && dt.month == now.month && dt.day == now.day;
+  }
+
+  // Load today's completed bills so the cashier can pick one to return against
+  // without typing its id (the search box still finds any bill in the DB).
+  Future<void> _loadTodayBills() async {
+    final auth = context.read<AuthProvider>();
+    final token = auth.token;
+    if (token == null || token.isEmpty) {
+      setState(() {
+        _billsError = 'หมดเซสชัน กรุณาเข้าสู่ระบบใหม่';
+        _todayBills = [];
+      });
+      return;
+    }
+    setState(() {
+      _isLoadingBills = true;
+      _billsError = null;
+    });
+    try {
+      final bills = await ApiBillsService.getBills(
+        token: token,
+        limit: 200,
+        offset: 0,
+        statuses: const ['completed'],
+        includeDetails: true,
+        scope: 'pos',
+      );
+      final filtered =
+          bills.whereType<Map<String, dynamic>>().where((bill) {
+            return _isToday(_parseDate(bill['createdAt']?.toString()));
+          }).toList()..sort((a, b) {
+            final aTime = _parseDate(a['createdAt']?.toString());
+            final bTime = _parseDate(b['createdAt']?.toString());
+            return (bTime ?? DateTime(0)).compareTo(aTime ?? DateTime(0));
+          });
+      if (!mounted) return;
+      setState(() => _todayBills = filtered);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _billsError = e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingBills = false);
+      }
+    }
+  }
+
+  void _backToList() {
+    setState(() {
+      _referenceBill = null;
+      _details = [];
+      _selectedQtyByKey.clear();
+      _error = null;
+    });
+    _broadcastState();
   }
 
   void _broadcastState() {
@@ -64,20 +154,27 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
     return '$partCode|$addressCode';
   }
 
+  // Search box: look up a bill by exact id anywhere in the database (any date
+  // in this branch), then jump to the item-selection stage.
   Future<void> _searchReferenceBill() async {
+    final billId = _invoiceController.text.trim();
+    if (billId.isEmpty) {
+      setState(() {
+        _error = 'กรุณากรอกเลขที่บิล';
+      });
+      return;
+    }
+    await _loadReturnableBill(billId);
+  }
+
+  // Load a specific bill's returnable items and switch to the selection stage.
+  // Used by both the search box and each "คืนของในบิลนี้" button in the list.
+  Future<void> _loadReturnableBill(String billId) async {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
     if (token == null || token.isEmpty) {
       setState(() {
         _error = 'หมดเซสชัน กรุณาเข้าสู่ระบบใหม่';
-      });
-      return;
-    }
-
-    final billId = _invoiceController.text.trim();
-    if (billId.isEmpty) {
-      setState(() {
-        _error = 'กรุณากรอกเลขที่บิล';
       });
       return;
     }
@@ -201,7 +298,8 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'สแกน/กรอกเลขที่บิลเดิม แล้วเลือกรายการคืนเพื่อสร้างยอดติดลบในธุรกรรมปัจจุบัน',
+                'เลือกบิลจากรายการวันนี้ หรือค้นหาเลขที่บิลย้อนหลังทั้งหมด แล้วกด '
+                '“คืนของในบิลนี้” เพื่อเลือกรายการคืน',
                 style: TextStyle(color: AppColors.muted),
               ),
               const SizedBox(height: 16),
@@ -211,9 +309,9 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
                     child: TextField(
                       controller: _invoiceController,
                       decoration: const InputDecoration(
-                        labelText: 'เลขที่บิลเดิม (Invoice ID)',
+                        labelText: 'ค้นหาเลขที่บิล (ย้อนหลังทั้งหมด)',
                         border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.receipt_long),
+                        prefixIcon: Icon(Icons.search),
                       ),
                       onSubmitted: (_) => _searchReferenceBill(),
                     ),
@@ -239,30 +337,36 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
                   child: Center(child: CircularProgressIndicator()),
                 )
               else if (_referenceBill == null)
-                const Expanded(
-                  child: Center(
-                    child: Text(
-                      'ยังไม่ได้เลือกบิลอ้างอิง',
-                      style: TextStyle(color: AppColors.muted),
-                    ),
-                  ),
-                )
+                Expanded(child: _buildBillsList())
               else
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.fromLTRB(4, 4, 12, 4),
                         decoration: BoxDecoration(
                           color: AppColors.bg,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: AppColors.border),
                         ),
-                        child: Text(
-                          'บิลอ้างอิง: ${_referenceBill!['id'] ?? '-'}'
-                          '  •  รวม ${_referenceBill!['totalAmount'] ?? '0.00'}',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              tooltip: 'เลือกบิลใหม่',
+                              onPressed: _isLoading ? null : _backToList,
+                              icon: const Icon(Icons.arrow_back),
+                            ),
+                            Expanded(
+                              child: Text(
+                                'บิลอ้างอิง: ${_referenceBill!['id'] ?? '-'}'
+                                '  •  รวม ${_referenceBill!['totalAmount'] ?? '0.00'}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -387,19 +491,153 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('ยกเลิก'),
+                    child: const Text('ปิด'),
                   ),
                   const Spacer(),
-                  ElevatedButton.icon(
-                    onPressed: _applyReturnSelection,
-                    icon: const Icon(Icons.assignment_return),
-                    label: const Text('ยืนยันรายการคืน'),
-                  ),
+                  // Confirm only makes sense once a bill is selected (stage 2).
+                  if (_referenceBill != null)
+                    ElevatedButton.icon(
+                      onPressed: _applyReturnSelection,
+                      icon: const Icon(Icons.assignment_return),
+                      label: const Text('ยืนยันรายการคืน'),
+                    ),
                 ],
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBillsList() {
+    if (_isLoadingBills) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_billsError != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: AppColors.danger, size: 40),
+            const SizedBox(height: 8),
+            Text(
+              _billsError!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.danger),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _loadTodayBills,
+              child: const Text('ลองใหม่'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_todayBills.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.receipt_long, size: 56, color: AppColors.muted),
+            SizedBox(height: 8),
+            Text(
+              'วันนี้ยังไม่มีบิล — ค้นหาเลขที่บิลย้อนหลังได้ด้านบน',
+              style: TextStyle(color: AppColors.muted),
+            ),
+          ],
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Text(
+              'บิลวันนี้',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const Spacer(),
+            IconButton(
+              tooltip: 'รีเฟรช',
+              onPressed: _isLoadingBills ? null : _loadTodayBills,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: ListView.separated(
+            itemCount: _todayBills.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (context, index) => _buildBillCard(_todayBills[index]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  double _resolveAmount(Map<String, dynamic> bill, List<String> keys) {
+    for (final key in keys) {
+      final v = bill[key];
+      if (v != null) return _toDouble(v);
+    }
+    return 0.0;
+  }
+
+  Widget _buildBillCard(Map<String, dynamic> bill) {
+    final id = bill['id']?.toString() ?? bill['billId']?.toString() ?? '-';
+    final created = _parseDate(bill['createdAt']?.toString());
+    final total = _resolveAmount(bill, [
+      'totalAmount',
+      'total_amount',
+      'total',
+    ]);
+    final raw = bill['details'] ?? bill['items'];
+    final itemCount = (bill['itemCount'] as num?)?.toInt() ??
+        (raw is List ? raw.length : 0);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  id,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'เวลา ${_formatTime(created)} • $itemCount รายการ • '
+                  'รวม ฿${total.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: _isLoading ? null : () => _loadReturnableBill(id),
+            icon: const Icon(Icons.assignment_return),
+            label: const Text('คืนของในบิลนี้'),
+          ),
+        ],
       ),
     );
   }

@@ -164,7 +164,7 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
     return Dialog(
       insetPadding: const EdgeInsets.all(24),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760, maxHeight: 580),
+        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 680),
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
