@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/config/feature_flags.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
@@ -292,10 +293,12 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
             'โอนเงิน',
             '฿${_fmt(close['totalTransfer'] ?? close['total_transfer'])}',
           ),
-          _infoRow(
-            'เงินเซ็น',
-            '฿${_fmt(close['totalCreditTerm'] ?? close['total_credit_term'])}',
-          ),
+          // "เงินเซ็น" (credit term) hidden when the credit system is disabled.
+          if (kEnableCreditTerm)
+            _infoRow(
+              'เงินเซ็น',
+              '฿${_fmt(close['totalCreditTerm'] ?? close['total_credit_term'])}',
+            ),
           _infoRow(
             'ยอดคืนสินค้า',
             '฿${_fmt(close['totalReturns'] ?? close['total_returns'])}',
