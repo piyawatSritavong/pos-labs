@@ -64,6 +64,18 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
   // glyphs, so product names need a bundled TTF.
   pw.Font? _thaiFont;
 
+  // The generated PDF is built exactly once and cached. PdfPreview's raster
+  // pass calls its `build` callback on every (re)layout; without this it would
+  // regenerate the whole multi-page document each time — wasteful on web.
+  Future<Uint8List>? _pdfFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    // Build the PDF up-front so the preview has bytes ready immediately.
+    _pdfFuture = _buildPdf(_rowFormat);
+  }
+
   Future<pw.Font> _loadFont() async {
     return _thaiFont ??=
         pw.Font.ttf(await rootBundle.load('assets/fonts/Sarabun-Regular.ttf'));
@@ -172,11 +184,19 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
         title: Text('พิมพ์บาร์โค้ด ($total ดวง = $rows แถว)'),
       ),
       body: PdfPreview(
-        build: _buildPdf,
+        // Reuse the pre-built bytes instead of regenerating per raster pass.
+        build: (_) => _pdfFuture ??= _buildPdf(_rowFormat),
         initialPageFormat: _rowFormat,
         canChangePageFormat: false,
         canChangeOrientation: false,
         canDebug: false,
+        // The page format never changes, so skip PdfPreview's dynamic relayout.
+        dynamicLayout: false,
+        // Pin a low preview DPI. Unset, PdfPreview rasterises every page at
+        // ~screen-width × devicePixelRatio (≈600 DPI on desktop) which makes
+        // the on-screen preview very slow on web for many label rows. Printing
+        // uses the vector PDF, so this only affects the preview, not output.
+        dpi: 120,
         useActions: true,
         pdfFileName: 'barcodes.pdf',
       ),

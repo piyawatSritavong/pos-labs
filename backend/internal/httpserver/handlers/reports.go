@@ -86,20 +86,38 @@ func toString(v interface{}) string {
 
 // BillsReport handles GET /reports/bills?date=YYYY-MM-DD&items=0|1
 func (h *ReportsHandler) BillsReport(c *gin.Context) {
-	// Get and validate date parameter
-	dateStr := c.Query("date")
-	if dateStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_date", "message": "Date parameter is required"})
+	// Accept a date range (dateFrom/dateTo). Falls back to the legacy single
+	// `date` param. Window is [fromStart 00:00, toEnd+1day) in UTC.
+	fromStr := c.Query("dateFrom")
+	toStr := c.Query("dateTo")
+	if fromStr == "" {
+		fromStr = c.Query("date")
+	}
+	if toStr == "" {
+		toStr = fromStr
+	}
+	if fromStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_date", "message": "dateFrom is required"})
 		return
 	}
-
-	date, err := parseDate(dateStr)
+	fromDate, err := parseDate(fromStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "invalid_date_format",
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_date_format", "message": err.Error()})
 		return
+	}
+	toDate, err := parseDate(toStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_date_format", "message": err.Error()})
+		return
+	}
+	if toDate.Before(fromDate) {
+		fromDate, toDate = toDate, fromDate
+	}
+	winStart := time.Date(fromDate.Year(), fromDate.Month(), fromDate.Day(), 0, 0, 0, 0, time.UTC)
+	winEnd := time.Date(toDate.Year(), toDate.Month(), toDate.Day(), 0, 0, 0, 0, time.UTC).Add(24 * time.Hour)
+	rangeLabel := fromDate.Format("2006-01-02")
+	if toDate.Format("2006-01-02") != fromDate.Format("2006-01-02") {
+		rangeLabel += "_to_" + toDate.Format("2006-01-02")
 	}
 
 	// Get items parameter (default: 0/false)
@@ -114,13 +132,13 @@ func (h *ReportsHandler) BillsReport(c *gin.Context) {
 
 	if includeItems {
 		// Get bills with items
-		billsWithItems, err := h.reports.GetBillsWithItemsByDate(ctx, date)
+		billsWithItems, err := h.reports.GetBillsWithItemsByDateRange(ctx, winStart, winEnd)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_generate_report"})
 			return
 		}
 
-		filename = fmt.Sprintf("bills_%s_items.csv", date.Format("2006-01-02"))
+		filename = fmt.Sprintf("bills_%s_items.csv", rangeLabel)
 		headers = []string{
 			"id", "branch_id", "pos_id", "status", "payment_method", "payment_ref",
 			"member_id", "customer_name", "purchase_amount", "total_discount",
@@ -157,13 +175,13 @@ func (h *ReportsHandler) BillsReport(c *gin.Context) {
 		}
 	} else {
 		// Get bills without items
-		bills, err := h.reports.GetBillsByDate(ctx, date)
+		bills, err := h.reports.GetBillsByDateRange(ctx, winStart, winEnd)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_generate_report"})
 			return
 		}
 
-		filename = fmt.Sprintf("bills_%s.csv", date.Format("2006-01-02"))
+		filename = fmt.Sprintf("bills_%s.csv", rangeLabel)
 		headers = []string{
 			"id", "branch_id", "pos_id", "status", "payment_method", "payment_ref",
 			"member_id", "customer_name", "purchase_amount", "total_discount",

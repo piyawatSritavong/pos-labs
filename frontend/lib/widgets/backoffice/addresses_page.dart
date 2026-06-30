@@ -19,13 +19,17 @@ class _AddressesManagementSectionState
     extends State<AddressesManagementSection> {
   // Server-side search + paging: one page of /addresses at a time, filtered by
   // q/storeId on the backend instead of loading the whole catalog into Dart.
-  static const int _pageSize = 50;
+  // Page size is user-selectable (20/50/100) to match the Parts page.
+  int _pageSize = 50;
 
   bool _isLoading = false;
   String? _errorMessage;
 
   // Current page of results.
   List<Map<String, dynamic>> _addresses = [];
+
+  // Total matches across all pages (from backend `total`) — drives page-jump.
+  int _total = 0;
 
   // Stores seen so far across loaded pages — used to populate the Store filter
   // without fetching the entire catalog (the text search also matches store
@@ -73,18 +77,20 @@ class _AddressesManagementSectionState
     });
 
     try {
-      final items = await ApiService.getAddresses(
+      final result = await ApiService.getAddressesPaged(
         token: token,
         limit: _pageSize,
         offset: _offset,
         query: _query,
         storeId: _selectedStoreId,
       );
+      final items = result.addresses;
 
       if (!mounted) return;
       setState(() {
         _addresses = items;
-        _hasMore = items.length == _pageSize;
+        _total = result.total;
+        _hasMore = _offset + items.length < _total;
         for (final a in items) {
           final storeId = (a['storeId'] ?? '').toString();
           if (storeId.isEmpty) continue;
@@ -125,6 +131,23 @@ class _AddressesManagementSectionState
     await _load();
   }
 
+  int get _pageCount => _total <= 0 ? 1 : ((_total + _pageSize - 1) ~/ _pageSize);
+  int get _currentPage => (_offset ~/ _pageSize) + 1;
+
+  Future<void> _goToPage(int page) async {
+    if (_isLoading) return;
+    final p = page.clamp(1, _pageCount);
+    _offset = (p - 1) * _pageSize;
+    await _load();
+  }
+
+  Future<void> _setPageSize(int size) async {
+    if (_isLoading || size == _pageSize) return;
+    _pageSize = size;
+    _offset = 0;
+    await _load();
+  }
+
   List<DropdownMenuItem<String>> _buildStoreDropdownItems() {
     return _knownStores.entries
         .map(
@@ -137,7 +160,7 @@ class _AddressesManagementSectionState
   Widget build(BuildContext context) {
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1200),
+        constraints: const BoxConstraints(maxWidth: double.infinity),
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
@@ -220,19 +243,52 @@ class _AddressesManagementSectionState
                 ),
               ),
               const SizedBox(height: 12),
-              // Server-side pagination controls.
+              // Server-side pagination: page-size filter + page-jump dropdown
+              // (matches the Parts page).
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  const Text('แสดงหน้าละ'),
+                  const SizedBox(width: 8),
+                  DropdownButton<int>(
+                    value: _pageSize,
+                    items: const [20, 50, 100]
+                        .map(
+                          (s) =>
+                              DropdownMenuItem(value: s, child: Text('$s')),
+                        )
+                        .toList(),
+                    onChanged: _isLoading
+                        ? null
+                        : (v) {
+                            if (v != null) _setPageSize(v);
+                          },
+                  ),
+                  const SizedBox(width: 24),
                   IconButton(
                     icon: const Icon(Icons.chevron_left),
-                    tooltip: 'Previous',
+                    tooltip: 'ก่อนหน้า',
                     onPressed: (_isLoading || _offset <= 0) ? null : _prevPage,
                   ),
-                  Text('Page ${(_offset ~/ _pageSize) + 1}'),
+                  const Text('หน้า'),
+                  const SizedBox(width: 6),
+                  DropdownButton<int>(
+                    value: _currentPage.clamp(1, _pageCount),
+                    items: [
+                      for (var p = 1; p <= _pageCount; p++)
+                        DropdownMenuItem(value: p, child: Text('$p')),
+                    ],
+                    onChanged: _isLoading
+                        ? null
+                        : (v) {
+                            if (v != null) _goToPage(v);
+                          },
+                  ),
+                  const SizedBox(width: 6),
+                  Text('/ $_pageCount  ($_total รายการ)'),
                   IconButton(
                     icon: const Icon(Icons.chevron_right),
-                    tooltip: 'Next',
+                    tooltip: 'ถัดไป',
                     onPressed: (_isLoading || !_hasMore) ? null : _nextPage,
                   ),
                 ],
@@ -267,6 +323,7 @@ class _AddressesManagementSectionState
   Future<void> _editThreshold(Map<String, dynamic> a) async {
     final code = (a['code'] ?? '').toString();
     if (code.isEmpty) return;
+    final qtyC = TextEditingController(text: (a['qty'] ?? '').toString());
     final minC = TextEditingController(text: (a['min'] ?? '').toString());
     final ropC = TextEditingController(text: (a['rop'] ?? '').toString());
     final maxC = TextEditingController(text: (a['max'] ?? '').toString());
@@ -274,10 +331,20 @@ class _AddressesManagementSectionState
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('ตั้งค่าแจ้งเตือนสต๊อก — ${(a['partCode'] ?? '')}'),
+        title: Text('แก้ไขสต๊อก/แจ้งเตือน — ${(a['partCode'] ?? '')}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            TextField(
+              controller: qtyC,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'จำนวนคงเหลือ (Qty)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
             TextField(
               controller: minC,
               keyboardType: TextInputType.number,
@@ -333,7 +400,7 @@ class _AddressesManagementSectionState
         partCode: (a['partCode'] ?? '').toString(),
         storeId: (a['storeId'] ?? '').toString(),
         shelf: (a['shelf'] ?? '').toString(),
-        qty: toInt(a['qty']),
+        qty: toInt(qtyC.text),
         remarks: (a['remarks'] ?? '').toString(),
         min: toInt(minC.text),
         rop: toInt(ropC.text),
@@ -370,7 +437,7 @@ class _AddressesManagementSectionState
               DataColumn(label: Text('Qty')),
               DataColumn(label: Text('Min / ROP')),
               DataColumn(label: Text('Max')),
-              DataColumn(label: Text('ตั้งค่าแจ้งเตือน')),
+              DataColumn(label: Text('แก้ไข')),
             ],
             rows: items.map((a) {
               final partCode = (a['partCode'] ?? '').toString();
@@ -398,8 +465,8 @@ class _AddressesManagementSectionState
                   DataCell(Text(max.isEmpty ? '-' : max)),
                   DataCell(
                     IconButton(
-                      icon: const Icon(Icons.edit_notifications_outlined),
-                      tooltip: 'ตั้งค่าจุดแจ้งเตือน (Min/ROP/Max)',
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'แก้ไขจำนวน/จุดแจ้งเตือน (Qty/Min/ROP/Max)',
                       onPressed: () => _editThreshold(a),
                     ),
                   ),

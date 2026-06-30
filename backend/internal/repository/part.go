@@ -66,9 +66,31 @@ type PartRepository interface {
 	GetPartByBarcode(ctx context.Context, barcode string, branchID string) (*PartDetail, []PartAddress, error)
 	CheckPartExistsInBranch(ctx context.Context, partCode, branchID string) (bool, error)
 	SearchParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID *string, limit, offset int) ([]PartDetail, error)
+	// CountParts returns the total number of parts matching the same filters as
+	// SearchParts (ignoring limit/offset) — used for page-jump pagination.
+	CountParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID *string) (int, error)
 	// GetAddressesByPartCodes loads addresses for many parts in a single query
 	// (avoids N+1 when building search/list responses). Result is keyed by part code.
 	GetAddressesByPartCodes(ctx context.Context, codes []string, branchID *string) (map[string][]PartAddress, error)
+	CreatePart(ctx context.Context, p PartInput) error
+	UpdatePart(ctx context.Context, code string, p PartInput) error
+	DeletePart(ctx context.Context, code string) error
+}
+
+// PartInput is the writable shape for creating/updating a part. UnitID and
+// CategoryID are matched against the master tables and stored as NULL when they
+// don't reference an existing row (keeps the FK happy for free-text input).
+type PartInput struct {
+	Code       string
+	Name       string
+	NameTH     string
+	BarCode    string
+	UnitID     string
+	CategoryID string
+	Price      float64
+	Cost       float64
+	Details    string
+	IsActive   bool
 }
 
 var ErrNotFound = errors.New("not found")

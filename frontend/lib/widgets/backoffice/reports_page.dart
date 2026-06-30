@@ -18,7 +18,8 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  DateTime _selectedDate = DateTime.now();
+  DateTime _startDate = DateTime.now();
+  DateTime _endDate = DateTime.now();
   bool _includeBillItems = false;
   bool _isExportingBills = false;
   bool _isExportingParts = false;
@@ -42,15 +43,33 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
         '${d.day.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _pickDate() async {
+  Future<void> _pickStartDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
+      initialDate: _startDate,
       firstDate: DateTime(2020, 1, 1),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked != null) {
-      setState(() => _selectedDate = picked);
+      setState(() {
+        _startDate = picked;
+        if (_endDate.isBefore(_startDate)) _endDate = _startDate;
+      });
+    }
+  }
+
+  Future<void> _pickEndDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _endDate,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() {
+        _endDate = picked;
+        if (_endDate.isBefore(_startDate)) _startDate = _endDate;
+      });
     }
   }
 
@@ -72,14 +91,17 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
 
     setState(() => _isExportingBills = true);
     try {
-      final date = _formatDate(_selectedDate);
+      final from = _formatDate(_startDate);
+      final to = _formatDate(_endDate);
       final bytes = await ApiService.exportBillsReportCsv(
         token: token,
-        date: date,
+        dateFrom: from,
+        dateTo: to,
         includeItems: _includeBillItems,
       );
+      final label = from == to ? from : '${from}_to_$to';
       final filename =
-          _includeBillItems ? 'bills_${date}_items.csv' : 'bills_$date.csv';
+          _includeBillItems ? 'bills_${label}_items.csv' : 'bills_$label.csv';
       _downloadCsv(bytes, filename);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -186,13 +208,48 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
     );
   }
 
+  Widget _buildDateRangeBox() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.date_range, size: 16, color: AppColors.muted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text('จาก', style: TextStyle(color: AppColors.muted)),
+                OutlinedButton(
+                  onPressed: _pickStartDate,
+                  child: Text(_formatDate(_startDate)),
+                ),
+                const Text('ถึง', style: TextStyle(color: AppColors.muted)),
+                OutlinedButton(
+                  onPressed: _pickEndDate,
+                  child: Text(_formatDate(_endDate)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBillsTab() {
-    final dateText = _formatDate(_selectedDate);
     return SingleChildScrollView(
       child: _TabCard(
         icon: Icons.receipt_long_outlined,
         title: 'Bills Report',
-        description: 'รายงานบิลขาย / ใบเสร็จรับเงิน ตามวันที่ที่เลือก',
+        description: 'รายงานบิลขาย / ใบเสร็จรับเงิน ตามช่วงวันที่ (หลายวัน/หลายเดือน)',
         fields: const [
           'billId', 'branchId', 'status', 'totalAmount',
           'paymentMethod', 'createdAt',
@@ -201,30 +258,7 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
         actions: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Date picker
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.bg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today,
-                      size: 16, color: AppColors.muted),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text('วันที่: $dateText',
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                  ),
-                  OutlinedButton(
-                    onPressed: _pickDate,
-                    child: const Text('เปลี่ยนวันที่'),
-                  ),
-                ],
-              ),
-            ),
+            _buildDateRangeBox(),
             const SizedBox(height: 10),
             SwitchListTile(
               value: _includeBillItems,

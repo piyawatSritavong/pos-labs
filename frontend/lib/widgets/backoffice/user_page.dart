@@ -396,6 +396,10 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
     // Only Super Admin can edit permissions
     final canEditPerms = auth.isSuperAdmin;
 
+    // Inline validation message shown inside the dialog (a SnackBar would be
+    // hidden behind the modal).
+    String? formError;
+
     final shouldSave = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -411,6 +415,17 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (formError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            formError!,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       // Username
                       TextField(
                         controller: usernameController,
@@ -627,35 +642,32 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
                 ),
                 ElevatedButton(
                   onPressed: () {
-                    if (usernameController.text.trim().isEmpty ||
-                        nameController.text.trim().isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('กรุณากรอก Username และชื่อให้ครบ'),
-                        ),
-                      );
-                      return;
+                    final missing = <String>[];
+                    if (usernameController.text.trim().isEmpty) {
+                      missing.add('Username');
+                    }
+                    if (nameController.text.trim().isEmpty) {
+                      missing.add('ชื่อ - นามสกุล');
                     }
                     if (selectedRole == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('กรุณาเลือกตำแหน่ง (Role)'),
-                        ),
-                      );
-                      return;
+                      missing.add('ตำแหน่ง (Role)');
                     }
-                    if (selectedBranchId == null || selectedBranchId!.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('กรุณาเลือกสาขาประจำ')),
-                      );
-                      return;
+                    if (selectedRole == '__new__' &&
+                        newRoleNameController.text.trim().isEmpty) {
+                      missing.add('ชื่อบทบาทใหม่');
+                    }
+                    if (selectedBranchId == null ||
+                        selectedBranchId!.isEmpty) {
+                      missing.add('สาขาประจำ');
                     }
                     if (!isEdit && passwordController.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('กรุณากำหนดรหัสผ่านเริ่มต้น'),
-                        ),
-                      );
+                      missing.add('รหัสผ่าน');
+                    }
+                    if (missing.isNotEmpty) {
+                      setDialogState(() {
+                        formError =
+                            'กรุณากรอกข้อมูลให้ครบ: ${missing.join(", ")}';
+                      });
                       return;
                     }
                     Navigator.of(dialogContext).pop(true);
@@ -900,7 +912,7 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
   Widget build(BuildContext context) {
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1200),
+        constraints: const BoxConstraints(maxWidth: double.infinity),
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(

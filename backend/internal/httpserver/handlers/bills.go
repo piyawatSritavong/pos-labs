@@ -47,15 +47,12 @@ func (h *BillsHandler) getBranchAndPOSFromContext(c *gin.Context) (branchID, pos
 	return branchID, posID, nil
 }
 
+// getVehicleStoreID intentionally returns "" — the vehicle-store sales
+// restriction is disabled by business configuration. POS/admin sell directly
+// from branch/HQ stock (no requisition-into-vehicle step), so any branch
+// address with stock is sellable.
 func (h *BillsHandler) getVehicleStoreID(ctx context.Context, posID string) string {
-	if h.pos == nil || strings.TrimSpace(posID) == "" {
-		return ""
-	}
-	pos, err := h.pos.GetByID(ctx, posID)
-	if err != nil || pos == nil {
-		return ""
-	}
-	return strings.TrimSpace(pos.VehicleStoreID)
+	return ""
 }
 
 func salesAddressForPOS(addresses []repository.PartAddress, vehicleStoreID string) (repository.PartAddress, bool) {
@@ -66,6 +63,13 @@ func salesAddressForPOS(addresses []repository.PartAddress, vehicleStoreID strin
 			}
 		}
 		return repository.PartAddress{}, false
+	}
+	// No vehicle restriction → prefer an address that actually has stock, then
+	// the default address, then the first available.
+	for _, addr := range addresses {
+		if addr.Qty > 0 {
+			return addr, true
+		}
 	}
 	for _, addr := range addresses {
 		if addr.IsDefault {

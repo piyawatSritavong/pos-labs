@@ -27,6 +27,9 @@ type AddressRepository interface {
 	// storeID filters plus paging — used by the Addresses page for server-side
 	// search instead of fetching the whole catalog.
 	Search(ctx context.Context, q, storeID string, limit, offset int) ([]Address, error)
+	// Count returns the number of addresses matching the same q/storeID filters
+	// as Search — used for page-jump pagination on the Addresses page.
+	Count(ctx context.Context, q, storeID string) (int, error)
 	Create(ctx context.Context, address *Address) error
 	Update(ctx context.Context, address *Address) error
 	Delete(ctx context.Context, code string) error

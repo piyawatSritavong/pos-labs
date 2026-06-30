@@ -102,6 +102,46 @@ func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, lim
 	return addresses, nil
 }
 
+// Count mirrors the Search WHERE clause (q + storeID) but returns COUNT(*) so
+// the Addresses page can render a page-jump dropdown.
+func (r *addressRepositoryPG) Count(ctx context.Context, q, storeID string) (int, error) {
+	var conds []string
+	var args []interface{}
+	argn := 1
+
+	if s := strings.TrimSpace(q); s != "" {
+		like := "%" + s + "%"
+		conds = append(conds, fmt.Sprintf(
+			`(a."part_code" ILIKE $%d OR p."name" ILIKE $%d OR p."name_th" ILIKE $%d OR s."label" ILIKE $%d OR s."label_th" ILIKE $%d)`,
+			argn, argn, argn, argn, argn,
+		))
+		args = append(args, like)
+		argn++
+	}
+	if sid := strings.TrimSpace(storeID); sid != "" {
+		conds = append(conds, fmt.Sprintf(`a."store_id" = $%d`, argn))
+		args = append(args, sid)
+		argn++
+	}
+
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	query := `
+		SELECT COUNT(*)
+		FROM "address_master" a
+		LEFT JOIN "part_master"  p ON p."code" = a."part_code"
+		LEFT JOIN "store_master" s ON s."id"   = a."store_id"` + where
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 func (r *addressRepositoryPG) List(ctx context.Context, limit, offset int) ([]Address, error) {
 	// LEFT JOIN part_master + store_master so the Addresses page can display
 	// product name and store label without a second round-trip. COALESCE protects

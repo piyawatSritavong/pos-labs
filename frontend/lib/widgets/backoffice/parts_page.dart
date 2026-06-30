@@ -509,7 +509,7 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
 
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1200),
+        constraints: const BoxConstraints(maxWidth: double.infinity),
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
@@ -690,10 +690,26 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                 ),
               ),
               const SizedBox(height: 12),
-              // Server-side pagination (page size = PartsProvider.pageSize).
+              // Server-side pagination: page-size filter + page-jump dropdown.
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  const Text('แสดงหน้าละ'),
+                  const SizedBox(width: 8),
+                  DropdownButton<int>(
+                    value: partsProvider.pageSize,
+                    items: const [20, 50, 100]
+                        .map((s) => DropdownMenuItem(value: s, child: Text('$s')))
+                        .toList(),
+                    onChanged: partsProvider.isLoading
+                        ? null
+                        : (v) {
+                            if (v != null) {
+                              context.read<PartsProvider>().setPageSize(token, v);
+                            }
+                          },
+                  ),
+                  const SizedBox(width: 24),
                   IconButton(
                     icon: const Icon(Icons.chevron_left),
                     tooltip: 'ก่อนหน้า',
@@ -702,9 +718,31 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                         ? null
                         : () => context.read<PartsProvider>().prevPage(token),
                   ),
-                  Text(
-                    'หน้า ${(partsProvider.offset ~/ PartsProvider.pageSize) + 1}',
+                  const Text('หน้า'),
+                  const SizedBox(width: 6),
+                  DropdownButton<int>(
+                    value: partsProvider.currentPage.clamp(
+                      1,
+                      partsProvider.pageCount < 1 ? 1 : partsProvider.pageCount,
+                    ),
+                    items: [
+                      for (var p = 1;
+                          p <= (partsProvider.pageCount < 1
+                              ? 1
+                              : partsProvider.pageCount);
+                          p++)
+                        DropdownMenuItem(value: p, child: Text('$p')),
+                    ],
+                    onChanged: partsProvider.isLoading
+                        ? null
+                        : (v) {
+                            if (v != null) {
+                              context.read<PartsProvider>().goToPage(token, v);
+                            }
+                          },
                   ),
+                  const SizedBox(width: 6),
+                  Text('/ ${partsProvider.pageCount}  (${partsProvider.total} รายการ)'),
                   IconButton(
                     icon: const Icon(Icons.chevron_right),
                     tooltip: 'ถัดไป',
