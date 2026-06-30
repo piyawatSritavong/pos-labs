@@ -15,11 +15,11 @@ func NewReportRepository(db *sql.DB) ReportRepository {
 }
 
 func (r *reportRepositoryPG) GetBillsByDate(ctx context.Context, date time.Time) ([]Bill, error) {
-	// Extract date part (YYYY-MM-DD) for comparison
-	// Normalize to start of day in UTC for consistent comparison
 	dateStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
-	dateEnd := dateStart.Add(24 * time.Hour)
+	return r.GetBillsByDateRange(ctx, dateStart, dateStart.Add(24*time.Hour))
+}
 
+func (r *reportRepositoryPG) GetBillsByDateRange(ctx context.Context, dateStart, dateEnd time.Time) ([]Bill, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT 
 			"id", "branch_id", "pos_id", "status", "payment_method", "payment_ref",
@@ -91,11 +91,11 @@ func (r *reportRepositoryPG) GetBillsByDate(ctx context.Context, date time.Time)
 }
 
 func (r *reportRepositoryPG) GetBillsWithItemsByDate(ctx context.Context, date time.Time) ([]BillWithItems, error) {
-	// Extract date part (YYYY-MM-DD) for comparison
-	// Normalize to start of day in UTC for consistent comparison
 	dateStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
-	dateEnd := dateStart.Add(24 * time.Hour)
+	return r.GetBillsWithItemsByDateRange(ctx, dateStart, dateStart.Add(24*time.Hour))
+}
 
+func (r *reportRepositoryPG) GetBillsWithItemsByDateRange(ctx context.Context, dateStart, dateEnd time.Time) ([]BillWithItems, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT 
 			b."id", b."branch_id", b."pos_id", b."status", b."payment_method", b."payment_ref",

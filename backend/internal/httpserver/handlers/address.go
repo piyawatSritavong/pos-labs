@@ -44,6 +44,12 @@ func (h *AddressHandler) List(c *gin.Context) {
 		return
 	}
 
+	total, err := h.addresses.Count(c.Request.Context(), q, storeID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_count_addresses"})
+		return
+	}
+
 	out := make([]gin.H, 0, len(addresses))
 	for _, a := range addresses {
 		out = append(out, gin.H{
@@ -63,6 +69,7 @@ func (h *AddressHandler) List(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"addresses": out,
+		"total":     total,
 	})
 }
 

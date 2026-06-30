@@ -300,7 +300,137 @@ func (h *PartsHandler) Search(c *gin.Context) {
 		})
 	}
 
+	// Total matching count (ignores limit/offset) for page-jump pagination.
+	total, err := h.parts.CountParts(ctx, query, categoryIDPtr, isActive, branchID)
+	if err != nil {
+		total = len(out) // degrade gracefully
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"parts": out,
+		"total": total,
 	})
+}
+
+// Create inserts a new part. Required: code, name. Free-text unit is matched to
+// a unit_master id (stored NULL when it doesn't match).
+func (h *PartsHandler) Create(c *gin.Context) {
+	var req struct {
+		Code       string  `json:"code"`
+		Name       string  `json:"name"`
+		NameTh     string  `json:"nameTh"`
+		Barcode    string  `json:"barcode"`
+		Unit       string  `json:"unit"`
+		UnitId     string  `json:"unitId"`
+		CategoryId string  `json:"categoryId"`
+		Price      float64 `json:"price"`
+		Cost       float64 `json:"cost"`
+		Details    string  `json:"details"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+	code := strings.TrimSpace(req.Code)
+	name := strings.TrimSpace(req.Name)
+	if code == "" || name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_fields", "message": "code and name are required"})
+		return
+	}
+	nameTh := strings.TrimSpace(req.NameTh)
+	if nameTh == "" {
+		nameTh = name
+	}
+	barcode := strings.TrimSpace(req.Barcode)
+	if barcode == "" {
+		barcode = code
+	}
+	unitID := strings.TrimSpace(req.UnitId)
+	if unitID == "" {
+		unitID = strings.TrimSpace(req.Unit)
+	}
+	err := h.parts.CreatePart(c.Request.Context(), repository.PartInput{
+		Code: code, Name: name, NameTH: nameTh, BarCode: barcode,
+		UnitID: unitID, CategoryID: strings.TrimSpace(req.CategoryId),
+		Price: req.Price, Cost: req.Cost, Details: strings.TrimSpace(req.Details),
+		IsActive: true,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+			c.JSON(http.StatusConflict, gin.H{"error": "part_code_exists", "message": "รหัสสินค้านี้มีอยู่แล้ว"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_create_part", "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"code": code, "name": name})
+}
+
+// Update edits an existing part's name/barcode/unit/price.
+func (h *PartsHandler) Update(c *gin.Context) {
+	code := strings.TrimSpace(c.Param("code"))
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_code"})
+		return
+	}
+	var req struct {
+		Name    string  `json:"name"`
+		NameTh  string  `json:"nameTh"`
+		Barcode string  `json:"barcode"`
+		Unit    string  `json:"unit"`
+		UnitId  string  `json:"unitId"`
+		Price   float64 `json:"price"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_fields", "message": "name is required"})
+		return
+	}
+	nameTh := strings.TrimSpace(req.NameTh)
+	if nameTh == "" {
+		nameTh = name
+	}
+	barcode := strings.TrimSpace(req.Barcode)
+	if barcode == "" {
+		barcode = code
+	}
+	unitID := strings.TrimSpace(req.UnitId)
+	if unitID == "" {
+		unitID = strings.TrimSpace(req.Unit)
+	}
+	err := h.parts.UpdatePart(c.Request.Context(), code, repository.PartInput{
+		Name: name, NameTH: nameTh, BarCode: barcode, UnitID: unitID, Price: req.Price,
+	})
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_update_part", "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": code, "name": name})
+}
+
+// Delete removes a part.
+func (h *PartsHandler) Delete(c *gin.Context) {
+	code := strings.TrimSpace(c.Param("code"))
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_code"})
+		return
+	}
+	err := h.parts.DeletePart(c.Request.Context(), code)
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_delete_part", "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

@@ -92,6 +92,17 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		parts.GET("/search", partsHandler.Search)
 		parts.GET("/:code", partsHandler.Get)
 	}
+	partsWrite := r.Group("/parts")
+	partsWrite.Use(authMw.RequirePermission("parts", "write"))
+	{
+		partsWrite.POST("", partsHandler.Create)
+		partsWrite.PUT("/:code", partsHandler.Update)
+	}
+	partsDelete := r.Group("/parts")
+	partsDelete.Use(authMw.RequirePermission("parts", "delete"))
+	{
+		partsDelete.DELETE("/:code", partsHandler.Delete)
+	}
 	members := r.Group("/members")
 	members.Use(authMw.RequirePermission("members", "read"))
 	{

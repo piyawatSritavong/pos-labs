@@ -1340,6 +1340,52 @@ class ApiService {
     return _extractListFromResponse(decoded, '/parts/search');
   }
 
+  // GET /parts/search but also returns the total match count (for page-jump).
+  static Future<({List<Map<String, dynamic>> parts, int total})>
+  searchPartsPaged({
+    required String token,
+    String query = '',
+    String? categoryId,
+    bool? isActive,
+    bool? crossBranch,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final queryParams = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+    if (query.isNotEmpty) queryParams['q'] = query;
+    if (categoryId != null && categoryId.isNotEmpty) {
+      queryParams['categoryId'] = categoryId;
+    }
+    if (isActive != null) queryParams['isActive'] = isActive.toString();
+    if (crossBranch != null) queryParams['crossBranch'] = crossBranch.toString();
+
+    final uri = Uri.parse(
+      '$baseUrl/parts/search',
+    ).replace(queryParameters: queryParams);
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to search parts: ${response.statusCode} ${response.body}',
+      );
+    }
+    final decoded = jsonDecode(response.body);
+    final parts = _extractListFromResponse(decoded, '/parts/search');
+    var total = parts.length;
+    if (decoded is Map && decoded['total'] != null) {
+      total = int.tryParse(decoded['total'].toString()) ?? parts.length;
+    }
+    return (parts: parts, total: total);
+  }
+
   // GET /parts/:code
   static Future<Map<String, dynamic>> getPartByCode({
     required String token,
@@ -1886,6 +1932,43 @@ class ApiService {
     return _extractListFromResponse(decoded, '/addresses');
   }
 
+  // GET /addresses but also returns the total match count (for page-jump
+  // pagination on the Inventory/Addresses page).
+  static Future<({List<Map<String, dynamic>> addresses, int total})>
+  getAddressesPaged({
+    required String token,
+    int limit = 20,
+    int offset = 0,
+    String query = '',
+    String? storeId,
+  }) async {
+    final params = <String, String>{'limit': '$limit', 'offset': '$offset'};
+    if (query.isNotEmpty) params['q'] = query;
+    if (storeId != null && storeId.isNotEmpty) params['storeId'] = storeId;
+    final uri = Uri.parse(
+      '$baseUrl/addresses',
+    ).replace(queryParameters: params);
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to load addresses: ${response.statusCode} ${response.body}',
+      );
+    }
+    final decoded = jsonDecode(response.body);
+    final addresses = _extractListFromResponse(decoded, '/addresses');
+    var total = addresses.length;
+    if (decoded is Map && decoded['total'] != null) {
+      total = int.tryParse(decoded['total'].toString()) ?? addresses.length;
+    }
+    return (addresses: addresses, total: total);
+  }
+
   // GET /addresses/:code - ดึงรายละเอียด address ตาม code
   static Future<Map<String, dynamic>> getAddressByCode({
     required String token,
@@ -2058,12 +2141,17 @@ class ApiService {
   // GET /reports/bills?date=YYYY-MM-DD&items=0|1  => CSV bytes
   static Future<Uint8List> exportBillsReportCsv({
     required String token,
-    required String date,
+    String? date,
+    String? dateFrom,
+    String? dateTo,
     bool includeItems = false,
   }) async {
-    final uri = Uri.parse('$baseUrl/reports/bills').replace(
-      queryParameters: {'date': date, 'items': includeItems ? '1' : '0'},
-    );
+    final params = <String, String>{'items': includeItems ? '1' : '0'};
+    if (dateFrom != null && dateFrom.isNotEmpty) params['dateFrom'] = dateFrom;
+    if (dateTo != null && dateTo.isNotEmpty) params['dateTo'] = dateTo;
+    if (date != null && date.isNotEmpty) params['date'] = date;
+    final uri =
+        Uri.parse('$baseUrl/reports/bills').replace(queryParameters: params);
 
     final response = await http.get(
       uri,

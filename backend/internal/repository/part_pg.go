@@ -38,10 +38,10 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			SELECT
 				p.code,
 				p.bar_code,
-				p.category_id,
+				COALESCE(p.category_id, ''),
 				COALESCE(c.label, ''),
 				COALESCE(c.label_th, ''),
-				p.unit_id,
+				COALESCE(p.unit_id, ''),
 				COALESCE(u.label, ''),
 				COALESCE(u.label_th, ''),
 				p.name,
@@ -83,10 +83,10 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			SELECT
 				p.code,
 				p.bar_code,
-				p.category_id,
+				COALESCE(p.category_id, ''),
 				COALESCE(c.label, ''),
 				COALESCE(c.label_th, ''),
-				p.unit_id,
+				COALESCE(p.unit_id, ''),
 				COALESCE(u.label, ''),
 				COALESCE(u.label_th, ''),
 				p.name,
@@ -156,10 +156,10 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			SELECT
 				p.code,
 				p.bar_code,
-				p.category_id,
+				COALESCE(p.category_id, ''),
 				COALESCE(c.label, ''),
 				COALESCE(c.label_th, ''),
-				p.unit_id,
+				COALESCE(p.unit_id, ''),
 				COALESCE(u.label, ''),
 				COALESCE(u.label_th, ''),
 				p.name,
@@ -189,10 +189,10 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			SELECT
 				p.code,
 				p.bar_code,
-				p.category_id,
+				COALESCE(p.category_id, ''),
 				COALESCE(c.label, ''),
 				COALESCE(c.label_th, ''),
-				p.unit_id,
+				COALESCE(p.unit_id, ''),
 				COALESCE(u.label, ''),
 				COALESCE(u.label_th, ''),
 				p.name,
@@ -327,6 +327,53 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 // using `part_code = ANY($1)`, returning them grouped by part code. This
 // replaces the per-part GetPartDetail calls that previously caused N+1 queries
 // when building search/list responses.
+func (r *partRepositoryPG) CreatePart(ctx context.Context, p PartInput) error {
+	// Sub-selects resolve unit/category to NULL when the given value isn't a
+	// valid master id, so free-text input never trips the foreign keys.
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO "part_master"
+			("code", "bar_code", "name", "name_th", "unit_id", "category_id", "price", "cost", "details", "is_active")
+		VALUES (
+			$1, $2, $3, $4,
+			(SELECT "id" FROM "unit_master" WHERE "id" = $5),
+			(SELECT "id" FROM "category_master" WHERE "id" = $6),
+			$7, $8, $9, $10
+		)
+	`, p.Code, p.BarCode, p.Name, p.NameTH, p.UnitID, p.CategoryID,
+		p.Price, p.Cost, p.Details, p.IsActive)
+	return err
+}
+
+func (r *partRepositoryPG) UpdatePart(ctx context.Context, code string, p PartInput) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE "part_master" SET
+			"bar_code" = $2,
+			"name" = $3,
+			"name_th" = $4,
+			"unit_id" = (SELECT "id" FROM "unit_master" WHERE "id" = $5),
+			"price" = $6
+		WHERE "code" = $1
+	`, code, p.BarCode, p.Name, p.NameTH, p.UnitID, p.Price)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *partRepositoryPG) DeletePart(ctx context.Context, code string) error {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM "part_master" WHERE "code" = $1`, code)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []string, branchID *string) (map[string][]PartAddress, error) {
 	result := make(map[string][]PartAddress, len(codes))
 	if len(codes) == 0 {
@@ -430,10 +477,10 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 		SELECT
 			p.code,
 			p.bar_code,
-			p.category_id,
+			COALESCE(p.category_id, ''),
 			COALESCE(c.label, ''),
 			COALESCE(c.label_th, ''),
-			p.unit_id,
+			COALESCE(p.unit_id, ''),
 			COALESCE(u.label, ''),
 			COALESCE(u.label_th, ''),
 			p.name,
@@ -555,6 +602,61 @@ func (r *partRepositoryPG) CheckPartExistsInBranch(ctx context.Context, partCode
 	return exists, nil
 }
 
+func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID *string) (int, error) {
+	whereClauses := []string{}
+	args := []interface{}{}
+	argIndex := 1
+
+	if query != "" {
+		searchPattern := "%" + query + "%"
+		partSearch := fmt.Sprintf(`(p.code ILIKE $%d OR p.bar_code ILIKE $%d OR p.name ILIKE $%d OR p.name_th ILIKE $%d OR p.receipt_name ILIKE $%d)`,
+			argIndex, argIndex, argIndex, argIndex, argIndex)
+		categorySearch := fmt.Sprintf(`(c.label ILIKE $%d OR c.label_th ILIKE $%d)`, argIndex, argIndex)
+		addressSearch := fmt.Sprintf(`EXISTS(
+			SELECT 1 FROM "address_master" a_search
+			JOIN "store_master" s_search ON s_search.id = a_search.store_id
+			WHERE a_search.part_code = p.code
+				AND (a_search.code ILIKE $%d OR a_search.shelf ILIKE $%d OR a_search.remarks ILIKE $%d
+					OR s_search.label ILIKE $%d OR s_search.label_th ILIKE $%d))`,
+			argIndex, argIndex, argIndex, argIndex, argIndex)
+		whereClauses = append(whereClauses, fmt.Sprintf(`(%s OR %s OR %s)`, partSearch, categorySearch, addressSearch))
+		args = append(args, searchPattern)
+		argIndex++
+	}
+	if categoryID != nil && *categoryID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("p.category_id = $%d", argIndex))
+		args = append(args, *categoryID)
+		argIndex++
+	}
+	if isActive != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE(p.is_active, false) = $%d", argIndex))
+		args = append(args, *isActive)
+		argIndex++
+	}
+	if branchID != nil && *branchID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`EXISTS(
+			SELECT 1 FROM "address_master" a2
+			JOIN "store_master" s2 ON s2.id = a2.store_id
+			JOIN "branch_store" bs2 ON bs2.store_id = s2.id AND bs2.branch_id = $%d
+			WHERE a2.part_code = p.code)`, argIndex))
+		args = append(args, *branchID)
+		argIndex++
+	}
+
+	whereSQL := ""
+	if len(whereClauses) > 0 {
+		whereSQL = "WHERE " + strings.Join(whereClauses, " AND ")
+	}
+	q := `SELECT COUNT(DISTINCT p.code) FROM "part_master" p
+		LEFT JOIN "category_master" c ON c.id = p.category_id ` + whereSQL
+
+	var n int
+	if err := r.db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID *string, limit, offset int) ([]PartDetail, error) {
 	if limit <= 0 {
 		limit = config.DefaultLimit
@@ -652,10 +754,10 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			SELECT
 				p.code,
 				p.bar_code,
-				p.category_id,
+				COALESCE(p.category_id, ''),
 				COALESCE(c.label, ''),
 				COALESCE(c.label_th, ''),
-				p.unit_id,
+				COALESCE(p.unit_id, ''),
 				COALESCE(u.label, ''),
 				COALESCE(u.label_th, ''),
 				p.name,
@@ -691,10 +793,10 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			SELECT
 				p.code,
 				p.bar_code,
-				p.category_id,
+				COALESCE(p.category_id, ''),
 				COALESCE(c.label, ''),
 				COALESCE(c.label_th, ''),
-				p.unit_id,
+				COALESCE(p.unit_id, ''),
 				COALESCE(u.label, ''),
 				COALESCE(u.label_th, ''),
 				p.name,

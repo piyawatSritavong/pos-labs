@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/providers/company_provider.dart';
 
 class CompanySettingsSection extends StatefulWidget {
   const CompanySettingsSection({super.key});
@@ -147,6 +148,17 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
         taxRate: parsedVat,
         taxType: _taxType,
       );
+
+      // The POS receipt header reads company info from CompanyProvider (loaded
+      // at app startup). Saving here goes straight through ApiService, so the
+      // provider's in-memory copy would stay stale and the receipt would keep
+      // showing the old name/address until a full reload. Force-refresh it so
+      // the edited values appear on the next printed/previewed receipt.
+      if (mounted) {
+        await context
+            .read<CompanyProvider>()
+            .loadCompany(token: token, force: true);
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(

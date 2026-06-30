@@ -56,6 +56,11 @@ type ReportRepository interface {
 	// Returns one row per bill-item combination
 	GetBillsWithItemsByDate(ctx context.Context, date time.Time) ([]BillWithItems, error)
 
+	// Date-range variants (dateStart inclusive, dateEnd exclusive) for
+	// multi-day / multi-month exports.
+	GetBillsByDateRange(ctx context.Context, dateStart, dateEnd time.Time) ([]Bill, error)
+	GetBillsWithItemsByDateRange(ctx context.Context, dateStart, dateEnd time.Time) ([]BillWithItems, error)
+
 	// Get all parts
 	GetAllParts(ctx context.Context) ([]PartMaster, error)
 

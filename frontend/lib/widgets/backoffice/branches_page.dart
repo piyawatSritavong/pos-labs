@@ -117,7 +117,7 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
     final isEdit = branch != null;
 
     final branchIdController = TextEditingController(
-      text: isEdit ? (branch!['branchId']?.toString() ?? '') : _nextBranchId(),
+      text: isEdit ? (branch['branchId']?.toString() ?? '') : _nextBranchId(),
     );
     final branchNameController = TextEditingController(
       text: branch?['branchName']?.toString() ?? '',
@@ -362,7 +362,7 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
   Widget build(BuildContext context) {
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1200),
+        constraints: const BoxConstraints(maxWidth: double.infinity),
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(

@@ -122,14 +122,17 @@ class PosDevicesProvider extends ChangeNotifier {
 // (which now also batches address lookups, so it is no longer N+1). An empty
 // query lists all parts, paged.
 class PartsProvider extends ChangeNotifier {
-  static const int pageSize = 50;
-
   bool isLoading = false;
   String? error;
   List<Map<String, dynamic>> parts = [];
   String query = '';
   int offset = 0;
+  int pageSize = 50; // selectable page size (20/50/100)
+  int total = 0; // total matching parts (for page-jump)
   bool hasMore = false;
+
+  int get pageCount => pageSize <= 0 ? 1 : ((total + pageSize - 1) ~/ pageSize);
+  int get currentPage => pageSize <= 0 ? 1 : (offset ~/ pageSize) + 1;
 
   Future<void> load(String token, {String? query, int offset = 0}) async {
     if (query != null) this.query = query;
@@ -138,14 +141,19 @@ class PartsProvider extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final results = await ApiService.searchParts(
+      final result = await ApiService.searchPartsPaged(
         token: token,
         query: this.query,
         limit: pageSize,
         offset: offset,
+        // Admin catalog view: show every part, including ones with no stock in
+        // the admin's branch (e.g. a product just created). Without this the
+        // branch-scoped search hides newly added products entirely.
+        crossBranch: true,
       );
-      parts = results;
-      hasMore = results.length == pageSize;
+      parts = result.parts;
+      total = result.total;
+      hasMore = offset + parts.length < total;
     } catch (e) {
       error = e.toString();
     } finally {
@@ -162,6 +170,18 @@ class PartsProvider extends ChangeNotifier {
   Future<void> prevPage(String token) async {
     if (offset <= 0) return;
     await load(token, offset: (offset - pageSize).clamp(0, offset));
+  }
+
+  // Jump to a 1-based page number.
+  Future<void> goToPage(String token, int page) async {
+    final p = page.clamp(1, pageCount == 0 ? 1 : pageCount);
+    await load(token, offset: (p - 1) * pageSize);
+  }
+
+  // Change page size and reload from the first page.
+  Future<void> setPageSize(String token, int size) async {
+    pageSize = size;
+    await load(token, offset: 0);
   }
 
   // Backward-compatible entry points used by the Parts page.
