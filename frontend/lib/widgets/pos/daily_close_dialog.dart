@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:frontend/config/feature_flags.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/screens/login_screen.dart';
 import 'package:frontend/services/api_operations.dart';
@@ -385,10 +386,12 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
         'โอนเงิน/QR',
         '฿${_toDouble(summary['totalTransfer']).toStringAsFixed(2)}',
       ),
-      _SummaryRow(
-        'เงินเซ็น',
-        '฿${_toDouble(summary['totalCreditTerm']).toStringAsFixed(2)}',
-      ),
+      // "เงินเซ็น" (credit term) is hidden when the credit system is disabled.
+      if (kEnableCreditTerm)
+        _SummaryRow(
+          'เงินเซ็น',
+          '฿${_toDouble(summary['totalCreditTerm']).toStringAsFixed(2)}',
+        ),
       _SummaryRow('จำนวนบิล', '${(summary['totalBills'] ?? 0)} ใบ'),
       _SummaryRow(
         'ยอดคืนสินค้า',

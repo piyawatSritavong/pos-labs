@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:frontend/config/feature_flags.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/providers/company_provider.dart';
@@ -1838,6 +1839,27 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
   bool _finalizeSucceeded = false;
   String? _finalizeError;
 
+  // True when the finalize failure is a receipt-printer problem. The payment is
+  // saved before the print step, so on a printer error the sale is already
+  // complete — we show a friendly message and a "finish without printing"
+  // option instead of leaving the cashier stuck on a retry-only screen.
+  bool get _isPrinterError {
+    final e = _finalizeError;
+    if (e == null) return false;
+    return e.contains('printer_disabled') ||
+        e.contains('RECEIPT_PRINTER') ||
+        e.contains('พิมพ์ใบเสร็จไม่สำเร็จ') ||
+        e.contains('พิมพ์ใบคืนสินค้าไม่สำเร็จ');
+  }
+
+  // User-facing error text: printer failures get a plain message instead of the
+  // raw 503/JSON exception.
+  String? get _finalizeErrorMessage {
+    if (_finalizeError == null) return null;
+    if (_isPrinterError) return 'เชื่อมต่อเครื่องปริ้นไม่สำเร็จ';
+    return _finalizeError;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2254,7 +2276,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
               if (_finalizeError != null) ...[
                 const SizedBox(height: 8),
                 Text(
-                  _finalizeError!,
+                  _finalizeErrorMessage!,
                   style: TextStyle(color: Colors.red.shade700, fontSize: 12),
                 ),
               ],
@@ -2266,28 +2288,48 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
                 child: const Text('ย้อนกลับ'),
               ),
               const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: _isFinalizing
-                    ? null
-                    : () {
-                        if (_finalizeSucceeded) {
-                          Navigator.of(context).pop(true);
-                        } else {
-                          _handleFinalize(closeOnSuccess: false);
-                        }
-                      },
-                child: _isFinalizing
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(
-                        _finalizeSucceeded
-                            ? 'กลับสู่หน้าหลัก'
-                            : 'ลองทำรายการอีกครั้ง',
+              if (_finalizeSucceeded)
+                ElevatedButton(
+                  onPressed: _isFinalizing
+                      ? null
+                      : () => Navigator.of(context).pop(true),
+                  child: const Text('กลับสู่หน้าหลัก'),
+                )
+              else if (_isPrinterError && !_isFinalizing)
+                // Printer failed but the payment is already saved. Let the
+                // cashier retry the print or finish the sale without a receipt
+                // so they aren't stuck on the order.
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () =>
+                            _handleFinalize(closeOnSuccess: false),
+                        child: const Text('ลองใหม่อีกครั้ง'),
                       ),
-              ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('ทำต่อโดยไม่ปริ้น'),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                ElevatedButton(
+                  onPressed: _isFinalizing
+                      ? null
+                      : () => _handleFinalize(closeOnSuccess: false),
+                  child: _isFinalizing
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('ลองใหม่อีกครั้ง'),
+                ),
             ],
           ),
         ),
@@ -2653,26 +2695,30 @@ class _PaymentMethodDialogState extends State<_PaymentMethodDialog> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor:
-                              _selectedKind == _PaymentKind.creditTerm
-                              ? context.colorPrimary.withValues(alpha: 0.08)
-                              : null,
-                        ),
-                        onPressed: () {
-                          setState(
-                            () => _selectedKind = _PaymentKind.creditTerm,
-                          );
-                        },
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                          child: Text('เงินเซ็น'),
+                    // "เงินเซ็น" (credit term) — hidden for branches that don't
+                    // use the credit system (see kEnableCreditTerm).
+                    if (kEnableCreditTerm) ...[
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor:
+                                _selectedKind == _PaymentKind.creditTerm
+                                ? context.colorPrimary.withValues(alpha: 0.08)
+                                : null,
+                          ),
+                          onPressed: () {
+                            setState(
+                              () => _selectedKind = _PaymentKind.creditTerm,
+                            );
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Text('เงินเซ็น'),
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
                 if (_selectedKind == _PaymentKind.creditTerm) ...[
