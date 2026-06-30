@@ -463,8 +463,34 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('ผูกสมาชิกไม่สำเร็จ: $e')));
+      messenger.showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: Text(_memberAttachErrorMessage(e)),
+        ),
+      );
     }
+  }
+
+  // Map the raw add-member error to a clear Thai reason so the cashier knows
+  // why the bind failed (the backend works; failures are almost always "no such
+  // member" or a non-editable bill status).
+  String _memberAttachErrorMessage(Object e) {
+    final s = e.toString();
+    if (s.contains('member_not_found')) {
+      return 'ไม่พบสมาชิกที่ใช้เบอร์นี้ — กรุณาสมัครสมาชิกก่อน';
+    }
+    if (s.contains('invalid_bill_status')) {
+      return 'ผูกสมาชิกไม่ได้ เพราะบิลนี้ถูกชำระ/ปิดไปแล้ว';
+    }
+    if (s.contains('bill_access_denied')) {
+      return 'บิลนี้ไม่ได้อยู่ในสาขา/เครื่อง POS ปัจจุบัน';
+    }
+    if (s.contains('Bill id is not initialized') ||
+        s.contains('missing_bill_id')) {
+      return 'ยังไม่มีบิล กรุณาเพิ่มสินค้าลงตะกร้าก่อนผูกสมาชิก';
+    }
+    return 'ผูกสมาชิกไม่สำเร็จ: $e';
   }
 
   void _applyQuickDiscount(

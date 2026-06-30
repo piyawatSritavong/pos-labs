@@ -298,11 +298,12 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
     final summary = _summary ?? {};
     final alreadyClosed = summary['alreadyClosed'] == true;
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (alreadyClosed)
+    if (alreadyClosed) {
+      // Nothing to enter — just show the banner + summary, top-aligned.
+      return SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             Container(
               padding: const EdgeInsets.all(12),
               margin: const EdgeInsets.only(bottom: 16),
@@ -329,45 +330,67 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
                 ],
               ),
             ),
-          _buildSummaryTable(summary),
-          if (!alreadyClosed) ...[
-            const SizedBox(height: 16),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: AppColors.danger, fontSize: 13),
-                ),
-              ),
-            TextField(
+            _buildSummaryTable(summary),
+          ],
+        ),
+      );
+    }
+
+    // Active close flow: summary table pinned to the top, the notes box expands
+    // to fill the middle, and the "ปิดยอด" button is pinned to the bottom. The
+    // notes box reuses the summary box border so they look consistent.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSummaryTable(summary),
+        const SizedBox(height: 16),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.bg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: TextField(
               controller: _notesController,
+              expands: true,
+              maxLines: null,
+              minLines: null,
+              textAlignVertical: TextAlignVertical.top,
               decoration: const InputDecoration(
                 labelText: 'หมายเหตุ (ไม่บังคับ)',
-                border: OutlineInputBorder(),
-                isDense: true,
+                border: InputBorder.none,
               ),
-              maxLines: 2,
             ),
-            const SizedBox(height: 12),
-            // "ข้อมูลเพิ่มเติม / ค่าใช้จ่าย" section hidden by request.
-            // _buildExpenseSection(),
-            ElevatedButton(
-              onPressed: _isClosing ? null : _doClose,
-              child: _isClosing
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('ปิดยอด'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              _error!,
+              style: const TextStyle(color: AppColors.danger, fontSize: 13),
             ),
-          ],
-        ],
-      ),
+          ),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _isClosing ? null : _doClose,
+            child: _isClosing
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('ปิดยอด'),
+          ),
+        ),
+      ],
     );
   }
 
