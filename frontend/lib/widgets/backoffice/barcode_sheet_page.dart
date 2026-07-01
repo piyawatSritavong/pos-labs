@@ -61,20 +61,9 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
       );
 
   // Cached Thai font — the `pdf` package's default Helvetica cannot render Thai
-  // glyphs, so product names need a bundled TTF.
+  // glyphs, so product names need a bundled TTF. (Only the font object is
+  // cached; the PDF bytes are rebuilt fresh per request — see below.)
   pw.Font? _thaiFont;
-
-  // The generated PDF is built exactly once and cached. PdfPreview's raster
-  // pass calls its `build` callback on every (re)layout; without this it would
-  // regenerate the whole multi-page document each time — wasteful on web.
-  Future<Uint8List>? _pdfFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    // Build the PDF up-front so the preview has bytes ready immediately.
-    _pdfFuture = _buildPdf(_rowFormat);
-  }
 
   Future<pw.Font> _loadFont() async {
     return _thaiFont ??=
@@ -184,19 +173,25 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
         title: Text('พิมพ์บาร์โค้ด ($total ดวง = $rows แถว)'),
       ),
       body: PdfPreview(
-        // Reuse the pre-built bytes instead of regenerating per raster pass.
-        build: (_) => _pdfFuture ??= _buildPdf(_rowFormat),
+        // Build fresh bytes on every call. PdfPreview calls `build` separately
+        // for the on-screen raster, the print action and the share action; on
+        // web each hands the buffer to a worker via a *transfer* which detaches
+        // it. Reusing one cached Uint8List therefore breaks the 2nd/3rd op with
+        // "ArrayBuffer already detached" (print does nothing, shared PDF empty),
+        // so we must not share a single buffer here.
+        build: _buildPdf,
         initialPageFormat: _rowFormat,
         canChangePageFormat: false,
         canChangeOrientation: false,
         canDebug: false,
-        // The page format never changes, so skip PdfPreview's dynamic relayout.
+        // The page format never changes, so skip PdfPreview's dynamic relayout
+        // (keeps `build` from being called more than necessary).
         dynamicLayout: false,
-        // Pin a low preview DPI. Unset, PdfPreview rasterises every page at
-        // ~screen-width × devicePixelRatio (≈600 DPI on desktop) which makes
-        // the on-screen preview very slow on web for many label rows. Printing
-        // uses the vector PDF, so this only affects the preview, not output.
-        dpi: 120,
+        // Cap the preview raster resolution. Unset, PdfPreview rasterises every
+        // page at ~screen-width × devicePixelRatio (≈600 DPI on desktop) which
+        // is slow on web for many label rows; 300 DPI stays sharp but bounded.
+        // Printing uses the vector PDF, so this only affects the preview.
+        dpi: 300,
         useActions: true,
         pdfFileName: 'barcodes.pdf',
       ),
