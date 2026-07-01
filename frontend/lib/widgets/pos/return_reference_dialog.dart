@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_bills.dart';
+import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
@@ -80,6 +81,13 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
       _billsError = null;
     });
     try {
+      // Only list the current shift (bills since the last close); the search
+      // box above can still find any bill in the database.
+      final shiftStart = await ApiOperationsService.getShiftStart(
+        token: token,
+        branchId: auth.branchId ?? '',
+        posId: auth.posId ?? '',
+      );
       final bills = await ApiBillsService.getBills(
         token: token,
         limit: 200,
@@ -90,7 +98,10 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
       );
       final filtered =
           bills.whereType<Map<String, dynamic>>().where((bill) {
-            return _isToday(_parseDate(bill['createdAt']?.toString()));
+            final created = _parseDate(bill['createdAt']?.toString());
+            if (created == null) return false;
+            if (shiftStart != null) return !created.isBefore(shiftStart);
+            return _isToday(created);
           }).toList()..sort((a, b) {
             final aTime = _parseDate(a['createdAt']?.toString());
             final bTime = _parseDate(b['createdAt']?.toString());

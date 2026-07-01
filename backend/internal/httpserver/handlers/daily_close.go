@@ -113,18 +113,33 @@ func (h *DailyCloseHandler) GetSummary(c *gin.Context) {
 		return
 	}
 
-	// Get today in UTC+7
-	utc7 := time.Now().UTC().Add(7 * time.Hour)
-	today := time.Date(utc7.Year(), utc7.Month(), utc7.Day(), 0, 0, 0, 0, time.UTC)
+	// Get today (calendar date) in UTC+7 and the current shift start.
+	loc := time.FixedZone("UTC+7", 7*3600)
+	nowUTC7 := time.Now().In(loc)
+	y, m, d := nowUTC7.Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	// Start of the shift: after the most recent close today, else start of day.
+	shiftStart := time.Date(y, m, d, 0, 0, 0, 0, loc).UTC()
+	since, err := h.closes.GetLastCloseTime(c.Request.Context(), branchID, posID, today)
+	if err != nil {
+		log.Printf("Error getting last close time: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_summary"})
+		return
+	}
+	if since != nil {
+		shiftStart = *since
+	}
 
-	summary, err := h.closes.GetSummary(c.Request.Context(), branchID, posID, today)
+	summary, err := h.closes.GetSummary(c.Request.Context(), branchID, posID, today, since)
 	if err != nil {
 		log.Printf("Error getting daily summary: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_summary"})
 		return
 	}
 
-	alreadyClosed, err := h.closes.ExistsByBranchPosDate(c.Request.Context(), branchID, posID, today)
+	// A close exists today (kept for info); with the shift model the cashier can
+	// still close again for the new shift, so this no longer blocks the button.
+	hasClosedToday, err := h.closes.ExistsByBranchPosDate(c.Request.Context(), branchID, posID, today)
 	if err != nil {
 		log.Printf("Error checking daily close existence: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_check_close_status"})
@@ -136,6 +151,7 @@ func (h *DailyCloseHandler) GetSummary(c *gin.Context) {
 			"branchId":        branchID,
 			"posId":           posID,
 			"closeDate":       today.Format("2006-01-02"),
+			"shiftStart":      shiftStart.Format(time.RFC3339),
 			"totalSales":      summary.TotalSales,
 			"totalCash":       summary.TotalCash,
 			"totalTransfer":   summary.TotalTransfer,
@@ -143,7 +159,9 @@ func (h *DailyCloseHandler) GetSummary(c *gin.Context) {
 			"totalBills":      summary.TotalBills,
 			"totalReturns":    summary.TotalReturns,
 			"netAmount":       summary.NetAmount,
-			"alreadyClosed":   alreadyClosed,
+			"hasClosedToday":  hasClosedToday,
+			// Deprecated: kept for older clients; shift model doesn't block.
+			"alreadyClosed": false,
 		},
 	})
 }
@@ -177,25 +195,32 @@ func (h *DailyCloseHandler) Create(c *gin.Context) {
 	branchID := strings.TrimSpace(req.BranchID)
 	posID := strings.TrimSpace(req.PosID)
 
-	// Get today in UTC+7
+	// Get today (calendar date) in UTC+7.
 	utc7 := time.Now().UTC().Add(7 * time.Hour)
 	today := time.Date(utc7.Year(), utc7.Month(), utc7.Day(), 0, 0, 0, 0, time.UTC)
 
-	alreadyClosed, err := h.closes.ExistsByBranchPosDate(c.Request.Context(), branchID, posID, today)
+	// Shift model: each close captures sales since the previous close, so
+	// multiple closes per day are allowed. Compute the current shift window.
+	since, err := h.closes.GetLastCloseTime(c.Request.Context(), branchID, posID, today)
 	if err != nil {
-		log.Printf("Error checking daily close existence: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_check_close_status"})
-		return
-	}
-	if alreadyClosed {
-		c.JSON(http.StatusConflict, gin.H{"error": "already_closed", "message": "Daily close already exists for this branch/pos today"})
+		log.Printf("Error getting last close time: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_summary"})
 		return
 	}
 
-	summary, err := h.closes.GetSummary(c.Request.Context(), branchID, posID, today)
+	summary, err := h.closes.GetSummary(c.Request.Context(), branchID, posID, today, since)
 	if err != nil {
 		log.Printf("Error getting daily summary: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_summary"})
+		return
+	}
+
+	// Nothing new since the last close — avoid creating an empty (zero) close.
+	if summary.TotalBills == 0 && summary.TotalReturns == 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "nothing_to_close",
+			"message": "ยังไม่มีรายการขายรอบใหม่ให้ปิดยอด",
+		})
 		return
 	}
 

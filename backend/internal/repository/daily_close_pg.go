@@ -36,8 +36,17 @@ func (r *dailyCloseRepositoryPG) GenerateDailyCloseID(ctx context.Context) (stri
 	return fmt.Sprintf("DC%s%06d", dateKey, counter), nil
 }
 
-func (r *dailyCloseRepositoryPG) GetSummary(ctx context.Context, branchID, posID string, closeDate time.Time) (*DailySummary, error) {
+func (r *dailyCloseRepositoryPG) GetSummary(ctx context.Context, branchID, posID string, closeDate time.Time, since *time.Time) (*DailySummary, error) {
 	var summary DailySummary
+
+	// Optional "current shift" lower bound: only count rows created after the
+	// previous close. Uses $4 in both queries when present.
+	sinceClause := ""
+	billArgs := []interface{}{branchID, posID, closeDate.Format("2006-01-02")}
+	if since != nil {
+		sinceClause = ` AND "created_at" > $4`
+		billArgs = append(billArgs, *since)
+	}
 
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
@@ -50,8 +59,9 @@ func (r *dailyCloseRepositoryPG) GetSummary(ctx context.Context, branchID, posID
 		WHERE "branch_id" = $1
 		  AND "pos_id" = $2
 		  AND "status" = 'completed'
-		  AND DATE("created_at" AT TIME ZONE 'Asia/Bangkok') = $3
-	`, branchID, posID, closeDate.Format("2006-01-02")).Scan(
+		  AND DATE("created_at" AT TIME ZONE 'Asia/Bangkok') = $3`+sinceClause,
+		billArgs...,
+	).Scan(
 		&summary.TotalBills,
 		&summary.TotalSales,
 		&summary.TotalCash,
@@ -69,8 +79,9 @@ func (r *dailyCloseRepositoryPG) GetSummary(ctx context.Context, branchID, posID
 		WHERE "branch_id" = $1
 		  AND "pos_id" = $2
 		  AND "status" != 'cancelled'
-		  AND DATE("created_at" AT TIME ZONE 'Asia/Bangkok') = $3
-	`, branchID, posID, closeDate.Format("2006-01-02")).Scan(&totalReturns)
+		  AND DATE("created_at" AT TIME ZONE 'Asia/Bangkok') = $3`+sinceClause,
+		billArgs...,
+	).Scan(&totalReturns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get return summary: %w", err)
 	}
@@ -79,6 +90,27 @@ func (r *dailyCloseRepositoryPG) GetSummary(ctx context.Context, branchID, posID
 	summary.NetAmount = summary.TotalSales - summary.TotalReturns
 
 	return &summary, nil
+}
+
+// GetLastCloseTime returns the created_at of the most recent close for the
+// branch/pos on the given day, marking the start of the current shift.
+func (r *dailyCloseRepositoryPG) GetLastCloseTime(ctx context.Context, branchID, posID string, closeDate time.Time) (*time.Time, error) {
+	var last sql.NullTime
+	err := r.db.QueryRowContext(ctx, `
+		SELECT MAX("created_at")
+		FROM "daily_close"
+		WHERE "branch_id" = $1
+		  AND "pos_id" = $2
+		  AND "close_date" = $3
+	`, branchID, posID, closeDate.Format("2006-01-02")).Scan(&last)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last close time: %w", err)
+	}
+	if !last.Valid {
+		return nil, nil
+	}
+	t := last.Time
+	return &t, nil
 }
 
 func (r *dailyCloseRepositoryPG) Create(ctx context.Context, dc *DailyClose) error {

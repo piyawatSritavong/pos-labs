@@ -447,6 +447,29 @@ class ApiOperationsService {
     return _parseObject(jsonDecode(response.body), '/daily-closes/summary');
   }
 
+  // Convenience: the current shift start (time of the last daily close today,
+  // else start of day). Used by the bill-history / return dialogs so they only
+  // show the current shift. Returns null if it can't be determined.
+  static Future<DateTime?> getShiftStart({
+    required String token,
+    required String branchId,
+    required String posId,
+  }) async {
+    if (branchId.isEmpty || posId.isEmpty) return null;
+    try {
+      final summary = await getDailyCloseSummary(
+        token: token,
+        branchId: branchId,
+        posId: posId,
+      );
+      final raw = summary['shiftStart']?.toString();
+      if (raw == null || raw.isEmpty) return null;
+      return DateTime.tryParse(raw)?.toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
   // POST /daily-closes
   static Future<Map<String, dynamic>> createDailyClose({
     required String token,
