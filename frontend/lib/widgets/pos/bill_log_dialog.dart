@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_bills.dart';
+import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
@@ -131,6 +132,13 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
     });
 
     try {
+      // Only show the current shift (bills since the last close); fall back to
+      // "today" when the shift start can't be determined.
+      final shiftStart = await ApiOperationsService.getShiftStart(
+        token: token,
+        branchId: auth.branchId ?? '',
+        posId: auth.posId ?? '',
+      );
       final bills = await ApiBillsService.getBills(
         token: token,
         limit: 200,
@@ -142,6 +150,8 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
       final filtered =
           bills.whereType<Map<String, dynamic>>().where((bill) {
             final created = _parseDate(bill['createdAt']?.toString());
+            if (created == null) return false;
+            if (shiftStart != null) return !created.isBefore(shiftStart);
             return _isToday(created);
           }).toList()..sort((a, b) {
             final aTime = _parseDate(a['createdAt']?.toString());

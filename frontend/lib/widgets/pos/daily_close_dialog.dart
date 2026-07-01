@@ -296,45 +296,11 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
 
   Widget _buildSummaryForm() {
     final summary = _summary ?? {};
-    final alreadyClosed = summary['alreadyClosed'] == true;
-
-    if (alreadyClosed) {
-      // Nothing to enter — just show the banner + summary, top-aligned.
-      return SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: AppColors.accent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: AppColors.accent.withValues(alpha: 0.4),
-                ),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.info_outline, color: AppColors.accent),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'ปิดยอดแล้ววันนี้',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.accent,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _buildSummaryTable(summary),
-          ],
-        ),
-      );
-    }
+    // Shift model: the summary only counts sales since the last close. Enable
+    // "ปิดยอด" only when there is something new to close in this shift.
+    final totalBills = (summary['totalBills'] as num?)?.toInt() ?? 0;
+    final totalReturns = _toDouble(summary['totalReturns']);
+    final hasNewSales = totalBills > 0 || totalReturns != 0;
 
     // Active close flow: summary table pinned to the top, the notes box expands
     // to fill the middle, and the "ปิดยอด" button is pinned to the bottom. The
@@ -345,22 +311,36 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
         _buildSummaryTable(summary),
         const SizedBox(height: 16),
         Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.bg,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: TextField(
-              controller: _notesController,
-              expands: true,
-              maxLines: null,
-              minLines: null,
-              textAlignVertical: TextAlignVertical.top,
-              decoration: const InputDecoration(
-                labelText: 'หมายเหตุ (ไม่บังคับ)',
-                border: InputBorder.none,
+          // Rounded-rectangle border matching the summary box. The app-wide
+          // inputDecorationTheme uses a pill border (radius 999); on a tall
+          // expanding field that renders as an oval, so override every border
+          // state here with a radius-12 rectangle.
+          child: TextField(
+            controller: _notesController,
+            expands: true,
+            maxLines: null,
+            minLines: null,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: InputDecoration(
+              labelText: 'หมายเหตุ (ไม่บังคับ)',
+              alignLabelWithHint: true,
+              filled: true,
+              fillColor: AppColors.bg,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.primary),
               ),
             ),
           ),
@@ -374,10 +354,18 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
               style: const TextStyle(color: AppColors.danger, fontSize: 13),
             ),
           ),
+        if (!hasNewSales && _error == null)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text(
+              'ยังไม่มีรายการขายรอบใหม่ให้ปิดยอด',
+              style: TextStyle(color: AppColors.muted, fontSize: 13),
+            ),
+          ),
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: _isClosing ? null : _doClose,
+            onPressed: (_isClosing || !hasNewSales) ? null : _doClose,
             child: _isClosing
                 ? const SizedBox(
                     height: 18,
