@@ -81,3 +81,8 @@ docker-compose.override.yml
 # OS
 .DS_Store
 Thumbs.db
+
+# Local-only captures / data exports (not part of the app source)
+*.har
+ResultClaudeCowork.txt
+ไจ๊เฮง-stock - สินค้า.csv
