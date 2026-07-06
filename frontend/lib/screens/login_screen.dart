@@ -106,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: Image.asset(
-                      'assets/images/logoJaiHeng.jpg',
+                      'assets/images/pp-logo.png',
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => const Icon(
                         Icons.storefront,

@@ -736,7 +736,7 @@ class _BackofficeSidebar extends StatelessWidget {
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Image.asset(
-                  'assets/images/logoJaiHeng.jpg',
+                  'assets/images/pp-logo.png',
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) =>
                       Icon(Icons.dashboard_customize, color: cs.primary),
