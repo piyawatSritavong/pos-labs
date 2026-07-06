@@ -1,9 +1,12 @@
 package db
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/google/uuid"
@@ -174,6 +177,42 @@ func SeedMockData(db *sql.DB) error {
 		return err
 	}
 
+	// Vehicle store + POS terminal for branch 00001 so pos2 can sell from a
+	// second branch at the same time as pos1 (branch 00000 / POS001).
+	if _, err := tx.Exec(`
+		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
+		VALUES ('vehicle_POS002', '00001', 'POS 2 Vehicle Store', 'POS 2 รถ', false)
+		ON CONFLICT ("id") DO NOTHING
+	`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
+		VALUES ('00001', 'vehicle_POS002', false)
+		ON CONFLICT ("branch_id", "store_id") DO NOTHING
+	`); err != nil {
+		return err
+	}
+	// Same POS_SECRET convention as the core seed (env override, random dev
+	// fallback). Login also accepts the "default_if_needed" dev secret.
+	posSecret := os.Getenv("POS_SECRET")
+	if posSecret == "" {
+		posSecretBytes := make([]byte, 32)
+		if _, err := rand.Read(posSecretBytes); err != nil {
+			return err
+		}
+		posSecret = hex.EncodeToString(posSecretBytes)
+	}
+	// POS002 works on the second branch's default store (store_00001), matching
+	// POS001/POS003 which work on the main branch store.
+	if _, err := tx.Exec(`
+		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active", "vehicle_store_id")
+		VALUES ('POS002', '00001', 'POS 2', $1, true, 'store_00001')
+		ON CONFLICT ("pos_id") DO NOTHING
+	`, posSecret); err != nil {
+		return err
+	}
+
 	// Test users for development
 	testUsers := []struct {
 		Username string
@@ -182,8 +221,8 @@ func SeedMockData(db *sql.DB) error {
 		Name     string
 		BranchID string
 	}{
-		{"hqmanager", "hq123456", "role.hq_manager", "HQ Manager", "00000"},
 		{"pos1", "pos123456", "role.cashier", "POS Cashier 1", "00000"},
+		{"pos2", "pos123456", "role.cashier", "POS Cashier 2", "00001"},
 	}
 	for _, u := range testUsers {
 		hash, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
@@ -212,6 +251,13 @@ func SeedMockData(db *sql.DB) error {
 		`, insertedID, u.BranchID); err != nil {
 			return err
 		}
+	}
+
+	// Pin pos2 to its terminal (login auto-resolve reads default_pos_id).
+	if _, err := tx.Exec(`
+		UPDATE "user" SET "default_pos_id" = 'POS002' WHERE "username" = 'pos2'
+	`); err != nil {
+		return err
 	}
 
 	// Categories

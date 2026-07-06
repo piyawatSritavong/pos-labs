@@ -15,6 +15,9 @@ type POS struct {
 
 type POSRepository interface {
 	GetByID(ctx context.Context, id string) (*POS, error)
+	// GetFirstActiveByBranch returns the first active POS of a branch (ordered
+	// by pos_id). An empty branchID matches any branch.
+	GetFirstActiveByBranch(ctx context.Context, branchID string) (*POS, error)
 	List(ctx context.Context, limit, offset int) ([]POS, error)
 	Create(ctx context.Context, pos *POS) error
 	Delete(ctx context.Context, id string) error

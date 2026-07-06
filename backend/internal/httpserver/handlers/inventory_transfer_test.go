@@ -110,6 +110,13 @@ type stubPOSRepository struct {
 	pos *repository.POS
 }
 
+func (r stubPOSRepository) GetFirstActiveByBranch(ctx context.Context, branchID string) (*repository.POS, error) {
+	if r.pos == nil || (branchID != "" && r.pos.BranchID != branchID) {
+		return nil, repository.ErrNotFound
+	}
+	return r.pos, nil
+}
+
 func (r stubPOSRepository) GetByID(ctx context.Context, id string) (*repository.POS, error) {
 	if r.pos == nil || r.pos.POSID != id {
 		return nil, repository.ErrNotFound

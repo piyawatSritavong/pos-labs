@@ -344,6 +344,19 @@ func (r *partRepositoryPG) CreatePart(ctx context.Context, p PartInput) error {
 	return err
 }
 
+func (r *partRepositoryPG) GenerateNextPartCode(ctx context.Context) (string, error) {
+	var next int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(CAST(SUBSTRING("code" FROM 2) AS INTEGER)), 0) + 1
+		FROM "part_master"
+		WHERE "code" ~ '^P[0-9]+$'
+	`).Scan(&next)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("P%04d", next), nil
+}
+
 func (r *partRepositoryPG) UpdatePart(ctx context.Context, code string, p PartInput) error {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE "part_master" SET
@@ -602,7 +615,7 @@ func (r *partRepositoryPG) CheckPartExistsInBranch(ctx context.Context, partCode
 	return exists, nil
 }
 
-func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID *string) (int, error) {
+func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID, storeID *string) (int, error) {
 	whereClauses := []string{}
 	args := []interface{}{}
 	argIndex := 1
@@ -626,6 +639,14 @@ func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categor
 	if categoryID != nil && *categoryID != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf("p.category_id = $%d", argIndex))
 		args = append(args, *categoryID)
+		argIndex++
+	}
+	// Store (คลังสินค้า) filter — part must have an address in that store.
+	if storeID != nil && *storeID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`EXISTS(
+			SELECT 1 FROM "address_master" a_st
+			WHERE a_st.part_code = p.code AND a_st.store_id = $%d)`, argIndex))
+		args = append(args, *storeID)
 		argIndex++
 	}
 	if isActive != nil {
@@ -657,7 +678,7 @@ func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categor
 	return n, nil
 }
 
-func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID *string, limit, offset int) ([]PartDetail, error) {
+func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID, storeID *string, limit, offset int) ([]PartDetail, error) {
 	if limit <= 0 {
 		limit = config.DefaultLimit
 	}
@@ -705,6 +726,14 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 	if categoryID != nil && *categoryID != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf("p.category_id = $%d", argIndex))
 		args = append(args, *categoryID)
+		argIndex++
+	}
+	// Store (คลังสินค้า) filter — part must have an address in that store.
+	if storeID != nil && *storeID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`EXISTS(
+			SELECT 1 FROM "address_master" a_st
+			WHERE a_st.part_code = p.code AND a_st.store_id = $%d)`, argIndex))
+		args = append(args, *storeID)
 		argIndex++
 	}
 

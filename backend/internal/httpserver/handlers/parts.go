@@ -13,11 +13,12 @@ import (
 )
 
 type PartsHandler struct {
-	parts repository.PartRepository
+	parts     repository.PartRepository
+	addresses repository.AddressRepository
 }
 
-func NewPartsHandler(parts repository.PartRepository) *PartsHandler {
-	return &PartsHandler{parts: parts}
+func NewPartsHandler(parts repository.PartRepository, addresses repository.AddressRepository) *PartsHandler {
+	return &PartsHandler{parts: parts, addresses: addresses}
 }
 
 func (h *PartsHandler) List(c *gin.Context) {
@@ -46,9 +47,23 @@ func (h *PartsHandler) List(c *gin.Context) {
 		return
 	}
 
+	// includeAddresses=true embeds each part's warehouse locations (one batch
+	// query) so the Parts page can show/filter by store.
+	var addressesByCode map[string][]repository.PartAddress
+	if c.Query("includeAddresses") == "true" {
+		codes := make([]string, 0, len(items))
+		for _, p := range items {
+			codes = append(codes, p.Code)
+		}
+		addressesByCode, err = h.parts.GetAddressesByPartCodes(c.Request.Context(), codes, branchIDPtr)
+		if err != nil {
+			addressesByCode = map[string][]repository.PartAddress{} // degrade gracefully
+		}
+	}
+
 	out := make([]gin.H, 0, len(items))
 	for _, p := range items {
-		out = append(out, gin.H{
+		entry := gin.H{
 			"code":        p.Code,
 			"barCode":     p.BarCode,
 			"name":        p.Name,
@@ -69,7 +84,24 @@ func (h *PartsHandler) List(c *gin.Context) {
 			"totalStock":   p.TotalStock,
 			"reorderPoint": p.ReorderPoint,
 			"minStock":     p.MinStock,
-		})
+		}
+		if addressesByCode != nil {
+			addrs := make([]gin.H, 0, len(addressesByCode[p.Code]))
+			for _, a := range addressesByCode[p.Code] {
+				addrs = append(addrs, gin.H{
+					"code": a.Code,
+					"store": gin.H{
+						"id":      a.StoreID,
+						"label":   a.StoreLabel,
+						"labelTh": a.StoreLabelTH,
+					},
+					"shelf": a.Shelf,
+					"qty":   a.Qty,
+				})
+			}
+			entry["addresses"] = addrs
+		}
+		out = append(out, entry)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -223,10 +255,16 @@ func (h *PartsHandler) Search(c *gin.Context) {
 		}
 	}
 
+	// Optional store (คลังสินค้า) filter for the Parts page.
+	var storeIDPtr *string
+	if st := strings.TrimSpace(c.Query("storeId")); st != "" {
+		storeIDPtr = &st
+	}
+
 	ctx := c.Request.Context()
 
 	// Search parts
-	parts, err := h.parts.SearchParts(ctx, query, categoryIDPtr, isActive, branchID, limit, offset)
+	parts, err := h.parts.SearchParts(ctx, query, categoryIDPtr, isActive, branchID, storeIDPtr, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_search_parts"})
 		return
@@ -301,7 +339,7 @@ func (h *PartsHandler) Search(c *gin.Context) {
 	}
 
 	// Total matching count (ignores limit/offset) for page-jump pagination.
-	total, err := h.parts.CountParts(ctx, query, categoryIDPtr, isActive, branchID)
+	total, err := h.parts.CountParts(ctx, query, categoryIDPtr, isActive, branchID, storeIDPtr)
 	if err != nil {
 		total = len(out) // degrade gracefully
 	}
@@ -326,6 +364,11 @@ func (h *PartsHandler) Create(c *gin.Context) {
 		Price      float64 `json:"price"`
 		Cost       float64 `json:"cost"`
 		Details    string  `json:"details"`
+		// Optional initial warehouse placement: when storeId is given an
+		// address_master row is created so the part immediately lives in a store.
+		StoreID string `json:"storeId"`
+		Shelf   string `json:"shelf"`
+		Qty     int    `json:"qty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
@@ -333,21 +376,36 @@ func (h *PartsHandler) Create(c *gin.Context) {
 	}
 	code := strings.TrimSpace(req.Code)
 	name := strings.TrimSpace(req.Name)
-	if code == "" || name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_fields", "message": "code and name are required"})
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_fields", "message": "name is required"})
 		return
+	}
+	// Auto-generate the running code when not given (P0001, P0002, …).
+	if code == "" {
+		generated, err := h.parts.GenerateNextPartCode(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_generate_code"})
+			return
+		}
+		code = generated
 	}
 	nameTh := strings.TrimSpace(req.NameTh)
 	if nameTh == "" {
 		nameTh = name
 	}
+	// Default barcode = the part code (Code128 renders it directly, same
+	// convention as migration 0012); the client may override with its own.
 	barcode := strings.TrimSpace(req.Barcode)
 	if barcode == "" {
 		barcode = code
 	}
+	// Unit is optional — default to "pcs" (ชิ้น).
 	unitID := strings.TrimSpace(req.UnitId)
 	if unitID == "" {
 		unitID = strings.TrimSpace(req.Unit)
+	}
+	if unitID == "" {
+		unitID = "pcs"
 	}
 	err := h.parts.CreatePart(c.Request.Context(), repository.PartInput{
 		Code: code, Name: name, NameTH: nameTh, BarCode: barcode,
@@ -363,7 +421,37 @@ func (h *PartsHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_create_part", "message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"code": code, "name": name})
+	// Optional initial placement in a store (คลังสินค้า).
+	storeID := strings.TrimSpace(req.StoreID)
+	if storeID != "" {
+		addrErr := h.addresses.Create(c.Request.Context(), &repository.Address{
+			Code:     "ADDR-" + code + "-" + storeID,
+			PartCode: code,
+			StoreID:  storeID,
+			Shelf:    strings.TrimSpace(req.Shelf),
+			Qty:      req.Qty,
+		})
+		if addrErr != nil {
+			// Part was created; report placement failure without failing the call.
+			c.JSON(http.StatusCreated, gin.H{
+				"code": code, "barCode": barcode, "name": name,
+				"warning": "part_created_but_address_failed",
+			})
+			return
+		}
+	}
+	c.JSON(http.StatusCreated, gin.H{"code": code, "barCode": barcode, "name": name})
+}
+
+// GenerateCode returns the next auto-generated part code and its default
+// barcode so the create dialog can prefill both (both stay editable).
+func (h *PartsHandler) GenerateCode(c *gin.Context) {
+	code, err := h.parts.GenerateNextPartCode(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_generate_code"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": code, "barCode": code})
 }
 
 // Update edits an existing part's name/barcode/unit/price.
@@ -401,6 +489,9 @@ func (h *PartsHandler) Update(c *gin.Context) {
 	unitID := strings.TrimSpace(req.UnitId)
 	if unitID == "" {
 		unitID = strings.TrimSpace(req.Unit)
+	}
+	if unitID == "" {
+		unitID = "pcs" // หน่วยไม่บังคับ — ค่าเริ่มต้น "ชิ้น"
 	}
 	err := h.parts.UpdatePart(c.Request.Context(), code, repository.PartInput{
 		Name: name, NameTH: nameTh, BarCode: barcode, UnitID: unitID, Price: req.Price,

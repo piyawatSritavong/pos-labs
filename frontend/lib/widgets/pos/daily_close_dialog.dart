@@ -346,6 +346,8 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
           ),
         ),
         const SizedBox(height: 12),
+        _buildExpenseSection(),
+        const SizedBox(height: 12),
         if (_error != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -457,7 +459,6 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
     );
   }
 
-  // ignore: unused_element
   Widget _buildExpenseSection() {
     return Container(
       padding: const EdgeInsets.all(14),

@@ -6,15 +6,19 @@ import 'package:http/http.dart' as http;
 class ApiService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
 
-  static const String _branchId = '00000';
-  static const String _posId = 'POS001';
+  // Branch/POS ของเครื่องนี้ — บนเว็บ override ต่อแท็บได้ผ่าน URL query เช่น
+  // http://localhost:8082/?branch=00001&pos=POS002 เพื่อทดสอบหลายสาขาพร้อมกัน
+  // จาก build เดียว ไม่ใส่ query (รวมถึง desktop build) ใช้ค่าเดิม 00000/POS001
+  static String get _branchId =>
+      Uri.base.queryParameters['branch'] ?? '00000';
+  static String get _posId => Uri.base.queryParameters['pos'] ?? 'POS001';
   // ใช้ String.fromEnvironment เพื่อดึงค่าตอน Build
   static const String _posSecret = String.fromEnvironment(
     'POS_SECRET',
     defaultValue: 'default_if_needed',
   );
-  static const String defaultBranchId = _branchId;
-  static const String defaultPosId = _posId;
+  static String get defaultBranchId => _branchId;
+  static String get defaultPosId => _posId;
   static const String posSecret = _posSecret;
 
   // ======================================================================
@@ -106,8 +110,15 @@ class ApiService {
   // ======================================================================
 
   // 1.1) POST /auth/login
+  // ปกติไม่ส่ง branchId/posId — backend resolve จาก account (user_branch →
+  // pos_setting) ทำให้ทุก account ใช้เว็บ URL เดียวกันได้ ส่งเฉพาะเมื่อ URL
+  // ระบุเครื่องชัดเจน (?branch=...&pos=...) เช่นเครื่อง POS ประจำจุดขาย
   static Future<String> login(String username, String password) async {
     final uri = Uri.parse('$baseUrl/auth/login');
+
+    final qp = Uri.base.queryParameters;
+    final hasTerminalOverride =
+        qp.containsKey('branch') && qp.containsKey('pos');
 
     final response = await http.post(
       uri,
@@ -115,9 +126,11 @@ class ApiService {
       body: jsonEncode({
         'username': username,
         'password': password,
-        'branchId': _branchId,
-        'posId': _posId,
-        'posSecret': _posSecret,
+        if (hasTerminalOverride) ...{
+          'branchId': qp['branch'],
+          'posId': qp['pos'],
+          'posSecret': _posSecret,
+        },
       }),
     );
 
@@ -138,6 +151,39 @@ class ApiService {
     }
 
     throw Exception('Unexpected /auth/login response format: ${response.body}');
+  }
+
+  // 1.12) GET /auth/sessions — session ทั้งหมดของ account นี้ ใช้ตรวจ login ซ้อน
+  // คืน null เมื่อ session นี้ถูกเตะ/หมดอายุแล้ว (401) เพื่อให้ caller พาออกจากระบบ
+  static Future<Map<String, dynamic>?> getSessions(String token) async {
+    final uri = Uri.parse('$baseUrl/auth/sessions');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode == 401) return null;
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Get sessions failed: ${response.statusCode} ${response.body}',
+      );
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    throw Exception('Unexpected /auth/sessions response format: $decoded');
+  }
+
+  // 1.13) POST /auth/sessions/revoke-others — "ให้ฉันอยู่ต่อ": เตะ session อื่นออก
+  static Future<void> revokeOtherSessions(String token) async {
+    final uri = Uri.parse('$baseUrl/auth/sessions/revoke-others');
+    final response = await http.post(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Revoke sessions failed: ${response.statusCode} ${response.body}',
+      );
+    }
   }
 
   // 1.15) POST /auth/verify-password (checks password without touching sessions)
@@ -1348,6 +1394,7 @@ class ApiService {
     String? categoryId,
     bool? isActive,
     bool? crossBranch,
+    String? storeId,
     int limit = 20,
     int offset = 0,
   }) async {
@@ -1361,6 +1408,7 @@ class ApiService {
     }
     if (isActive != null) queryParams['isActive'] = isActive.toString();
     if (crossBranch != null) queryParams['crossBranch'] = crossBranch.toString();
+    if (storeId != null && storeId.isNotEmpty) queryParams['storeId'] = storeId;
 
     final uri = Uri.parse(
       '$baseUrl/parts/search',
@@ -1384,6 +1432,23 @@ class ApiService {
       total = int.tryParse(decoded['total'].toString()) ?? parts.length;
     }
     return (parts: parts, total: total);
+  }
+
+  // GET /parts/generate-code — รหัสสินค้า + บาร์โค้ดอัตโนมัติสำหรับ prefill
+  // ฟอร์มเพิ่มสินค้า (ผู้ใช้แก้ไขได้ก่อนบันทึก)
+  static Future<Map<String, dynamic>> generatePartCode(String token) async {
+    final uri = Uri.parse('$baseUrl/parts/generate-code');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to generate part code: ${response.statusCode} ${response.body}',
+      );
+    }
+    final decoded = jsonDecode(response.body);
+    return _extractObjectFromResponse(decoded, '/parts/generate-code');
   }
 
   // GET /parts/:code

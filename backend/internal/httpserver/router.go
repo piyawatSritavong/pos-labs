@@ -64,6 +64,8 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		authGroup.POST("/verify-password", authHandler.VerifyPassword)
 		authGroup.POST("/logout", authMw.RequireAuth(), authHandler.Logout)
 		authGroup.GET("/me", authMw.RequireAuth(), authHandler.Me)
+		authGroup.GET("/sessions", authMw.RequireAuth(), authHandler.Sessions)
+		authGroup.POST("/sessions/revoke-others", authMw.RequireAuth(), authHandler.RevokeOtherSessions)
 	}
 
 	// QR Image (static file serving)
@@ -83,13 +85,15 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	// Protected resources examples
 	partRepo := repository.NewPartRepository(db)
 	memberRepo := repository.NewMemberRepository(db)
-	partsHandler := handlers.NewPartsHandler(partRepo)
+	addressRepo := repository.NewAddressRepository(db)
+	partsHandler := handlers.NewPartsHandler(partRepo, addressRepo)
 	memberHandler := handlers.NewMemberHandler(memberRepo)
 	parts := r.Group("/parts")
 	parts.Use(authMw.RequirePermission("parts", "read"))
 	{
 		parts.GET("", partsHandler.List)
 		parts.GET("/search", partsHandler.Search)
+		parts.GET("/generate-code", partsHandler.GenerateCode)
 		parts.GET("/:code", partsHandler.Get)
 	}
 	partsWrite := r.Group("/parts")
@@ -126,7 +130,6 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	returnNoteRepo := repository.NewReturnNoteRepository(db)
 	companyRepo := repository.NewCompanyRepository(db)
 	promotionRepo := repository.NewPromotionRepository(db)
-	addressRepo := repository.NewAddressRepository(db)
 	drawerKickCommand, drawerKickHex, err := printer.ParseDrawerKickCommand(cfg.CashDrawerKickCommand)
 	if err != nil {
 		log.Printf("Invalid CASH_DRAWER_KICK_COMMAND=%q: %v; using default %s",

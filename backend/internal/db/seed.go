@@ -325,17 +325,41 @@ func SeedCoreData(db *sql.DB) error {
 		posSecret = hex.EncodeToString(posSecretBytes)
 	}
 
+	// Stock wiring: each POS sells from / counts its branch's default store —
+	// POS001 (pos1) and POS003 (admin) work on the main branch stock ('main'),
+	// POS002 (pos2, mock seed) on the second branch stock ('store_00001').
 	if _, err := tx.Exec(`
 		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active", "vehicle_store_id")
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, "POS001", "00000", "POS 1", posSecret, true, "vehicle_POS001"); err != nil {
+	`, "POS001", "00000", "POS 1", posSecret, true, "main"); err != nil {
+		return err
+	}
+
+	// Admin's own terminal: the backoffice "ขายสินค้า (POS)" page sells as
+	// POS003 so its bills/mirror/customer display never collide with pos1.
+	if _, err := tx.Exec(`
+		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active", "vehicle_store_id")
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, "POS003", "00000", "POS สำนักงาน", posSecret, true, "main"); err != nil {
+		return err
+	}
+
+	// Pin each account to its terminal (used by login auto-resolve).
+	if _, err := tx.Exec(`
+		UPDATE "user" SET "default_pos_id" = 'POS003' WHERE "username" = 'admin'
+	`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		UPDATE "user" SET "default_pos_id" = 'POS001' WHERE "username" = 'pos1'
+	`); err != nil {
 		return err
 	}
 
 	// unit_master
 	if _, err := tx.Exec(`
 		INSERT INTO "unit_master"("id", "label", "label_th")
-		VALUES ('pcs', 'PCS', 'หน่วย'),
+		VALUES ('pcs', 'PCS', 'ชิ้น'),
 		       ('box', 'BOX', 'กล่อง'),
 		       ('case', 'CASE', 'กล่อง'),
 		       ('set', 'SET', 'ชุด'),

@@ -68,14 +68,15 @@ func (r *userRepositoryPG) GetByIDs(ctx context.Context, ids []string) (map[stri
 
 func (r *userRepositoryPG) GetByUsername(ctx context.Context, username string) (*User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT "id", "username", "role_id", "name", "password", "is_active", "is_superuser", "custom_permissions"
+		SELECT "id", "username", "role_id", "name", "password", "is_active", "is_superuser", "custom_permissions",
+		       COALESCE("default_pos_id", '')
 		FROM "user"
 		WHERE "username" = $1
 	`, username)
 
 	var u User
 	var perms pq.StringArray
-	if err := row.Scan(&u.ID, &u.Username, &u.RoleID, &u.Name, &u.PasswordHash, &u.IsActive, &u.IsSuperuser, &perms); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.RoleID, &u.Name, &u.PasswordHash, &u.IsActive, &u.IsSuperuser, &perms, &u.DefaultPOSID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}

@@ -36,6 +36,27 @@ func (r *posRepositoryPG) GetByID(ctx context.Context, id string) (*POS, error) 
 	return &p, nil
 }
 
+func (r *posRepositoryPG) GetFirstActiveByBranch(ctx context.Context, branchID string) (*POS, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT "pos_id", "branch_id", "pos_name", "pos_secret", "is_active", COALESCE("vehicle_store_id", '')
+		FROM "pos_setting"
+		WHERE "is_active" = true AND ($1 = '' OR "branch_id" = $1)
+		ORDER BY "pos_id"
+		LIMIT 1
+	`, branchID)
+
+	var p POS
+	err := row.Scan(&p.POSID, &p.BranchID, &p.POSName, &p.POSSecret, &p.IsActive, &p.VehicleStoreID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	return &p, nil
+}
+
 func (r *posRepositoryPG) List(ctx context.Context, limit, offset int) ([]POS, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT "pos_id", "branch_id", "pos_name", "pos_secret", "is_active", COALESCE("vehicle_store_id", '')

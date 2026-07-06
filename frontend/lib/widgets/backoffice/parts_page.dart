@@ -18,6 +18,10 @@ class PartsManagementSection extends StatefulWidget {
 }
 
 class _PartsManagementSectionState extends State<PartsManagementSection> {
+  // คลังสินค้าทั้งหมด (ทุกสาขา) สำหรับ dropdown กรอง/เลือกที่อยู่คลัง
+  // แต่ละรายการ: {id, label, branchName}
+  List<Map<String, String>> _stores = [];
+
   @override
   void initState() {
     super.initState();
@@ -28,8 +32,37 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
       final token = context.read<AuthProvider>().token ?? '';
       if (token.isNotEmpty) {
         context.read<PartsProvider>().fetchParts(token);
+        _loadStores(token);
       }
     });
+  }
+
+  Future<void> _loadStores(String token) async {
+    try {
+      final branches = await ApiService.getBranches(token: token);
+      final stores = <Map<String, String>>[];
+      for (final b in branches) {
+        final branchId = b['branchId']?.toString() ?? b['id']?.toString() ?? '';
+        if (branchId.isEmpty) continue;
+        final detail = await ApiService.getBranchById(
+          token: token,
+          branchId: branchId,
+        );
+        final branchName =
+            (detail['branchNameTh'] ?? detail['branchName'] ?? branchId)
+                .toString();
+        final storeList = (detail['stores'] as List?) ?? [];
+        for (final s in storeList.whereType<Map>()) {
+          final id = s['id']?.toString() ?? '';
+          if (id.isEmpty) continue;
+          final label = (s['labelTh'] ?? s['label'] ?? id).toString();
+          stores.add({'id': id, 'label': label, 'branchName': branchName});
+        }
+      }
+      if (mounted) setState(() => _stores = stores);
+    } catch (_) {
+      // ไม่มีสิทธิ์ดูสาขา/เครือข่ายล่ม — หน้าใช้งานต่อได้โดยไม่มีตัวกรองคลัง
+    }
   }
 
   Future<void> _showCreatePartDialog(
@@ -42,7 +75,20 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
     final barcodeController = TextEditingController();
     final unitController = TextEditingController();
     final priceController = TextEditingController();
+    final shelfController = TextEditingController();
+    final qtyController = TextEditingController();
+    String? selectedStoreId;
     final formKey = GlobalKey<FormState>();
+
+    // รหัสสินค้า + บาร์โค้ดสร้างให้อัตโนมัติ (แก้ไขได้ก่อนบันทึก)
+    try {
+      final generated = await ApiService.generatePartCode(token);
+      codeController.text = generated['code']?.toString() ?? '';
+      barcodeController.text = generated['barCode']?.toString() ?? '';
+    } catch (_) {
+      // สร้างไม่ได้ก็ปล่อยว่าง — backend จะ gen ให้ตอนบันทึกอยู่ดี
+    }
+    if (!context.mounted) return;
 
     await showDialog(
       context: context,
@@ -62,15 +108,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                       TextFormField(
                         controller: codeController,
                         decoration: const InputDecoration(
-                          labelText: 'รหัสสินค้า',
+                          labelText: 'รหัสสินค้า (สร้างอัตโนมัติ)',
                           isDense: true,
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'กรุณากรอกรหัสสินค้า';
-                          }
-                          return null;
-                        },
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -90,7 +130,7 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                       TextFormField(
                         controller: barcodeController,
                         decoration: const InputDecoration(
-                          labelText: 'Barcode',
+                          labelText: 'Barcode (สร้างอัตโนมัติ แก้ไขได้)',
                           isDense: true,
                         ),
                       ),
@@ -98,10 +138,53 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                       TextFormField(
                         controller: unitController,
                         decoration: const InputDecoration(
-                          labelText: 'หน่วย',
+                          labelText: 'หน่วย (ไม่กรอก = ชิ้น)',
                           isDense: true,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      // ที่อยู่คลังเริ่มต้นของสินค้า (ไม่บังคับ)
+                      DropdownButtonFormField<String?>(
+                        initialValue: selectedStoreId,
+                        decoration: const InputDecoration(
+                          labelText: 'คลังสินค้า (ไม่บังคับ)',
+                          isDense: true,
+                        ),
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('ไม่ระบุ'),
+                          ),
+                          for (final s in _stores)
+                            DropdownMenuItem<String?>(
+                              value: s['id'],
+                              child: Text(
+                                '${s['label']} (${s['branchName']})',
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) =>
+                            setState(() => selectedStoreId = v),
+                      ),
+                      if (selectedStoreId != null) ...[
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: shelfController,
+                          decoration: const InputDecoration(
+                            labelText: 'ชั้นวาง (เช่น A-01)',
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: qtyController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'จำนวนเริ่มต้น',
+                            isDense: true,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: priceController,
@@ -172,6 +255,15 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                 'barcode': barcodeController.text.trim(),
                                 'unit': unitController.text.trim(),
                                 'price': price,
+                                if (selectedStoreId != null) ...{
+                                  'storeId': selectedStoreId,
+                                  'shelf': shelfController.text.trim(),
+                                  'qty':
+                                      int.tryParse(
+                                        qtyController.text.trim(),
+                                      ) ??
+                                      0,
+                                },
                               }),
                             );
 
@@ -230,11 +322,17 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
     final nameController = TextEditingController(
       text: part['name']?.toString() ?? '',
     );
+    // Backend ส่ง barcode มาเป็น camelCase `barCode`
     final barcodeController = TextEditingController(
-      text: part['barcode']?.toString() ?? '',
+      text: (part['barCode'] ?? part['barcode'])?.toString() ?? '',
     );
+    // Backend ส่ง unit มาเป็น object {id, label, labelTh} — แก้ไขที่ตัว id
+    // (เช่น pcs) ไม่ใช่ทั้งก้อน map
+    final unitValue = part['unit'];
     final unitController = TextEditingController(
-      text: part['unit']?.toString() ?? '',
+      text: unitValue is Map
+          ? (unitValue['id']?.toString() ?? '')
+          : (unitValue?.toString() ?? ''),
     );
     final priceValue = part['price'];
     final priceController = TextEditingController(
@@ -293,7 +391,7 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                       TextFormField(
                         controller: unitController,
                         decoration: const InputDecoration(
-                          labelText: 'หน่วย',
+                          labelText: 'หน่วย (ไม่กรอก = ชิ้น)',
                           isDense: true,
                         ),
                       ),
@@ -535,6 +633,33 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                     icon: const Icon(Icons.refresh),
                     label: const Text('รีเฟรช'),
                   ),
+                  const SizedBox(width: 16),
+                  // กรองตามคลังสินค้า (ทุกสาขา)
+                  const Text('คลัง:'),
+                  const SizedBox(width: 8),
+                  DropdownButton<String?>(
+                    value: partsProvider.storeId,
+                    hint: const Text('ทุกคลัง'),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('ทุกคลัง'),
+                      ),
+                      for (final s in _stores)
+                        DropdownMenuItem<String?>(
+                          value: s['id'],
+                          child: Text('${s['label']} (${s['branchName']})'),
+                        ),
+                    ],
+                    onChanged: partsProvider.isLoading
+                        ? null
+                        : (v) {
+                            if (token.isEmpty) return;
+                            final provider = context.read<PartsProvider>();
+                            provider.storeId = v;
+                            provider.load(token, offset: 0);
+                          },
+                  ),
                   const Spacer(),
                   SizedBox(
                     width: 320,
@@ -593,6 +718,7 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                     DataColumn(label: Text('ชื่อบนใบเสร็จ')),
                                     DataColumn(label: Text('Barcode')),
                                     DataColumn(label: Text('หน่วย')),
+                                    DataColumn(label: Text('คลัง')),
                                     DataColumn(label: Text('ราคาขาย')),
                                     DataColumn(label: Text('Actions')),
                                   ],
@@ -636,6 +762,35 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                     } else {
                                       priceText = priceValue?.toString() ?? '';
                                     }
+                                    // คลังที่สินค้านี้อยู่ (จาก addresses ที่
+                                    // backend แนบมา) เช่น "คลังหลัก: A-01 (100)"
+                                    final addresses =
+                                        (p['addresses'] as List?)
+                                            ?.whereType<Map>()
+                                            .toList() ??
+                                        [];
+                                    final storeText = addresses.isEmpty
+                                        ? '-'
+                                        : addresses
+                                              .map((a) {
+                                                final store = a['store'];
+                                                final label = (store is Map)
+                                                    ? (store['labelTh'] ??
+                                                              store['label'] ??
+                                                              store['id'] ??
+                                                              '')
+                                                          .toString()
+                                                    : '';
+                                                final shelf =
+                                                    a['shelf']?.toString() ??
+                                                    '';
+                                                final qty =
+                                                    a['qty']?.toString() ?? '';
+                                                return shelf.isEmpty
+                                                    ? '$label ($qty)'
+                                                    : '$label: $shelf ($qty)';
+                                              })
+                                              .join(', ');
 
                                     return DataRow(
                                       cells: [
@@ -644,6 +799,18 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                         DataCell(Text(receiptName)),
                                         DataCell(Text(barcode)),
                                         DataCell(Text(unit)),
+                                        DataCell(
+                                          ConstrainedBox(
+                                            constraints: const BoxConstraints(
+                                              maxWidth: 220,
+                                            ),
+                                            child: Text(
+                                              storeText,
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 2,
+                                            ),
+                                          ),
+                                        ),
                                         DataCell(Text('฿$priceText')),
                                         DataCell(
                                           Row(

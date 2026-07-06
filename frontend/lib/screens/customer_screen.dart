@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
+import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:provider/provider.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -764,10 +767,40 @@ class _ThankYouOverlay extends StatelessWidget {
   }
 }
 
-class _QrScanOverlay extends StatelessWidget {
+class _QrScanOverlay extends StatefulWidget {
   const _QrScanOverlay({required this.amount});
 
   final double amount;
+
+  @override
+  State<_QrScanOverlay> createState() => _QrScanOverlayState();
+}
+
+class _QrScanOverlayState extends State<_QrScanOverlay> {
+  // รูป QR ที่ร้านอัพโหลดไว้ (backoffice → ตั้งค่าการชำระเงิน) — โหลดครั้งเดียว
+  // ตอน overlay ขึ้น ถ้ายังไม่ได้อัพโหลด/โหลดไม่สำเร็จ fallback เป็นรูปในแอป
+  Uint8List? _qrBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUploadedQr();
+  }
+
+  Future<void> _loadUploadedQr() async {
+    try {
+      final token = context.read<AuthProvider>().token;
+      if (token == null || token.isEmpty) return;
+      final bytes = await ApiService.getQrImage(token: token);
+      if (mounted && bytes.isNotEmpty) {
+        setState(() => _qrBytes = bytes);
+      }
+    } catch (_) {
+      // ไม่มีรูปที่อัพโหลด — ใช้ fallback ด้านล่าง
+    }
+  }
+
+  double get amount => widget.amount;
 
   @override
   Widget build(BuildContext context) {
@@ -801,19 +834,21 @@ class _QrScanOverlay extends StatelessWidget {
                 SizedBox(
                   height: 260,
                   width: 260,
-                  child: Image.asset(
-                    'images/shop_qr.png',
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Center(
-                        child: Text(
-                          'กรุณาติดต่อพนักงานเพื่อขอ QR Code ชำระเงิน',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 12),
+                  child: _qrBytes != null
+                      ? Image.memory(_qrBytes!, fit: BoxFit.contain)
+                      : Image.asset(
+                          'images/shop_qr.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Center(
+                              child: Text(
+                                'กรุณาติดต่อพนักงานเพื่อขอ QR Code ชำระเงิน',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
                 ),
                 const SizedBox(height: 12),
                 const Text(

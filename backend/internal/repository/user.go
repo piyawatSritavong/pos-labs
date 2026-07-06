@@ -14,6 +14,7 @@ type User struct {
 	IsSuperuser       bool
 	CustomPermissions []string // nil = use role defaults; non-nil = per-user override
 	BranchID          string   // default branch from user_branch join (read-only, not persisted here)
+	DefaultPOSID      string   // POS terminal this account is pinned to (empty = resolve by branch)
 }
 
 type UserRepository interface {

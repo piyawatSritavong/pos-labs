@@ -7,6 +7,7 @@ import 'package:frontend/widgets/backoffice/branches_page.dart';
 import 'package:frontend/widgets/backoffice/company_page.dart';
 import 'package:frontend/widgets/backoffice/parts_page.dart';
 import 'package:frontend/widgets/backoffice/payment_page.dart';
+import 'package:frontend/widgets/backoffice/pos_devices_page.dart';
 import 'package:frontend/widgets/backoffice/promotions_page.dart';
 import 'package:frontend/widgets/backoffice/reports_page.dart';
 import 'package:frontend/widgets/backoffice/returns_history_page.dart';
@@ -18,6 +19,7 @@ import 'package:frontend/widgets/backoffice/pos_restock_requests_page.dart';
 import 'package:frontend/widgets/backoffice/cash_reconciliation_page.dart';
 import 'package:frontend/widgets/backoffice/stock_variance_page.dart';
 import 'package:frontend/widgets/backoffice/support_pos_page.dart';
+import 'package:frontend/widgets/session_guard.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/theme_provider.dart';
@@ -126,6 +128,7 @@ class PartsProvider extends ChangeNotifier {
   String? error;
   List<Map<String, dynamic>> parts = [];
   String query = '';
+  String? storeId; // คลังสินค้าที่เลือกกรอง (null = ทุกคลัง)
   int offset = 0;
   int pageSize = 50; // selectable page size (20/50/100)
   int total = 0; // total matching parts (for page-jump)
@@ -150,6 +153,7 @@ class PartsProvider extends ChangeNotifier {
         // the admin's branch (e.g. a product just created). Without this the
         // branch-scoped search hides newly added products entirely.
         crossBranch: true,
+        storeId: storeId,
       );
       parts = result.parts;
       total = result.total;
@@ -363,7 +367,7 @@ class BackofficeScreen extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => BillsProvider()),
         ChangeNotifierProvider(create: (_) => AssetsProvider()),
       ],
-      child: const _BackofficeShell(),
+      child: const SessionGuard(child: _BackofficeShell()),
     );
   }
 }
@@ -378,9 +382,8 @@ class _BackofficeShell extends StatefulWidget {
 class _BackofficeShellState extends State<_BackofficeShell> {
   // sidebar items (with group headers)
   // NOTE: Thai labels are display-only; `pageIndex` (the "path" into _pages)
-  // is unchanged. Order of entries = display order. Menus removed here
-  // (Promotions/Transfers/Restock/Cash Recon/Variance) are hidden for all
-  // roles; their indices are also guarded in the body via _blockedPageIndices.
+  // is unchanged. Order of entries = display order. All features are enabled
+  // on this branch (client-ppsale/demo); the jaiheng deploy branch hides some.
   final List<_SidebarItem> _sidebarItems = const [
     _SidebarItem(label: 'องค์กร', isHeader: true),
     _SidebarItem(
@@ -479,11 +482,32 @@ class _BackofficeShellState extends State<_BackofficeShell> {
       subtitle: 'ตั้งค่า QR รับเงิน',
     ),
     _SidebarItem(
+      label: 'โอนสินค้า',
+      page: 'โอนย้ายสินค้า',
+      icon: Icons.local_shipping_outlined,
+      pageIndex: 13,
+      subtitle: 'โอนย้ายสินค้า HQ → รถ',
+    ),
+    _SidebarItem(
+      label: 'ใบเบิกสินค้าเข้ารถ',
+      page: 'ใบเบิกสินค้าเข้ารถ',
+      icon: Icons.assignment_turned_in_outlined,
+      pageIndex: 18,
+      subtitle: 'ตรวจเอกสารเบิกสินค้าและยืนยันโอนเข้ารถ',
+    ),
+    _SidebarItem(
       label: 'รายงานปิดยอดประจำวัน',
       page: 'รายงานปิดยอดประจำวัน',
       icon: Icons.account_balance_wallet_outlined,
       pageIndex: 14,
       subtitle: 'ยอดปิดประจำวันที่ POS ส่งมา และยืนยันรับเงิน',
+    ),
+    _SidebarItem(
+      label: 'ส่วนต่างสต๊อก',
+      page: 'รายงานส่วนต่างสต๊อก',
+      icon: Icons.compare_arrows_outlined,
+      pageIndex: 15,
+      subtitle: 'รายงานส่วนต่างสต๊อก',
     ),
     _SidebarItem(label: 'ช่วยเหลือ', isHeader: true),
     _SidebarItem(
@@ -495,11 +519,10 @@ class _BackofficeShellState extends State<_BackofficeShell> {
     ),
   ];
 
-  // Pages hidden for everyone — blocked in the body even if reached
-  // programmatically (Promotions 7, Transfers 13, Variance 15,
-  // POS Restock Requests 18). Cash Recon (14) is the daily-close report and
-  // stays visible.
-  static const Set<int> _blockedPageIndices = {7, 13, 15, 18};
+  // Hidden by request: Promotions (7) and POS device management (19). Their
+  // sidebar entries are removed and the pages blocked even if reached
+  // programmatically.
+  static const Set<int> _blockedPageIndices = {7, 19};
 
   // pages for each logical menu (indexed by pageIndex above)
   final List _pages = const [
@@ -522,6 +545,7 @@ class _BackofficeShellState extends State<_BackofficeShell> {
     SupportPosPage(),
     BarcodePrintPage(), // index 17 — admin-only (hidden for hq_manager)
     PosRestockRequestsPage(),
+    PosManagementSection(), // index 19 — จัดการเครื่อง POS (admin-only)
   ];
 
   int _currentPageIndex =
@@ -546,12 +570,12 @@ class _BackofficeShellState extends State<_BackofficeShell> {
   List<_SidebarItem> _getVisibleItems(AuthProvider auth) {
     if (auth.isSuperAdmin) return _sidebarItems;
     // HQ Manager: hide User-Branches/Company/Branches/POS (1-4), Payment (12),
-    // SUPPORT (16), and "พิมพ์บาร์โค้ด" (17 — admin-only feature).
+    // SUPPORT (16), "พิมพ์บาร์โค้ด" (17) and เครื่อง POS (19) — admin-only.
     // Users (0) stays visible so HQ Manager can manage POS Staff accounts
-    const hiddenPageIndices = {1, 2, 3, 4, 12, 16, 17};
+    const hiddenPageIndices = {1, 2, 3, 4, 12, 16, 17, 19};
     return _sidebarItems.where((item) {
       if (item.isHeader) {
-        if (item.label == 'SUPPORT') return false;
+        if (item.label == 'ช่วยเหลือ') return false;
         return true; // show ORGANIZATION (Users page still visible under it)
       }
       if (item.pageIndex == null) return true;

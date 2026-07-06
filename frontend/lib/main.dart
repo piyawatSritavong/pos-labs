@@ -27,19 +27,24 @@ void main() {
     ),
   );
 
-  HomeScreen.openCustomerWindowFn = () {
+  HomeScreen.openCustomerWindowFn = (String? branchId, String? posId) {
     // ignore: discarded_futures
-    _openCustomerWindow();
+    _openCustomerWindow(branchId, posId);
   };
 }
 
 /// เปิดหน้าจอลูกค้าในจอ 2 (ถ้ามี) โดยใช้ Window Management API ของ Edge/Chrome
 /// ครั้งแรก browser จะ prompt "Allow this site to manage windows on all your displays"
 /// ถ้าไม่ได้รับอนุญาต / รองรับ → fallback เป็น popup ตำแหน่งเดิม (ผู้ใช้ลากเองได้)
-Future<void> _openCustomerWindow() async {
+///
+/// branch/pos ของ session ถูกส่งผ่าน query string เพื่อให้หน้าจอลูกค้า
+/// subscribe ถูกเครื่อง (แต่ละ POS มีหน้าจอลูกค้าแยกของตัวเอง)
+Future<void> _openCustomerWindow(String? branchId, String? posId) async {
   final origin = html.window.location.origin;
   final path = html.window.location.pathname;
-  final customerUrl = '$origin$path#/customer';
+  final hasTerminal = (branchId ?? '').isNotEmpty && (posId ?? '').isNotEmpty;
+  final query = hasTerminal ? '?branch=$branchId&pos=$posId' : '';
+  final customerUrl = '$origin$path$query#/customer';
 
   final secondary = await _findSecondaryScreen();
 
