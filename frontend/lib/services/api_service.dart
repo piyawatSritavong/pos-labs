@@ -1434,6 +1434,49 @@ class ApiService {
     return (parts: parts, total: total);
   }
 
+  // GET /stores — รายการคลังกลาง (พร้อมชื่อสาขา) ที่ทั้งหน้าสินค้าและหน้าคลัง
+  // ใช้ร่วมกัน เพื่อให้ dropdown เลือกคลังตรงกันเสมอ
+  static Future<List<Map<String, dynamic>>> getStores({
+    required String token,
+  }) async {
+    final uri = Uri.parse('$baseUrl/stores');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load stores: ${response.statusCode}');
+    }
+    return _extractListFromResponse(jsonDecode(response.body), '/stores');
+  }
+
+  // POST /stores — สร้างคลังใหม่ (ปุ่ม "เพิ่มคลังใหม่" ในหน้าคลังสินค้า)
+  static Future<void> createStore({
+    required String token,
+    required String branchId,
+    required String labelTh,
+    bool isDefault = false,
+  }) async {
+    final uri = Uri.parse('$baseUrl/stores');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'branchId': branchId,
+        'labelTh': labelTh,
+        'isDefault': isDefault,
+      }),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(
+        'Failed to create store: ${response.statusCode} ${response.body}',
+      );
+    }
+  }
+
   // GET /parts/generate-code — รหัสสินค้า + บาร์โค้ดอัตโนมัติสำหรับ prefill
   // ฟอร์มเพิ่มสินค้า (ผู้ใช้แก้ไขได้ก่อนบันทึก)
   static Future<Map<String, dynamic>> generatePartCode(String token) async {

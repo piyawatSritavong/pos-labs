@@ -108,14 +108,16 @@ func SeedMockData(db *sql.DB) error {
 	}
 	defer tx.Rollback()
 
-	// Add another branch (00001)
+	// pos2's branch (00001) + its single store (คลังสาขา pos2). This is the
+	// third branch in the 3-branch model (00000 สาขาหลัก and 00002 สาขา pos1
+	// come from the core seed).
 	if _, err := tx.Exec(`
 		INSERT INTO "branch_setting"(
 			"branch_id", "company_id", "branch_name", "branch_name_th",
 			"branch_address", "branch_address_th", "phone", "email"
 		)
 		VALUES (
-			'00001', '0000000000000', 'Second Branch', 'สาขาที่สอง',
+			'00001', '0000000000000', 'POS2 Branch', 'สาขา pos2',
 			'456 Second Street', '456 ถนนที่สอง', '02-234-5678', 'branch2@example.com'
 		)
 		ON CONFLICT ("branch_id") DO NOTHING
@@ -123,52 +125,14 @@ func SeedMockData(db *sql.DB) error {
 		return err
 	}
 
-	// Create tmp_store for branch 00000
 	if _, err := tx.Exec(`
 		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
-		VALUES ('tmp_store', '00000', 'Temporary Store', 'คลังชั่วคราว', false)
+		VALUES ('store_00001', '00001', 'POS2 Store', 'คลังสาขา pos2', true)
 		ON CONFLICT ("id") DO NOTHING
 	`); err != nil {
 		return err
 	}
 
-	// Create another non-default store for testing "no default store" scenario
-	if _, err := tx.Exec(`
-		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
-		VALUES ('no_default_store', '00000', 'No Default Store', 'คลังไม่มีค่าเริ่มต้น', false)
-		ON CONFLICT ("id") DO NOTHING
-	`); err != nil {
-		return err
-	}
-
-	// Link branch 00000 to tmp_store via branch_store
-	if _, err := tx.Exec(`
-		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
-		VALUES ('00000', 'tmp_store', false)
-		ON CONFLICT ("branch_id", "store_id") DO NOTHING
-	`); err != nil {
-		return err
-	}
-
-	// Link branch 00000 to no_default_store (non-default)
-	if _, err := tx.Exec(`
-		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
-		VALUES ('00000', 'no_default_store', false)
-		ON CONFLICT ("branch_id", "store_id") DO NOTHING
-	`); err != nil {
-		return err
-	}
-
-	// Create a store for branch 00001
-	if _, err := tx.Exec(`
-		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
-		VALUES ('store_00001', '00001', 'Second Branch Store', 'คลังสาขาที่สอง', true)
-		ON CONFLICT ("id") DO NOTHING
-	`); err != nil {
-		return err
-	}
-
-	// Link branch 00001 to its store
 	if _, err := tx.Exec(`
 		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
 		VALUES ('00001', 'store_00001', true)
@@ -177,22 +141,6 @@ func SeedMockData(db *sql.DB) error {
 		return err
 	}
 
-	// Vehicle store + POS terminal for branch 00001 so pos2 can sell from a
-	// second branch at the same time as pos1 (branch 00000 / POS001).
-	if _, err := tx.Exec(`
-		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
-		VALUES ('vehicle_POS002', '00001', 'POS 2 Vehicle Store', 'POS 2 รถ', false)
-		ON CONFLICT ("id") DO NOTHING
-	`); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`
-		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
-		VALUES ('00001', 'vehicle_POS002', false)
-		ON CONFLICT ("branch_id", "store_id") DO NOTHING
-	`); err != nil {
-		return err
-	}
 	// Same POS_SECRET convention as the core seed (env override, random dev
 	// fallback). Login also accepts the "default_if_needed" dev secret.
 	posSecret := os.Getenv("POS_SECRET")
@@ -203,8 +151,7 @@ func SeedMockData(db *sql.DB) error {
 		}
 		posSecret = hex.EncodeToString(posSecretBytes)
 	}
-	// POS002 works on the second branch's default store (store_00001), matching
-	// POS001/POS003 which work on the main branch store.
+	// POS002 (pos2) works on its branch's store (store_00001 = คลังสาขา pos2).
 	if _, err := tx.Exec(`
 		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active", "vehicle_store_id")
 		VALUES ('POS002', '00001', 'POS 2', $1, true, 'store_00001')
@@ -317,24 +264,23 @@ func SeedMockData(db *sql.DB) error {
 		}
 	}
 
-	// Add same parts (same barcode) to tmp_store for testing
-	// Parts 1-5 will be in both main and tmp_store
-	for i := 1; i <= 5; i++ {
-		addrCode := fmt.Sprintf("TMP%04d", i)
+	// Stock pos1's own store (คลังสาขา pos1 = vehicle_POS001, branch 00002).
+	for i := 1; i <= 10; i++ {
+		addrCode := fmt.Sprintf("P1S%04d", i)
 		partCode := fmt.Sprintf("P%04d", i)
 		if _, err := tx.Exec(`
 			INSERT INTO "address_master"(
 				"code", "part_code", "store_id", "shelf",
 				"qty", "min", "max", "rop", "remarks"
 			)
-			VALUES ($1, $2, 'tmp_store', 'B-01', 50, 5, 100, 10, 'Mock location - tmp store')
+			VALUES ($1, $2, 'vehicle_POS001', 'B-01', 80, 5, 150, 15, 'Mock location - pos1 store')
 		`, addrCode, partCode); err != nil {
 			return err
 		}
 	}
 
-	// Add some parts to branch 00001's store
-	for i := 6; i <= 10; i++ {
+	// Stock pos2's store (คลังสาขา pos2 = store_00001, branch 00001).
+	for i := 1; i <= 10; i++ {
 		addrCode := fmt.Sprintf("BR2%04d", i)
 		partCode := fmt.Sprintf("P%04d", i)
 		if _, err := tx.Exec(`
@@ -342,47 +288,10 @@ func SeedMockData(db *sql.DB) error {
 				"code", "part_code", "store_id", "shelf",
 				"qty", "min", "max", "rop", "remarks"
 			)
-			VALUES ($1, $2, 'store_00001', 'C-01', 75, 10, 150, 15, 'Mock location - branch 2')
+			VALUES ($1, $2, 'store_00001', 'C-01', 75, 10, 150, 15, 'Mock location - pos2 store')
 		`, addrCode, partCode); err != nil {
 			return err
 		}
-	}
-
-	// Create a test part that exists in multiple stores but NONE are default
-	// This is for testing "no default store" error scenario
-	// Part P0011 (barcode 8850000011) will be in both tmp_store and no_default_store (both non-default)
-	testPartCode := "P0011"
-	testBarcode := "8850000011"
-	if _, err := tx.Exec(`
-		INSERT INTO "part_master"(
-			"code", "bar_code", "category_id", "unit_id",
-			"name", "name_th", "receipt_name", "details", "cost", "price", "image", "is_active"
-		)
-		VALUES ($1, $2, 'CAT001', 'pcs', 'Test Part No Default', 'สินค้าทดสอบไม่มีค่าเริ่มต้น', 'TEST PART NO DEFAULT', 'Test item for no default store scenario', 10.00, 15.00, '', true)
-	`, testPartCode, testBarcode); err != nil {
-		return err
-	}
-
-	// Add this part to tmp_store (non-default)
-	if _, err := tx.Exec(`
-		INSERT INTO "address_master"(
-			"code", "part_code", "store_id", "shelf",
-			"qty", "min", "max", "rop", "remarks"
-		)
-		VALUES ('TMP0011', $1, 'tmp_store', 'B-02', 30, 5, 100, 10, 'Test location - tmp store (no default)')
-	`, testPartCode); err != nil {
-		return err
-	}
-
-	// Add same part to no_default_store (also non-default)
-	if _, err := tx.Exec(`
-		INSERT INTO "address_master"(
-			"code", "part_code", "store_id", "shelf",
-			"qty", "min", "max", "rop", "remarks"
-		)
-		VALUES ('NDS0011', $1, 'no_default_store', 'C-02', 25, 5, 100, 10, 'Test location - no default store')
-	`, testPartCode); err != nil {
-		return err
 	}
 
 	// Create a test part that exists ONLY in branch 00001 (not in branch 00000)

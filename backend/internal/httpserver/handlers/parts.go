@@ -421,24 +421,26 @@ func (h *PartsHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_create_part", "message": err.Error()})
 		return
 	}
-	// Optional initial placement in a store (คลังสินค้า).
+	// Initial placement in a store. When the client doesn't specify one, the
+	// product goes into the main warehouse ('main' = คลังหลัก) by default.
 	storeID := strings.TrimSpace(req.StoreID)
-	if storeID != "" {
-		addrErr := h.addresses.Create(c.Request.Context(), &repository.Address{
-			Code:     "ADDR-" + code + "-" + storeID,
-			PartCode: code,
-			StoreID:  storeID,
-			Shelf:    strings.TrimSpace(req.Shelf),
-			Qty:      req.Qty,
+	if storeID == "" {
+		storeID = "main"
+	}
+	addrErr := h.addresses.Create(c.Request.Context(), &repository.Address{
+		Code:     "ADDR-" + code + "-" + storeID,
+		PartCode: code,
+		StoreID:  storeID,
+		Shelf:    strings.TrimSpace(req.Shelf),
+		Qty:      req.Qty,
+	})
+	if addrErr != nil {
+		// Part was created; report placement failure without failing the call.
+		c.JSON(http.StatusCreated, gin.H{
+			"code": code, "barCode": barcode, "name": name,
+			"warning": "part_created_but_address_failed",
 		})
-		if addrErr != nil {
-			// Part was created; report placement failure without failing the call.
-			c.JSON(http.StatusCreated, gin.H{
-				"code": code, "barCode": barcode, "name": name,
-				"warning": "part_created_but_address_failed",
-			})
-			return
-		}
+		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"code": code, "barCode": barcode, "name": name})
 }

@@ -31,10 +31,10 @@ class _AddressesManagementSectionState
   // Total matches across all pages (from backend `total`) — drives page-jump.
   int _total = 0;
 
-  // Stores seen so far across loaded pages — used to populate the Store filter
-  // without fetching the entire catalog (the text search also matches store
-  // name server-side, so this only needs to grow as the user browses).
-  final Map<String, String> _knownStores = {};
+  // Canonical store list from GET /stores (same source the Parts page uses, so
+  // the two store dropdowns are always identical). Each entry:
+  // {id, label, branchId, branchName}.
+  List<Map<String, String>> _stores = [];
 
   // Filters + paging state.
   String? _selectedStoreId;
@@ -49,6 +49,30 @@ class _AddressesManagementSectionState
   void initState() {
     super.initState();
     _load(resetOffset: true);
+    _loadStores();
+  }
+
+  Future<void> _loadStores() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null || token.isEmpty) return;
+    try {
+      final list = await ApiService.getStores(token: token);
+      final stores = list
+          .map(
+            (s) => {
+              'id': (s['id'] ?? '').toString(),
+              'label': (s['labelTh'] ?? s['label'] ?? s['id'] ?? '').toString(),
+              'branchId': (s['branchId'] ?? '').toString(),
+              'branchName':
+                  (s['branchNameTh'] ?? s['branchName'] ?? '').toString(),
+            },
+          )
+          .where((s) => (s['id'] ?? '').isNotEmpty)
+          .toList();
+      if (mounted) setState(() => _stores = stores);
+    } catch (_) {
+      // ใช้งานหน้าต่อได้แม้โหลดคลังไม่ได้
+    }
   }
 
   @override
@@ -91,11 +115,6 @@ class _AddressesManagementSectionState
         _addresses = items;
         _total = result.total;
         _hasMore = _offset + items.length < _total;
-        for (final a in items) {
-          final storeId = (a['storeId'] ?? '').toString();
-          if (storeId.isEmpty) continue;
-          _knownStores[storeId] = (a['storeName'] ?? storeId).toString();
-        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -149,11 +168,127 @@ class _AddressesManagementSectionState
   }
 
   List<DropdownMenuItem<String>> _buildStoreDropdownItems() {
-    return _knownStores.entries
+    return _stores
         .map(
-          (e) => DropdownMenuItem<String>(value: e.key, child: Text(e.value)),
+          (s) => DropdownMenuItem<String>(
+            value: s['id'],
+            child: Text(s['label'] ?? s['id'] ?? ''),
+          ),
         )
         .toList();
+  }
+
+  Future<void> _showCreateStoreDialog() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null || token.isEmpty) return;
+
+    // สาขาที่เลือกได้ = สาขาที่มีอยู่ (อนุมานจากรายการคลัง; unique ตาม branchId)
+    final branches = <String, String>{};
+    for (final s in _stores) {
+      final id = s['branchId'] ?? '';
+      if (id.isEmpty) continue;
+      branches[id] = s['branchName']?.isNotEmpty == true
+          ? s['branchName']!
+          : id;
+    }
+    final labelController = TextEditingController();
+    String? selectedBranchId = branches.keys.isNotEmpty
+        ? branches.keys.first
+        : null;
+    final formKey = GlobalKey<FormState>();
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        bool isSaving = false;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return AlertDialog(
+              title: const Text('เพิ่มคลังใหม่'),
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: labelController,
+                      decoration: const InputDecoration(
+                        labelText: 'ชื่อคลัง (เช่น คลังสาขา pos3)',
+                        isDense: true,
+                      ),
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'กรุณากรอกชื่อคลัง'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedBranchId,
+                      decoration: const InputDecoration(
+                        labelText: 'สาขา',
+                        isDense: true,
+                      ),
+                      items: branches.entries
+                          .map(
+                            (e) => DropdownMenuItem(
+                              value: e.key,
+                              child: Text('${e.value} (${e.key})'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setLocal(() => selectedBranchId = v),
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'กรุณาเลือกสาขา' : null,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('ยกเลิก'),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          if (!formKey.currentState!.validate()) return;
+                          final messenger = ScaffoldMessenger.of(context);
+                          final navigator = Navigator.of(dialogContext);
+                          setLocal(() => isSaving = true);
+                          try {
+                            await ApiService.createStore(
+                              token: token,
+                              branchId: selectedBranchId!,
+                              labelTh: labelController.text.trim(),
+                            );
+                            await _loadStores();
+                            navigator.pop();
+                            messenger.showSnackBar(
+                              const SnackBar(content: Text('เพิ่มคลังสำเร็จ')),
+                            );
+                          } catch (e) {
+                            setLocal(() => isSaving = false);
+                            messenger.showSnackBar(
+                              SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
+                            );
+                          }
+                        },
+                  child: isSaving
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('บันทึก'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -216,6 +351,12 @@ class _AddressesManagementSectionState
                     tooltip: 'Refresh',
                     onPressed: _isLoading ? null : () => _load(),
                     icon: const Icon(Icons.refresh),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: _showCreateStoreDialog,
+                    icon: const Icon(Icons.add),
+                    label: const Text('เพิ่มคลังใหม่'),
                   ),
                 ],
               ),

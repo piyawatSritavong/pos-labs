@@ -336,6 +336,20 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		addressesDelete.DELETE("/:code", addressHandler.Delete)
 	}
 
+	// Stores — canonical list shared by the Parts + Addresses store dropdowns,
+	// plus create ("เพิ่มคลังใหม่"). Gated by the same addresses permissions.
+	storeHandler := handlers.NewStoreHandler(repository.NewStoreRepository(db))
+	storesRead := r.Group("/stores")
+	storesRead.Use(authMw.RequirePermission("addresses", "read"))
+	{
+		storesRead.GET("", storeHandler.List)
+	}
+	storesWrite := r.Group("/stores")
+	storesWrite.Use(authMw.RequirePermission("addresses", "write"))
+	{
+		storesWrite.POST("", storeHandler.Create)
+	}
+
 	// Users (CRUD)
 	userHandler := handlers.NewUserHandler(userRepo)
 	users := r.Group("/users")

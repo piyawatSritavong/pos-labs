@@ -39,29 +39,22 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
 
   Future<void> _loadStores(String token) async {
     try {
-      final branches = await ApiService.getBranches(token: token);
-      final stores = <Map<String, String>>[];
-      for (final b in branches) {
-        final branchId = b['branchId']?.toString() ?? b['id']?.toString() ?? '';
-        if (branchId.isEmpty) continue;
-        final detail = await ApiService.getBranchById(
-          token: token,
-          branchId: branchId,
-        );
-        final branchName =
-            (detail['branchNameTh'] ?? detail['branchName'] ?? branchId)
-                .toString();
-        final storeList = (detail['stores'] as List?) ?? [];
-        for (final s in storeList.whereType<Map>()) {
-          final id = s['id']?.toString() ?? '';
-          if (id.isEmpty) continue;
-          final label = (s['labelTh'] ?? s['label'] ?? id).toString();
-          stores.add({'id': id, 'label': label, 'branchName': branchName});
-        }
-      }
+      // ใช้ endpoint กลาง /stores เดียวกับหน้าคลังสินค้า → รายการคลังตรงกันเสมอ
+      final storeList = await ApiService.getStores(token: token);
+      final stores = storeList
+          .map(
+            (s) => {
+              'id': (s['id'] ?? '').toString(),
+              'label': (s['labelTh'] ?? s['label'] ?? s['id'] ?? '').toString(),
+              'branchName':
+                  (s['branchNameTh'] ?? s['branchName'] ?? '').toString(),
+            },
+          )
+          .where((s) => (s['id'] ?? '').isNotEmpty)
+          .toList();
       if (mounted) setState(() => _stores = stores);
     } catch (_) {
-      // ไม่มีสิทธิ์ดูสาขา/เครือข่ายล่ม — หน้าใช้งานต่อได้โดยไม่มีตัวกรองคลัง
+      // ไม่มีสิทธิ์/เครือข่ายล่ม — หน้าใช้งานต่อได้โดยไม่มีตัวกรองคลัง
     }
   }
 
@@ -77,7 +70,11 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
     final priceController = TextEditingController();
     final shelfController = TextEditingController();
     final qtyController = TextEditingController();
-    String? selectedStoreId;
+    // ค่าเริ่มต้น = คลังหลัก (main). ถ้าโหลดคลังไม่ได้ ปล่อย null แล้ว backend
+    // จะลงคลังหลักให้เองตอนบันทึก
+    String? selectedStoreId = _stores.any((s) => s['id'] == 'main')
+        ? 'main'
+        : (_stores.isNotEmpty ? _stores.first['id'] : null);
     final formKey = GlobalKey<FormState>();
 
     // รหัสสินค้า + บาร์โค้ดสร้างให้อัตโนมัติ (แก้ไขได้ก่อนบันทึก)
@@ -143,48 +140,40 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      // ที่อยู่คลังเริ่มต้นของสินค้า (ไม่บังคับ)
+                      // คลังสินค้า — ค่าเริ่มต้น = คลังหลัก (ถ้าไม่เลือก backend
+                      // จะลงคลังหลักให้)
                       DropdownButtonFormField<String?>(
                         initialValue: selectedStoreId,
                         decoration: const InputDecoration(
-                          labelText: 'คลังสินค้า (ไม่บังคับ)',
+                          labelText: 'คลังสินค้า (ค่าเริ่มต้น = คลังหลัก)',
                           isDense: true,
                         ),
                         items: [
-                          const DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text('ไม่ระบุ'),
-                          ),
                           for (final s in _stores)
                             DropdownMenuItem<String?>(
                               value: s['id'],
-                              child: Text(
-                                '${s['label']} (${s['branchName']})',
-                              ),
+                              child: Text('${s['label']} (${s['branchName']})'),
                             ),
                         ],
-                        onChanged: (v) =>
-                            setState(() => selectedStoreId = v),
+                        onChanged: (v) => setState(() => selectedStoreId = v),
                       ),
-                      if (selectedStoreId != null) ...[
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: shelfController,
-                          decoration: const InputDecoration(
-                            labelText: 'ชั้นวาง (เช่น A-01)',
-                            isDense: true,
-                          ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: shelfController,
+                        decoration: const InputDecoration(
+                          labelText: 'ชั้นวาง (เช่น A-01)',
+                          isDense: true,
                         ),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: qtyController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'จำนวนเริ่มต้น',
-                            isDense: true,
-                          ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: qtyController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'จำนวนเริ่มต้น',
+                          isDense: true,
                         ),
-                      ],
+                      ),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: priceController,
