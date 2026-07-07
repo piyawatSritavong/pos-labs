@@ -49,7 +49,7 @@ func seedMockStockCounts(db *sql.DB) error {
 		StoreID  string
 	}{
 		{"00000", "main"},
-		{"00001", "store_00001"},
+		{"00002", "store_00001"},
 	}
 
 	for _, c := range counts {
@@ -108,8 +108,8 @@ func SeedMockData(db *sql.DB) error {
 	}
 	defer tx.Rollback()
 
-	// pos2's branch (00001) + its single store (คลังสาขา pos2). This is the
-	// third branch in the 3-branch model (00000 สาขาหลัก and 00002 สาขา pos1
+	// pos2's branch (00002) + its single store (คลังสาขา pos2). This is the
+	// third branch in the 3-branch model (00000 สาขาหลัก and 00001 สาขา pos1
 	// come from the core seed).
 	if _, err := tx.Exec(`
 		INSERT INTO "branch_setting"(
@@ -117,7 +117,7 @@ func SeedMockData(db *sql.DB) error {
 			"branch_address", "branch_address_th", "phone", "email"
 		)
 		VALUES (
-			'00001', '0000000000000', 'POS2 Branch', 'สาขา pos2',
+			'00002', '0000000000000', 'POS2 Branch', 'สาขา pos2',
 			'456 Second Street', '456 ถนนที่สอง', '02-234-5678', 'branch2@example.com'
 		)
 		ON CONFLICT ("branch_id") DO NOTHING
@@ -127,7 +127,7 @@ func SeedMockData(db *sql.DB) error {
 
 	if _, err := tx.Exec(`
 		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
-		VALUES ('store_00001', '00001', 'POS2 Store', 'คลังสาขา pos2', true)
+		VALUES ('store_00001', '00002', 'POS2 Store', 'คลังสาขา pos2', true)
 		ON CONFLICT ("id") DO NOTHING
 	`); err != nil {
 		return err
@@ -135,7 +135,7 @@ func SeedMockData(db *sql.DB) error {
 
 	if _, err := tx.Exec(`
 		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
-		VALUES ('00001', 'store_00001', true)
+		VALUES ('00002', 'store_00001', true)
 		ON CONFLICT ("branch_id", "store_id") DO NOTHING
 	`); err != nil {
 		return err
@@ -154,7 +154,7 @@ func SeedMockData(db *sql.DB) error {
 	// POS002 (pos2) works on its branch's store (store_00001 = คลังสาขา pos2).
 	if _, err := tx.Exec(`
 		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active", "vehicle_store_id")
-		VALUES ('POS002', '00001', 'POS 2', $1, true, 'store_00001')
+		VALUES ('POS002', '00002', 'POS 2', $1, true, 'store_00001')
 		ON CONFLICT ("pos_id") DO NOTHING
 	`, posSecret); err != nil {
 		return err
@@ -169,7 +169,7 @@ func SeedMockData(db *sql.DB) error {
 		BranchID string
 	}{
 		{"pos1", "pos123456", "role.cashier", "POS Cashier 1", "00000"},
-		{"pos2", "pos123456", "role.cashier", "POS Cashier 2", "00001"},
+		{"pos2", "pos123456", "role.cashier", "POS Cashier 2", "00002"},
 	}
 	for _, u := range testUsers {
 		hash, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
@@ -264,7 +264,7 @@ func SeedMockData(db *sql.DB) error {
 		}
 	}
 
-	// Stock pos1's own store (คลังสาขา pos1 = vehicle_POS001, branch 00002).
+	// Stock pos1's own store (คลังสาขา pos1 = vehicle_POS001, branch 00001).
 	for i := 1; i <= 10; i++ {
 		addrCode := fmt.Sprintf("P1S%04d", i)
 		partCode := fmt.Sprintf("P%04d", i)
@@ -279,7 +279,7 @@ func SeedMockData(db *sql.DB) error {
 		}
 	}
 
-	// Stock pos2's store (คลังสาขา pos2 = store_00001, branch 00001).
+	// Stock pos2's store (คลังสาขา pos2 = store_00001, branch 00002).
 	for i := 1; i <= 10; i++ {
 		addrCode := fmt.Sprintf("BR2%04d", i)
 		partCode := fmt.Sprintf("P%04d", i)

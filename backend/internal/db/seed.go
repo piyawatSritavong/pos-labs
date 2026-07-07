@@ -271,10 +271,11 @@ func SeedCoreData(db *sql.DB) error {
 		return err
 	}
 
-	// Branches. Each POS is its own branch with its own single store:
+	// Branches. The branch id matches the POS number. Each POS is its own
+	// branch with its own single store:
 	//   00000 สาขาหลัก  -> คลังหลัก (main)          admin / POS003
-	//   00002 สาขา pos1 -> คลังสาขา pos1 (van)      pos1  / POS001
-	// (00001 สาขา pos2 / คลังสาขา pos2 is added by the mock seed.)
+	//   00001 สาขา pos1 -> คลังสาขา pos1 (van)      pos1  / POS001
+	// (00002 สาขา pos2 / คลังสาขา pos2 is added by the mock seed.)
 	if _, err := tx.Exec(`
 		INSERT INTO "branch_setting"(
 			"branch_id", "company_id", "branch_name", "branch_name_th",
@@ -283,15 +284,20 @@ func SeedCoreData(db *sql.DB) error {
 		VALUES
 			('00000', '0000000000000', 'Main Branch', 'สาขาหลัก',
 			 '123 Main Street', '123 ถนนหลัก', '02-123-4567', 'branch@example.com'),
-			('00002', '0000000000000', 'POS1 Branch', 'สาขา pos1',
+			('00001', '0000000000000', 'POS1 Branch', 'สาขา pos1',
 			 '', '', '', NULL)
 	`); err != nil {
 		return err
 	}
 
-	// Link pos1 → branch '00002' so login can resolve POSID/branchID.
+	// admin is listed under the main branch; pos1 under its own branch (00001).
 	if _, err := tx.Exec(`
-		INSERT INTO "user_branch"("user_id", "branch_id") VALUES ($1, '00002')
+		INSERT INTO "user_branch"("user_id", "branch_id") VALUES ($1, '00000')
+	`, adminID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO "user_branch"("user_id", "branch_id") VALUES ($1, '00001')
 	`, pos1ID); err != nil {
 		return err
 	}
@@ -302,7 +308,7 @@ func SeedCoreData(db *sql.DB) error {
 		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
 		VALUES
 			('main', '00000', 'Main Warehouse', 'คลังหลัก', true),
-			('vehicle_POS001', '00002', 'POS1 Store', 'คลังสาขา pos1', true)
+			('vehicle_POS001', '00001', 'POS1 Store', 'คลังสาขา pos1', true)
 	`); err != nil {
 		return err
 	}
@@ -312,7 +318,7 @@ func SeedCoreData(db *sql.DB) error {
 		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
 		VALUES
 			('00000', 'main', true),
-			('00002', 'vehicle_POS001', true)
+			('00001', 'vehicle_POS001', true)
 	`); err != nil {
 		return err
 	}
@@ -330,13 +336,13 @@ func SeedCoreData(db *sql.DB) error {
 	}
 
 	// Stock wiring: each POS sells from / counts its branch's own store —
-	//   POS001 (pos1)  -> คลังสาขา pos1 (vehicle_POS001, branch 00002)
+	//   POS001 (pos1)  -> คลังสาขา pos1 (vehicle_POS001, branch 00001)
 	//   POS003 (admin) -> คลังหลัก (main, branch 00000)
-	//   POS002 (pos2, mock seed) -> คลังสาขา pos2 (store_00001, branch 00001)
+	//   POS002 (pos2, mock seed) -> คลังสาขา pos2 (store_00001, branch 00002)
 	if _, err := tx.Exec(`
 		INSERT INTO "pos_setting"("pos_id", "branch_id", "pos_name", "pos_secret", "is_active", "vehicle_store_id")
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, "POS001", "00002", "POS 1", posSecret, true, "vehicle_POS001"); err != nil {
+	`, "POS001", "00001", "POS 1", posSecret, true, "vehicle_POS001"); err != nil {
 		return err
 	}
 
