@@ -302,51 +302,55 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
     final totalReturns = _toDouble(summary['totalReturns']);
     final hasNewSales = totalBills > 0 || totalReturns != 0;
 
-    // Active close flow: summary table pinned to the top, the notes box expands
-    // to fill the middle, and the "ปิดยอด" button is pinned to the bottom. The
-    // notes box reuses the summary box border so they look consistent.
+    // Active close flow: the summary table, notes box and expense fields scroll
+    // together in the middle (so tall content never overflows), and the "ปิดยอด"
+    // button stays pinned at the bottom.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildSummaryTable(summary),
-        const SizedBox(height: 16),
         Expanded(
-          // Rounded-rectangle border matching the summary box. The app-wide
-          // inputDecorationTheme uses a pill border (radius 999); on a tall
-          // expanding field that renders as an oval, so override every border
-          // state here with a radius-12 rectangle.
-          child: TextField(
-            controller: _notesController,
-            expands: true,
-            maxLines: null,
-            minLines: null,
-            textAlignVertical: TextAlignVertical.top,
-            decoration: InputDecoration(
-              labelText: 'หมายเหตุ (ไม่บังคับ)',
-              alignLabelWithHint: true,
-              filled: true,
-              fillColor: AppColors.bg,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.border),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.primary),
-              ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildSummaryTable(summary),
+                const SizedBox(height: 16),
+                // Notes box reuses the summary box border (radius-12 rectangle)
+                // instead of the app-wide pill border.
+                TextField(
+                  controller: _notesController,
+                  minLines: 2,
+                  maxLines: 4,
+                  textAlignVertical: TextAlignVertical.top,
+                  decoration: InputDecoration(
+                    labelText: 'หมายเหตุ (ไม่บังคับ)',
+                    alignLabelWithHint: true,
+                    filled: true,
+                    fillColor: AppColors.bg,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildExpenseSection(),
+              ],
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        _buildExpenseSection(),
         const SizedBox(height: 12),
         if (_error != null)
           Padding(

@@ -27,6 +27,23 @@ const _vanStaffDefaultPerms = {
   'perm.reports_variance.read',
 };
 
+// Must mirror the backend cashierPerms in seed.go. Without this, editing a
+// cashier in the UI would send an empty permission set and wipe their access.
+const _cashierDefaultPerms = {
+  'perm.branch.read',
+  'perm.parts.read',
+  'perm.addresses.read',
+  'perm.bills.read',
+  'perm.bills.write',
+  'perm.promotions.read',
+  'perm.qr_image.read',
+  'perm.members.read',
+  'perm.transfers.read',
+  'perm.transfers.write',
+  'perm.daily_close.read',
+  'perm.daily_close.write',
+};
+
 const _hqManagerDefaultPerms = {
   'perm.branch.read',
   'perm.users.read',
@@ -77,6 +94,7 @@ Set<String> _defaultPermsForRole(String? roleId) {
   if (roleId == 'role.admin') return _allPermIds();
   if (roleId == 'role.hq_manager') return {..._hqManagerDefaultPerms};
   if (roleId == 'role.van_staff') return {..._vanStaffDefaultPerms};
+  if (roleId == 'role.cashier') return {..._cashierDefaultPerms};
   return {};
 }
 
@@ -720,9 +738,13 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
       }
     }
 
-    // Build customPermissions list (null = use role defaults, non-null = override)
-    // We always send it so the server knows the intended permissions
-    final customPerms = canEditPerms ? selectedPermissions.toList() : null;
+    // Build customPermissions list (null = use role defaults, non-null = override).
+    // Guard: an empty selection is sent as null (inherit role) rather than an
+    // empty override, which would strip every permission and lock the user out.
+    final selectedList = selectedPermissions.toList();
+    final customPerms = (canEditPerms && selectedList.isNotEmpty)
+        ? selectedList
+        : null;
 
     try {
       if (isEdit) {
