@@ -48,6 +48,7 @@ services:
       AUTO_ENSURE_BARCODES: ${AUTO_ENSURE_BARCODES:-true}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-false}
+      RECEIPT_PRINTER_ENABLED: "false"
     ports:
       - "${PORT:-8080}:8080"
     depends_on:

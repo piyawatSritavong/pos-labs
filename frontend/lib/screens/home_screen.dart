@@ -158,11 +158,28 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _openSearchDialog() async {
+  Future<void> _openSearchDialog({String initialQuery = ''}) async {
     await showDialog<void>(
       context: context,
-      builder: (_) => const SearchPartsDialog(),
+      builder: (_) => SearchPartsDialog(initialQuery: initialQuery),
     );
+  }
+
+  Future<void> _handleQuickProductInput(String value) async {
+    final query = value.trim();
+    if (query.isEmpty) return;
+
+    // The quick field is normally fed by a scanner, but cashiers also type
+    // product names into it. Thai text and multi-word names must use /parts/search
+    // instead of the exact /parts/:code barcode lookup.
+    final isProductName = RegExp(r'[\u0E00-\u0E7F\s]').hasMatch(query);
+    if (isProductName) {
+      _barcodeController.clear();
+      await _openSearchDialog(initialQuery: query);
+      if (mounted) _barcodeFocusNode.requestFocus();
+      return;
+    }
+    await _handleBarcodeSearch(query, clearOnSuccess: true);
   }
 
   Future<void> _handlePendingBillOnLaunch() async {
@@ -318,8 +335,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _BarcodeQuickAction(
             controller: _barcodeController,
             focusNode: _barcodeFocusNode,
-            onSubmit: (value) =>
-                _handleBarcodeSearch(value, clearOnSuccess: true),
+            onSubmit: _handleQuickProductInput,
             useCameraScanner: true,
             onOpenCameraScanner: _openCameraScanner,
           ),
@@ -358,8 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _BarcodeQuickAction(
             controller: _barcodeController,
             focusNode: _barcodeFocusNode,
-            onSubmit: (value) =>
-                _handleBarcodeSearch(value, clearOnSuccess: true),
+            onSubmit: _handleQuickProductInput,
           ),
         ],
       ),
@@ -403,8 +418,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _BarcodeQuickAction(
             controller: _barcodeController,
             focusNode: _barcodeFocusNode,
-            onSubmit: (value) =>
-                _handleBarcodeSearch(value, clearOnSuccess: true),
+            onSubmit: _handleQuickProductInput,
           ),
         ],
       ),
@@ -1411,7 +1425,7 @@ class _BarcodeQuickAction extends StatelessWidget {
               controller: controller,
               focusNode: focusNode,
               decoration: InputDecoration(
-                hintText: 'สแกนบาร์โค้ดได้ที่นี่...',
+                hintText: 'สแกนบาร์โค้ด หรือพิมพ์ชื่อสินค้า...',
                 prefixIcon: Icon(
                   Icons.qr_code_scanner,
                   color: context.colorPrimary,

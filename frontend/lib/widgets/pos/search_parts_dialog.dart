@@ -8,7 +8,12 @@ import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
 class SearchPartsDialog extends StatefulWidget {
-  const SearchPartsDialog({super.key});
+  const SearchPartsDialog({super.key, this.initialQuery = ''});
+
+  /// Lets every POS search entry point use the same server-side search flow.
+  /// In particular, text typed in the quick input must not be treated as a
+  /// product code/barcode when it is actually a Thai product name.
+  final String initialQuery;
 
   @override
   State<SearchPartsDialog> createState() => _SearchPartsDialogState();
@@ -21,12 +26,18 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
   int _currentPage = 0;
   final PageController _pageController = PageController();
   Timer? _searchDebounce;
+  int _searchRequestId = 0;
 
   @override
   void initState() {
     super.initState();
+    _searchController.text = widget.initialQuery.trim();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadParts();
+      if (_searchController.text.isEmpty) {
+        _loadParts();
+      } else {
+        _performSearch();
+      }
     });
   }
 
@@ -50,6 +61,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       return;
     }
 
+    final requestId = ++_searchRequestId;
     setState(() => _isLoading = true);
     try {
       final raw = await ApiPartsService.searchParts(
@@ -58,7 +70,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         limit: 45,
         offset: 0,
       );
-      if (!mounted) return;
+      if (!mounted || requestId != _searchRequestId) return;
       setState(() {
         _products = raw.map(_mapProduct).toList();
         _currentPage = 0;
@@ -67,13 +79,13 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         _pageController.jumpToPage(0);
       }
     } catch (e) {
-      if (showError && mounted) {
+      if (showError && mounted && requestId == _searchRequestId) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('โหลดสินค้าไม่สำเร็จ: $e')));
       }
     } finally {
-      if (mounted) {
+      if (mounted && requestId == _searchRequestId) {
         setState(() => _isLoading = false);
       }
     }
@@ -95,6 +107,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       return;
     }
 
+    final requestId = ++_searchRequestId;
     setState(() {
       _isLoading = true;
     });
@@ -105,6 +118,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         limit: 20,
         offset: 0,
       );
+      if (!mounted || requestId != _searchRequestId) return;
       setState(() {
         _products = raw.map(_mapProduct).toList();
         _currentPage = 0;
@@ -113,11 +127,13 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         _pageController.jumpToPage(0);
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('ค้นหาไม่สำเร็จ: $e')));
+      if (mounted && requestId == _searchRequestId) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('ค้นหาไม่สำเร็จ: $e')));
+      }
     } finally {
-      if (mounted) {
+      if (mounted && requestId == _searchRequestId) {
         setState(() => _isLoading = false);
       }
     }
@@ -132,8 +148,28 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
   Product _mapProduct(Map<String, dynamic> json) {
     final rawAddresses = (json['addresses'] as List?) ?? [];
     Map<String, dynamic>? defaultAddress;
+
+    // Prefer stock on this POS vehicle. Selecting the first branch address can
+    // make a successfully searched product fail when it is added to the bill.
+    final posId = context.read<AuthProvider>().posId?.trim() ?? '';
+    final vehicleStoreId = posId.isEmpty ? null : 'vehicle_$posId';
+    if (vehicleStoreId != null) {
+      for (final addr in rawAddresses) {
+        if (addr is! Map<String, dynamic>) continue;
+        final store = addr['store'];
+        final storeId = store is Map
+            ? store['id']?.toString()
+            : addr['storeId']?.toString();
+        if (storeId == vehicleStoreId && _toDouble(addr['qty']) > 0) {
+          defaultAddress = addr;
+          break;
+        }
+      }
+    }
     for (final addr in rawAddresses) {
-      if (addr is Map<String, dynamic> && addr['is_default'] == true) {
+      if (defaultAddress == null &&
+          addr is Map<String, dynamic> &&
+          (addr['isDefault'] == true || addr['is_default'] == true)) {
         defaultAddress = addr;
         break;
       }

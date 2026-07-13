@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_bills.dart';
 import 'package:frontend/services/api_operations.dart';
+import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
@@ -17,6 +18,53 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
   bool _isLoading = false;
   String? _error;
   List<Map<String, dynamic>> _todayBills = [];
+  final Set<String> _printingBillIds = <String>{};
+
+  Future<void> _reprintBill(String billId) async {
+    if (billId.isEmpty || billId == '-' || _printingBillIds.contains(billId)) {
+      return;
+    }
+    final token = context.read<AuthProvider>().token;
+    if (token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      );
+      return;
+    }
+
+    setState(() => _printingBillIds.add(billId));
+    try {
+      final nonce = DateTime.now().microsecondsSinceEpoch;
+      final result = await ApiService.printReceipt(
+        token: token,
+        billId: billId,
+        idempotencyKey: 'reprint:$billId:$nonce',
+      );
+      if (!mounted) return;
+      final duplicate = result['duplicate'] == true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            duplicate
+                ? 'คำสั่งพิมพ์ซ้ำถูกประมวลผลไปแล้ว'
+                : 'ส่งบิล $billId ไปยังเครื่องพิมพ์แล้ว',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: Text('พิมพ์บิล $billId ไม่สำเร็จ: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _printingBillIds.remove(billId));
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -37,7 +85,11 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
         final details = _extractDetails(bill);
         return {
           'id': bill['id']?.toString() ?? '',
-          'total': _resolveAmount(bill, ['totalAmount', 'total_amount', 'total']),
+          'total': _resolveAmount(bill, [
+            'totalAmount',
+            'total_amount',
+            'total',
+          ]),
           'itemCount': (bill['itemCount'] as num?)?.toInt() ?? details.length,
           'totalQty': _resolveTotalQty(bill, details),
           'createdAt': bill['createdAt']?.toString() ?? '',
@@ -307,6 +359,29 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
                                         ),
                                       ),
                                     ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Tooltip(
+                                      message: 'พิมพ์ใบเสร็จซ้ำ',
+                                      child: OutlinedButton.icon(
+                                        onPressed: _printingBillIds.contains(id)
+                                            ? null
+                                            : () => _reprintBill(id),
+                                        icon: _printingBillIds.contains(id)
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Icon(Icons.print, size: 18),
+                                        label: const Text('พิมพ์ซ้ำ'),
+                                      ),
+                                    ),
                                   ),
                                   const SizedBox(height: 12),
                                   Row(
