@@ -794,12 +794,12 @@ func (h *BillsHandler) List(c *gin.Context) {
 				b.PurchaseAmount-b.TotalDiscount,
 				0,
 			),
-			"totalAmount": b.TotalAmount,
-			"vatAmount":   b.VATAmount,
-			"xvatAmount":  b.XVATAmount,
-			"dateTime":    b.CreatedAt.Format(time.RFC3339),
-			"createdAt":   b.CreatedAt.Format(time.RFC3339),
-			"updatedAt":   b.UpdatedAt.Format(time.RFC3339),
+			"totalAmount":   b.TotalAmount,
+			"vatAmount":     b.VATAmount,
+			"xvatAmount":    b.XVATAmount,
+			"dateTime":      b.CreatedAt.Format(time.RFC3339),
+			"createdAt":     b.CreatedAt.Format(time.RFC3339),
+			"updatedAt":     b.UpdatedAt.Format(time.RFC3339),
 			"createdBy":     b.CreatedBy,
 			"updatedBy":     b.UpdatedBy,
 			"createdByName": userDisplayName(userNames, b.CreatedBy),
@@ -895,12 +895,12 @@ func (h *BillsHandler) Get(c *gin.Context) {
 			b.PurchaseAmount-b.TotalDiscount,
 			0,
 		),
-		"totalAmount": b.TotalAmount,
-		"vatAmount":   b.VATAmount,
-		"xvatAmount":  b.XVATAmount,
-		"dateTime":    b.CreatedAt.Format(time.RFC3339),
-		"createdAt":   b.CreatedAt.Format(time.RFC3339),
-		"updatedAt":   b.UpdatedAt.Format(time.RFC3339),
+		"totalAmount":   b.TotalAmount,
+		"vatAmount":     b.VATAmount,
+		"xvatAmount":    b.XVATAmount,
+		"dateTime":      b.CreatedAt.Format(time.RFC3339),
+		"createdAt":     b.CreatedAt.Format(time.RFC3339),
+		"updatedAt":     b.UpdatedAt.Format(time.RFC3339),
 		"createdBy":     b.CreatedBy,
 		"updatedBy":     b.UpdatedBy,
 		"createdByName": userDisplayName(userNames, b.CreatedBy),
@@ -909,7 +909,7 @@ func (h *BillsHandler) Get(c *gin.Context) {
 		"totalQty":      totalQty,
 		"details":       detailOut,
 		"items":         detailOut,
-		"discounts":   discountOut,
+		"discounts":     discountOut,
 	}
 	attachPaymentOutput(response, b.PaymentMethod, b.PaymentRef)
 	c.JSON(http.StatusOK, response)
@@ -2721,13 +2721,10 @@ func (h *BillsHandler) PrintReceipt(c *gin.Context) {
 	drawerBinPath := ""
 	drawerOutput := ""
 
-	// In Windows POS production, the cash drawer must be opened explicitly by
-	// sending the ESC/POS drawer kick command after the receipt is printed.
-	// Some older builds populated DrawerKick from CASH_DRAWER_COMMAND but did not
-	// correctly map CASH_DRAWER_ENABLED into OpenCashDrawer, causing logs like:
-	// drawer=false drawerCommand=1B700019FA. Treat a configured DrawerKick command
-	// as an explicit request to open the drawer for the real receipt print flow.
-	drawerEnabled := h.OpenCashDrawer || len(h.DrawerKick) > 0
+	// DrawerKick always contains a safe default command, even when the drawer is
+	// disabled. Only CASH_DRAWER_ENABLED may opt the checkout flow into sending
+	// that command; otherwise printer-only installations report a false failure.
+	drawerEnabled := h.OpenCashDrawer
 	if drawerEnabled {
 		log.Printf("PrintReceipt: drawer enabled bill=%s openCashDrawer=%t drawerKickConfigured=%t target=%q command=%s",
 			bill.ID, h.OpenCashDrawer, len(h.DrawerKick) > 0, h.PrinterTarget, printer.HexCommand(h.DrawerKick))
@@ -2736,13 +2733,18 @@ func (h *BillsHandler) PrintReceipt(c *gin.Context) {
 		drawerBinPath = result.BinPath
 		drawerOutput = result.Output
 		if err != nil {
-			h.completePrint(req.IdempotencyKey, false)
+			// The receipt was already sent successfully. Mark this print key complete
+			// and return success-with-warning so a retry cannot print a duplicate.
+			h.completePrint(req.IdempotencyKey, true)
 			log.Printf("PrintReceipt: drawer kick target=%q command=%s method=%s binPath=%q failed after receipt print: %v",
 				h.PrinterTarget, printer.HexCommand(h.DrawerKick), result.Method, result.BinPath, err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":             "failed_to_open_drawer",
-				"message":           err.Error(),
+			c.JSON(http.StatusOK, gin.H{
+				"ok":                true,
+				"warning":           "failed_to_open_drawer",
+				"warningMessage":    err.Error(),
 				"printed":           true,
+				"duplicate":         false,
+				"billId":            bill.ID,
 				"drawerCommand":     printer.HexCommand(h.DrawerKick),
 				"drawerCommandSent": false,
 				"drawerMethod":      result.Method,
@@ -2750,7 +2752,7 @@ func (h *BillsHandler) PrintReceipt(c *gin.Context) {
 				"drawerOutput":      result.Output,
 				"target":            h.PrinterTarget,
 				"bytes":             len(data),
-				"retryWarning":      "Receipt was printed before the drawer error. Retrying may print another receipt.",
+				"retryWarning":      "Do not retry receipt printing; only the drawer command failed.",
 			})
 			return
 		}
