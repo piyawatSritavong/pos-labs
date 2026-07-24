@@ -569,6 +569,11 @@ def main() -> int:
         help="generated SQL seed path",
     )
     parser.add_argument(
+        "--embedded-sql",
+        default="backend/internal/db/seed_catalog_20260724.sql",
+        help="copy embedded into the backend for the guarded one-time deploy",
+    )
+    parser.add_argument(
         "--report",
         default="docs/catalog-import-20260724.md",
         help="generated analysis report path",
@@ -587,10 +592,14 @@ def main() -> int:
         return 1
 
     sql_path = Path(args.sql)
+    embedded_sql_path = Path(args.embedded_sql)
     report_path = Path(args.report)
     sql_path.parent.mkdir(parents=True, exist_ok=True)
+    embedded_sql_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    sql_path.write_text(build_seed(products, xlsx_path.name), encoding="utf-8")
+    seed = build_seed(products, xlsx_path.name)
+    sql_path.write_text(seed, encoding="utf-8")
+    embedded_sql_path.write_text(seed, encoding="utf-8")
     report_path.write_text(
         build_report(products, warnings, xlsx_path.name), encoding="utf-8"
     )
@@ -601,6 +610,10 @@ def main() -> int:
     for warning in warnings:
         print(f"WARNING: {warning}")
     print(f"Wrote {sql_path} ({sql_path.stat().st_size:,} bytes)")
+    print(
+        f"Wrote {embedded_sql_path} "
+        f"({embedded_sql_path.stat().st_size:,} bytes)"
+    )
     print(f"Wrote {report_path} ({report_path.stat().st_size:,} bytes)")
     return 0
 
