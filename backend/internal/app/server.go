@@ -60,19 +60,17 @@ func prepareDatabase(sqlDB *sql.DB, cfg config.Config) error {
 		log.Printf("Skipping core seed (AUTO_SEED_CORE=false)")
 	}
 
-	// One-time production data load requested for the PPSale deployment. It is
-	// separately guarded in data_seed_history because Render intentionally has
-	// AUTO_MIGRATE/AUTO_SEED_CORE disabled.
-	if cfg.IsProduction() {
-		applied, err := db.ApplyProductionCatalog20260724(sqlDB)
-		if err != nil {
-			return err
-		}
-		if applied {
-			log.Printf("Applied production catalog seed catalog-20260724-ppsale-v1")
-		} else {
-			log.Printf("Production catalog seed catalog-20260724-ppsale-v1 already applied")
-		}
+	// One-time data load requested for the PPSale deployment. It is guarded by
+	// data_seed_history instead of APP_ENV because the existing Render service
+	// currently runs with its legacy development environment settings.
+	applied, err := db.ApplyProductionCatalog20260724(sqlDB)
+	if err != nil {
+		return err
+	}
+	if applied {
+		log.Printf("Applied catalog seed catalog-20260724-ppsale-v1")
+	} else {
+		log.Printf("Catalog seed catalog-20260724-ppsale-v1 already applied")
 	}
 
 	if cfg.AutoSeedMock {
