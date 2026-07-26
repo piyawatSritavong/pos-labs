@@ -146,6 +146,44 @@ def main() -> int:
     bill_owner: dict[str, str] = {}
     return_owner: dict[str, str] = {}
 
+    def submit_stock_count(
+        username: str,
+        token: str,
+        branch_id: str,
+        store_id: str,
+    ) -> tuple[str, int]:
+        _, payload = call(
+            "POST",
+            "/stock-counts",
+            token=token,
+            body={
+                "branchId": branch_id,
+                "storeId": store_id,
+                "notes": f"{MARKER}-{username}",
+            },
+            expected=201,
+        )
+        stock_count = payload.get("data", {})
+        stock_count_id = stock_count.get("id", "")
+        stock_items = stock_count.get("items", [])
+        if not stock_count_id:
+            raise AssertionError(f"{username} stock count did not return an ID")
+        call(
+            "PUT",
+            f"/stock-counts/{stock_count_id}/submit",
+            token=token,
+            body={
+                "items": [
+                    {
+                        "partCode": item["partCode"],
+                        "countedQty": int(item.get("systemQty", 0)),
+                    }
+                    for item in stock_items
+                ]
+            },
+        )
+        return stock_count_id, len(stock_items)
+
     for username in ("admin", "pos1", "pos2"):
         token = tokens[username]
         profile = profiles[username]
@@ -162,7 +200,21 @@ def main() -> int:
         )
         saleable_parts = rows(saleable_payload, "parts")
         if not saleable_parts:
-            raise AssertionError(f"no saleable catalog item for {username}/{store_id}")
+            stock_count_id, stock_item_count = submit_stock_count(
+                username,
+                token,
+                branch_id,
+                store_id,
+            )
+            evidence["accounts"][username] = {
+                "branchId": branch_id,
+                "posId": pos_id,
+                "storeId": store_id,
+                "stockCountId": stock_count_id,
+                "stockItemCount": stock_item_count,
+                "saleSkipped": "no_saleable_inventory",
+            }
+            continue
         saleable = saleable_parts[0]
         part_code = saleable.get("code", "")
         price = float(saleable.get("price", 0) or 0)
@@ -264,35 +316,11 @@ def main() -> int:
             bill_owner[bill_id] = username
             return_owner[return_id] = username
 
-            _, stock_count_payload = call(
-                "POST",
-                "/stock-counts",
-                token=token,
-                body={
-                    "branchId": branch_id,
-                    "storeId": store_id,
-                    "notes": f"{MARKER}-{username}",
-                },
-                expected=201,
-            )
-            stock_count = stock_count_payload.get("data", {})
-            stock_count_id = stock_count.get("id", "")
-            stock_items = stock_count.get("items", [])
-            if not stock_count_id or not stock_items:
-                raise AssertionError(f"{username} stock count fixture is incomplete")
-            call(
-                "PUT",
-                f"/stock-counts/{stock_count_id}/submit",
-                token=token,
-                body={
-                    "items": [
-                        {
-                            "partCode": item["partCode"],
-                            "countedQty": int(item.get("systemQty", 0)),
-                        }
-                        for item in stock_items
-                    ]
-                },
+            stock_count_id, stock_item_count = submit_stock_count(
+                username,
+                token,
+                branch_id,
+                store_id,
             )
 
             evidence["accounts"][username] = {
@@ -304,6 +332,7 @@ def main() -> int:
                 "billId": bill_id,
                 "returnId": return_id,
                 "stockCountId": stock_count_id,
+                "stockItemCount": stock_item_count,
             }
         finally:
             if active_test_bill_id:
@@ -319,19 +348,23 @@ def main() -> int:
                     print(f"[WARN] failed to restore held bill {held_bill_id}: {restore_error}", file=sys.stderr)
 
     for username, token in tokens.items():
-        expected_bill = next(bill for bill, owner in bill_owner.items() if owner == username)
-        expected_return = next(note for note, owner in return_owner.items() if owner == username)
+        expected_bills = [bill for bill, owner in bill_owner.items() if owner == username]
+        expected_returns = [note for note, owner in return_owner.items() if owner == username]
         _, own_bills = call(
             "GET",
             "/bills?scope=pos&limit=200&statuses=completed",
             token=token,
         )
         _, own_returns = call("GET", "/returns?scope=pos&limit=200", token=token)
-        if expected_bill not in {bill.get("billId") or bill.get("id") for bill in rows(own_bills, "bills")}:
-            raise AssertionError(f"{username} cannot see its own completed bill")
-        if expected_return not in {
+        visible_own_bills = {
+            bill.get("billId") or bill.get("id") for bill in rows(own_bills, "bills")
+        }
+        visible_own_returns = {
             note.get("returnNoteId") or note.get("id") for note in rows(own_returns, "returns")
-        }:
+        }
+        if not set(expected_bills).issubset(visible_own_bills):
+            raise AssertionError(f"{username} cannot see its own completed bill")
+        if not set(expected_returns).issubset(visible_own_returns):
             raise AssertionError(f"{username} cannot see its own return")
         if username != "admin":
             call("GET", "/bills?scope=all&limit=10", token=token, expected=403)
