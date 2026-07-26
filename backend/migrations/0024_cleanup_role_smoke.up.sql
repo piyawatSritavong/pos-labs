@@ -59,6 +59,13 @@ WHERE "id" IN (SELECT "id" FROM "_cleanup_smoke_bills");
 DELETE FROM "stock_count"
 WHERE "id" IN (SELECT "id" FROM "_cleanup_smoke_counts");
 
+-- A user may have started a normal stock count while the temporary SMOKE
+-- products still existed. Keep that round and all real-product snapshots, but
+-- remove only the temporary product references so the guarded fixture cleanup
+-- can complete without deleting user activity.
+DELETE FROM "stock_count_item"
+WHERE "part_code" IN (SELECT "code" FROM "_cleanup_smoke_parts");
+
 DELETE FROM "address_master"
 WHERE "part_code" IN (SELECT "code" FROM "_cleanup_smoke_parts");
 
