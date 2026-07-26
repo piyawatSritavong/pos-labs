@@ -19,7 +19,7 @@ func normalizeBillPaymentMethod(raw string) string {
 	case "exchange":
 		return "exchange"
 	default:
-		return strings.ToLower(strings.TrimSpace(raw))
+		return ""
 	}
 }
 
@@ -30,6 +30,9 @@ func validateAndSerializePayment(
 	billTotal float64,
 ) (string, string, error) {
 	method := normalizeBillPaymentMethod(paymentMethod)
+	if method == "" {
+		return "", "", fmt.Errorf("unsupported_payment_method")
+	}
 	serializedRef := strings.TrimSpace(paymentRef)
 
 	var meta interface{}

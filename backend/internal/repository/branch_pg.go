@@ -151,4 +151,3 @@ func (r *branchRepositoryPG) GetStoresByBranchID(ctx context.Context, branchID s
 
 	return stores, nil
 }
-

@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"backend/internal/config"
 	"backend/internal/repository"
@@ -37,14 +38,24 @@ func (h *AddressHandler) List(c *gin.Context) {
 	// server instead of loading the whole catalog and filtering client-side.
 	q := c.Query("q")
 	storeID := c.Query("storeId")
+	var branchID *string
+	if !canReadAllOperationalData(c) {
+		value, _ := c.Get("branch_id")
+		sessionBranch, _ := value.(string)
+		if strings.TrimSpace(sessionBranch) == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "address_access_denied"})
+			return
+		}
+		branchID = &sessionBranch
+	}
 
-	addresses, err := h.addresses.Search(c.Request.Context(), q, storeID, limit, offset)
+	addresses, err := h.addresses.Search(c.Request.Context(), q, storeID, branchID, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_list_addresses"})
 		return
 	}
 
-	total, err := h.addresses.Count(c.Request.Context(), q, storeID)
+	total, err := h.addresses.Count(c.Request.Context(), q, storeID, branchID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_count_addresses"})
 		return
@@ -57,7 +68,11 @@ func (h *AddressHandler) List(c *gin.Context) {
 			"partCode":  a.PartCode,
 			"partName":  a.PartName, // joined from part_master.name_th / name
 			"storeId":   a.StoreID,
+			"branchId":  a.BranchID,
 			"storeName": a.StoreName, // joined from store_master.label_th / label
+			"cost":      a.Cost,
+			"price":     a.Price,
+			"minPrice":  a.MinPrice,
 			"shelf":     a.Shelf,
 			"qty":       a.Qty,
 			"min":       a.Min,
@@ -66,7 +81,6 @@ func (h *AddressHandler) List(c *gin.Context) {
 			"remarks":   a.Remarks,
 		})
 	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"addresses": out,
 		"total":     total,
@@ -89,17 +103,27 @@ func (h *AddressHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_address"})
 		return
 	}
+	if !canReadOperationalBranch(c, address.BranchID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "address_access_denied"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":     address.Code,
-		"partCode": address.PartCode,
-		"storeId":  address.StoreID,
-		"shelf":    address.Shelf,
-		"qty":      address.Qty,
-		"min":      address.Min,
-		"max":      address.Max,
-		"rop":      address.Rop,
-		"remarks":  address.Remarks,
+		"code":      address.Code,
+		"partCode":  address.PartCode,
+		"storeId":   address.StoreID,
+		"branchId":  address.BranchID,
+		"partName":  address.PartName,
+		"storeName": address.StoreName,
+		"cost":      address.Cost,
+		"price":     address.Price,
+		"minPrice":  address.MinPrice,
+		"shelf":     address.Shelf,
+		"qty":       address.Qty,
+		"min":       address.Min,
+		"max":       address.Max,
+		"rop":       address.Rop,
+		"remarks":   address.Remarks,
 	})
 }
 

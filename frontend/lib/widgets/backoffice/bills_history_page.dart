@@ -58,7 +58,7 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
       memberId: memberId.isEmpty ? null : memberId,
       statuses: const ['completed', 'cancelled'],
       includeDetails: true,
-      scope: 'branch',
+      scope: auth.isSuperAdmin ? 'all' : 'branch',
     );
   }
 
@@ -87,8 +87,10 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
     final method = _paymentLabel(bill['paymentMethod']?.toString() ?? '');
     final total = bill['totalAmount']?.toString() ?? '';
     // Operator: prefer the resolved display name (e.g. "Administrator").
-    final operator =
-        (bill['createdByName'] ?? bill['createdBy'] ?? '').toString();
+    final operator = (bill['createdByName'] ?? bill['createdBy'] ?? '')
+        .toString();
+    final branchId = bill['branchId']?.toString() ?? '';
+    final posId = bill['posId']?.toString() ?? '';
     String memberText = '';
     final member = bill['member'];
     if (member is Map<String, dynamic>) {
@@ -104,7 +106,9 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
         method.isEmpty &&
         total.isEmpty &&
         memberText.isEmpty &&
-        operator.isEmpty) {
+        operator.isEmpty &&
+        branchId.isEmpty &&
+        posId.isEmpty) {
       return '';
     }
     return [
@@ -112,6 +116,8 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
       if (method.isNotEmpty) method,
       if (memberText.isNotEmpty) memberText,
       if (operator.isNotEmpty) 'พนักงาน: $operator',
+      if (branchId.isNotEmpty) 'สาขา: $branchId',
+      if (posId.isNotEmpty) 'POS: $posId',
       if (total.isNotEmpty) '฿$total',
     ].join('  •  ');
   }

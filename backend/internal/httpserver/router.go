@@ -149,7 +149,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	billsHandler.PrinterEnabled = cfg.ReceiptPrinterEnabled
 	billsHandler.OpenCashDrawer = cfg.CashDrawerEnabled
 	billsHandler.DrawerKick = drawerKickCommand
-	returnNotesHandler := handlers.NewReturnNotesHandler(returnNoteRepo, billRepo, memberRepo, branchRepo, posRepo, companyRepo)
+	returnNotesHandler := handlers.NewReturnNotesHandler(returnNoteRepo, billRepo, memberRepo, branchRepo, posRepo, companyRepo, userRepo)
 	returnNotesHandler.PrinterTarget = cfg.ReceiptPrinter
 	if cfg.ReceiptCharset >= 0 && cfg.ReceiptCharset <= 255 {
 		returnNotesHandler.PrinterCharset = byte(cfg.ReceiptCharset)
@@ -216,6 +216,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		reports.GET("/bills", authMw.RequirePermission("reports_bill", "read"), reportsHandler.BillsReport)              // bills report with date filter
 		reports.GET("/parts", authMw.RequirePermission("reports_parts", "read"), reportsHandler.PartsReport)             // all parts report
 		reports.GET("/inventory", authMw.RequirePermission("reports_inventory", "read"), reportsHandler.InventoryReport) // all inventory report
+		reports.GET("/income", authMw.RequirePermission("reports_bill", "read"), reportsHandler.IncomeReport)
 	}
 
 	// Company (read and update only)

@@ -90,6 +90,7 @@ func (r *promotionRepositoryPG) Update(ctx context.Context, promotion *Promotion
 	return nil
 }
 
+
 func (r *promotionRepositoryPG) Delete(ctx context.Context, code string) error {
 	result, err := r.db.ExecContext(ctx, `
 		DELETE FROM "promotion_master"
@@ -109,4 +110,3 @@ func (r *promotionRepositoryPG) Delete(ctx context.Context, code string) error {
 
 	return nil
 }
-

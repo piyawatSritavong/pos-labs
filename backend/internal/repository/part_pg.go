@@ -47,7 +47,9 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 				p.name,
 				COALESCE(p.name_th, ''),
 				COALESCE(p.receipt_name, ''),
+				COALESCE(p.cost, 0),
 				p.price,
+				p.min_price,
 				COALESCE(p.is_active, false),
 				COALESCE((
 					SELECT SUM(a2.qty)
@@ -92,7 +94,9 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 				p.name,
 				COALESCE(p.name_th, ''),
 				COALESCE(p.receipt_name, ''),
+				COALESCE(p.cost, 0),
 				p.price,
+				p.min_price,
 				COALESCE(p.is_active, false),
 				COALESCE(SUM(a.qty), 0) AS total_stock,
 				COALESCE(SUM(a.rop), 0) AS total_rop,
@@ -104,7 +108,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
-				p.name, p.name_th, p.receipt_name, p.price, p.is_active
+				p.name, p.name_th, p.receipt_name, p.cost, p.price, p.min_price, p.is_active
 			ORDER BY p.code
 			LIMIT $1 OFFSET $2
 		`, limit, offset)
@@ -129,7 +133,9 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			&s.Name,
 			&s.NameTH,
 			&s.ReceiptName,
+			&s.Cost,
 			&s.Price,
+			&s.MinPrice,
 			&s.IsActive,
 			&s.TotalStock,
 			&s.ReorderPoint,
@@ -168,6 +174,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 				COALESCE(p.details, ''),
 				p.cost,
 				p.price,
+				p.min_price,
 				COALESCE(p.image, ''),
 				COALESCE(p.is_active, false),
 				COALESCE(SUM(CASE WHEN bs.branch_id = $2 THEN a.qty ELSE 0 END), 0) AS total_stock
@@ -181,7 +188,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
-				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.image, p.is_active
+				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.min_price, p.image, p.is_active
 		`
 		args = []interface{}{code, *branchID}
 	} else {
@@ -201,6 +208,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 				COALESCE(p.details, ''),
 				p.cost,
 				p.price,
+				p.min_price,
 				COALESCE(p.image, ''),
 				COALESCE(p.is_active, false),
 				COALESCE(SUM(a.qty), 0) AS total_stock
@@ -212,7 +220,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
-				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.image, p.is_active
+				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.min_price, p.image, p.is_active
 		`
 		args = []interface{}{code}
 	}
@@ -235,6 +243,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 		&d.Details,
 		&d.Cost,
 		&d.Price,
+		&d.MinPrice,
 		&d.Image,
 		&d.IsActive,
 		&d.TotalStock,
@@ -332,15 +341,15 @@ func (r *partRepositoryPG) CreatePart(ctx context.Context, p PartInput) error {
 	// valid master id, so free-text input never trips the foreign keys.
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO "part_master"
-			("code", "bar_code", "name", "name_th", "unit_id", "category_id", "price", "cost", "details", "is_active")
+			("code", "bar_code", "name", "name_th", "unit_id", "category_id", "price", "cost", "min_price", "details", "is_active")
 		VALUES (
 			$1, $2, $3, $4,
 			(SELECT "id" FROM "unit_master" WHERE "id" = $5),
 			(SELECT "id" FROM "category_master" WHERE "id" = $6),
-			$7, $8, $9, $10
+			$7, $8, $9, $10, $11
 		)
 	`, p.Code, p.BarCode, p.Name, p.NameTH, p.UnitID, p.CategoryID,
-		p.Price, p.Cost, p.Details, p.IsActive)
+		p.Price, p.Cost, p.MinPrice, p.Details, p.IsActive)
 	return err
 }
 
@@ -364,9 +373,11 @@ func (r *partRepositoryPG) UpdatePart(ctx context.Context, code string, p PartIn
 			"name" = $3,
 			"name_th" = $4,
 			"unit_id" = (SELECT "id" FROM "unit_master" WHERE "id" = $5),
-			"price" = $6
+			"price" = $6,
+			"cost" = $7,
+			"min_price" = $8
 		WHERE "code" = $1
-	`, code, p.BarCode, p.Name, p.NameTH, p.UnitID, p.Price)
+	`, code, p.BarCode, p.Name, p.NameTH, p.UnitID, p.Price, p.Cost, p.MinPrice)
 	if err != nil {
 		return err
 	}
@@ -502,6 +513,7 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 			COALESCE(p.details, ''),
 			p.cost,
 			p.price,
+			p.min_price,
 			COALESCE(p.image, ''),
 			COALESCE(p.is_active, false),
 			COALESCE(SUM(CASE WHEN bs.branch_id = $2 THEN a.qty ELSE 0 END), 0) AS total_stock
@@ -515,7 +527,7 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 		GROUP BY
 			p.code, p.bar_code, p.category_id, c.label, c.label_th,
 			p.unit_id, u.label, u.label_th,
-			p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.image, p.is_active
+			p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.min_price, p.image, p.is_active
 	`
 	row := r.db.QueryRowContext(ctx, query, barcode, branchID)
 
@@ -535,6 +547,7 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 		&d.Details,
 		&d.Cost,
 		&d.Price,
+		&d.MinPrice,
 		&d.Image,
 		&d.IsActive,
 		&d.TotalStock,
@@ -795,6 +808,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 				COALESCE(p.details, ''),
 				p.cost,
 				p.price,
+				p.min_price,
 				COALESCE(p.image, ''),
 				COALESCE(p.is_active, false),
 				COALESCE(SUM(CASE WHEN bs.branch_id = $%d THEN a.qty ELSE 0 END), 0) AS total_stock
@@ -808,7 +822,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
-				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.image, p.is_active
+				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.min_price, p.image, p.is_active
 			ORDER BY p.code
 			LIMIT $%d OFFSET $%d
 		`, branchArgIndex, branchArgIndex, whereSQL, limitArgIndex, offsetArgIndex)
@@ -834,6 +848,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 				COALESCE(p.details, ''),
 				p.cost,
 				p.price,
+				p.min_price,
 				COALESCE(p.image, ''),
 				COALESCE(p.is_active, false),
 				COALESCE(SUM(a.qty), 0) AS total_stock
@@ -845,7 +860,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
-				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.image, p.is_active
+				p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.min_price, p.image, p.is_active
 			ORDER BY p.code
 			LIMIT $%d OFFSET $%d
 		`, whereSQL, limitArgIndex, offsetArgIndex)
@@ -875,6 +890,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			&d.Details,
 			&d.Cost,
 			&d.Price,
+			&d.MinPrice,
 			&d.Image,
 			&d.IsActive,
 			&d.TotalStock,

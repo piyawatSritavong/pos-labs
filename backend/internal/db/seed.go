@@ -18,8 +18,7 @@ func SeedCoreData(db *sql.DB) error {
 	// Check if any core data already exists
 	var exists bool
 	err := db.QueryRow(`
-		SELECT EXISTS(SELECT 1 FROM "permission" LIMIT 1)
-			OR EXISTS(SELECT 1 FROM "role" LIMIT 1)
+		SELECT EXISTS(SELECT 1 FROM "role" LIMIT 1)
 			OR EXISTS(SELECT 1 FROM "user" LIMIT 1)
 			OR EXISTS(SELECT 1 FROM "store_master" LIMIT 1)
 			OR EXISTS(SELECT 1 FROM "unit_master" LIMIT 1)
@@ -108,6 +107,11 @@ func SeedCoreData(db *sql.DB) error {
 		if _, err := tx.Exec(`
 			INSERT INTO "permission"("id", "name", "action", "resource", "detail")
 			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT ("id") DO UPDATE SET
+				"name" = EXCLUDED."name",
+				"action" = EXCLUDED."action",
+				"resource" = EXCLUDED."resource",
+				"detail" = EXCLUDED."detail"
 		`, p.ID, p.Name, p.Action, p.Resource, p.Detail); err != nil {
 			return err
 		}
@@ -145,6 +149,8 @@ func SeedCoreData(db *sql.DB) error {
 		"perm.transfers.write",
 		"perm.daily_close.read",
 		"perm.daily_close.write",
+		"perm.stock_count.read",
+		"perm.stock_count.write",
 	}
 	for _, pid := range cashierPerms {
 		if _, err := tx.Exec(`

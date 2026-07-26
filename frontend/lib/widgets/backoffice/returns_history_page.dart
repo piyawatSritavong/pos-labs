@@ -30,7 +30,8 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
   }
 
   Future<void> _reload() async {
-    final token = context.read<AuthProvider>().token;
+    final auth = context.read<AuthProvider>();
+    final token = auth.token;
     if (token == null || token.isEmpty) {
       if (!mounted) return;
       setState(() {
@@ -50,7 +51,7 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
         token: token,
         limit: 200,
         offset: 0,
-        scope: 'branch',
+        scope: auth.isSuperAdmin ? 'all' : 'branch',
         includeDetails: true,
       );
       if (!mounted) return;
@@ -180,6 +181,13 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
                           final returnTotal = _toDouble(note['refundAmount']);
                           final netTotal = _toDouble(note['netAmount']);
                           final mode = note['settlementMode']?.toString() ?? '';
+                          final operator =
+                              (note['createdByName'] ??
+                                      note['createdBy'] ??
+                                      '-')
+                                  .toString();
+                          final branchId = note['branchId']?.toString() ?? '-';
+                          final posId = note['posId']?.toString() ?? '-';
                           final lines = (note['details'] is List)
                               ? (note['details'] as List)
                                     .whereType<Map<String, dynamic>>()
@@ -233,6 +241,14 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
                                       ),
                                     ),
                                   ],
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'พนักงาน: $operator • สาขา: $branchId • POS: $posId',
+                                  style: const TextStyle(
+                                    color: AppColors.muted,
+                                    fontSize: 12,
+                                  ),
                                 ),
                                 const SizedBox(height: 10),
                                 Wrap(

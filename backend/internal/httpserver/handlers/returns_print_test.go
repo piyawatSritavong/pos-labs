@@ -3,7 +3,7 @@ package handlers
 import "testing"
 
 func TestReturnNotesHandlerPrintIdempotency(t *testing.T) {
-	h := NewReturnNotesHandler(nil, nil, nil, nil, nil, nil)
+	h := NewReturnNotesHandler(nil, nil, nil, nil, nil, nil, nil)
 
 	if !h.beginPrint("return:CN-001") {
 		t.Fatal("first return receipt print should be allowed")

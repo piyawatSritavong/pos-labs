@@ -26,6 +26,7 @@ type ReturnNotesHandler struct {
 	branches repository.BranchRepository
 	pos      repository.POSRepository
 	company  repository.CompanyRepository
+	users    repository.UserRepository
 
 	PrinterTarget  string
 	PrinterEnabled bool
@@ -44,6 +45,7 @@ func NewReturnNotesHandler(
 	branches repository.BranchRepository,
 	pos repository.POSRepository,
 	company repository.CompanyRepository,
+	users repository.UserRepository,
 ) *ReturnNotesHandler {
 	return &ReturnNotesHandler{
 		returns:        returns,
@@ -52,6 +54,7 @@ func NewReturnNotesHandler(
 		branches:       branches,
 		pos:            pos,
 		company:        company,
+		users:          users,
 		PrinterEnabled: true,
 		PrinterMode:    printer.ModeASCII,
 		recentPrints:   make(map[string]time.Time),
@@ -299,7 +302,16 @@ func (h *ReturnNotesHandler) List(c *gin.Context) {
 	var branchFilter *string
 	var posFilter *string
 	switch scope {
+	case "all":
+		if !canReadAllOperationalData(c) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "scope_access_denied", "message": "scope=all is restricted to administrators"})
+			return
+		}
 	case "branch", "":
+		if isPOSRole(currentRequestUser(c)) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "scope_access_denied", "message": "POS operators are restricted to scope=pos"})
+			return
+		}
 		if strings.TrimSpace(branchID) != "" {
 			branchFilter = &branchID
 		}
@@ -311,7 +323,7 @@ func (h *ReturnNotesHandler) List(c *gin.Context) {
 			posFilter = &posID
 		}
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_scope", "message": "scope must be 'pos' or 'branch'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_scope", "message": "scope must be 'pos', 'branch', or 'all'"})
 		return
 	}
 
@@ -334,6 +346,23 @@ func (h *ReturnNotesHandler) List(c *gin.Context) {
 		memberIDs = append(memberIDs, note.MemberID)
 	}
 	memberByID := h.batchMemberOutputs(c.Request.Context(), memberIDs)
+	userIDs := make([]string, 0, len(notes)*2)
+	for _, note := range notes {
+		userIDs = append(userIDs, note.CreatedBy, note.UpdatedBy)
+	}
+	userNames := map[string]string{}
+	if h.users != nil {
+		if loaded, loadErr := h.users.GetByIDs(c.Request.Context(), userIDs); loadErr == nil {
+			for id, user := range loaded {
+				if user != nil {
+					userNames[id] = user.Name
+					if strings.TrimSpace(userNames[id]) == "" {
+						userNames[id] = user.Username
+					}
+				}
+			}
+		}
+	}
 
 	out := make([]gin.H, 0, len(notes))
 	for _, note := range notes {
@@ -363,6 +392,8 @@ func (h *ReturnNotesHandler) List(c *gin.Context) {
 			"updatedAt":       note.UpdatedAt.Format(time.RFC3339),
 			"createdBy":       note.CreatedBy,
 			"updatedBy":       note.UpdatedBy,
+			"createdByName":   userDisplayName(userNames, note.CreatedBy),
+			"updatedByName":   userDisplayName(userNames, note.UpdatedBy),
 			"itemCount":       len(items),
 		}
 		totalQty := 0
@@ -399,12 +430,9 @@ func (h *ReturnNotesHandler) Get(c *gin.Context) {
 		return
 	}
 
-	branchIDVal, branchExists := c.Get("branch_id")
-	if branchExists && branchIDVal != nil {
-		if branchID, ok := branchIDVal.(string); ok && strings.TrimSpace(branchID) != "" && note.BranchID != branchID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "return_note_access_denied"})
-			return
-		}
+	if !canReadOperationalRecord(c, note.BranchID, note.POSID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "return_note_access_denied"})
+		return
 	}
 
 	c.JSON(http.StatusOK, buildReturnNoteOutput(c, h, note, items))
@@ -417,12 +445,11 @@ func (h *ReturnNotesHandler) GetReferenceBill(c *gin.Context) {
 		return
 	}
 
-	branchIDVal, branchExists := c.Get("branch_id")
+	_, branchExists := c.Get("branch_id")
 	if !branchExists {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_branch_id"})
 		return
 	}
-	branchID, _ := branchIDVal.(string)
 
 	bill, details, discounts, err := h.bills.GetFullByID(c.Request.Context(), referenceBillID)
 	if err != nil {
@@ -434,7 +461,7 @@ func (h *ReturnNotesHandler) GetReferenceBill(c *gin.Context) {
 		return
 	}
 
-	if strings.TrimSpace(branchID) != "" && bill.BranchID != branchID {
+	if !canReadOperationalRecord(c, bill.BranchID, bill.POSID) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":   "bill_access_denied",
 			"message": "Bill does not belong to your current branch",

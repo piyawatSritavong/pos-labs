@@ -69,6 +69,15 @@ func (h *DailyCloseHandler) List(c *gin.Context) {
 	if raw := strings.TrimSpace(c.Query("branchId")); raw != "" {
 		branchID = &raw
 	}
+	if !canReadAllOperationalData(c) {
+		sessionBranch, _ := c.Get("branch_id")
+		value, _ := sessionBranch.(string)
+		if strings.TrimSpace(value) == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "daily_close_access_denied"})
+			return
+		}
+		branchID = &value
+	}
 
 	var dateFrom, dateTo *time.Time
 	if raw := strings.TrimSpace(c.Query("dateFrom")); raw != "" {
@@ -97,6 +106,9 @@ func (h *DailyCloseHandler) List(c *gin.Context) {
 
 	out := make([]gin.H, 0, len(closes))
 	for _, dc := range closes {
+		if !canReadOperationalRecord(c, dc.BranchID, dc.PosID) {
+			continue
+		}
 		dcc := dc
 		out = append(out, buildDailyCloseOutput(&dcc))
 	}
@@ -110,6 +122,10 @@ func (h *DailyCloseHandler) GetSummary(c *gin.Context) {
 
 	if branchID == "" || posID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_params", "message": "branchId and posId are required"})
+		return
+	}
+	if !canReadOperationalRecord(c, branchID, posID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "daily_close_access_denied"})
 		return
 	}
 
@@ -194,6 +210,10 @@ func (h *DailyCloseHandler) Create(c *gin.Context) {
 
 	branchID := strings.TrimSpace(req.BranchID)
 	posID := strings.TrimSpace(req.PosID)
+	if !canWriteOperationalRecord(c, branchID, posID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "daily_close_access_denied"})
+		return
+	}
 
 	// Get today (calendar date) in UTC+7.
 	utc7 := time.Now().UTC().Add(7 * time.Hour)
@@ -278,6 +298,10 @@ func (h *DailyCloseHandler) GetByID(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_daily_close"})
+		return
+	}
+	if !canReadOperationalRecord(c, dc.BranchID, dc.PosID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "daily_close_access_denied"})
 		return
 	}
 

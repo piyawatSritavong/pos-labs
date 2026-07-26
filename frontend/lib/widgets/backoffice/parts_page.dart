@@ -13,14 +13,23 @@ class PartsManagementSection extends StatefulWidget {
   const PartsManagementSection({super.key});
 
   @override
-  State<PartsManagementSection> createState() =>
-      _PartsManagementSectionState();
+  State<PartsManagementSection> createState() => _PartsManagementSectionState();
 }
 
 class _PartsManagementSectionState extends State<PartsManagementSection> {
   // คลังสินค้าทั้งหมด (ทุกสาขา) สำหรับ dropdown กรอง/เลือกที่อยู่คลัง
   // แต่ละรายการ: {id, label, branchName}
   List<Map<String, String>> _stores = [];
+
+  String? _validateNonNegativePrice(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'กรุณากรอกราคา';
+    }
+    final parsed = double.tryParse(value.replaceAll(',', ''));
+    if (parsed == null) return 'กรุณากรอกเป็นตัวเลข';
+    if (parsed < 0) return 'ราคาต้องมากกว่าหรือเท่ากับ 0';
+    return null;
+  }
 
   @override
   void initState() {
@@ -46,8 +55,8 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
             (s) => {
               'id': (s['id'] ?? '').toString(),
               'label': (s['labelTh'] ?? s['label'] ?? s['id'] ?? '').toString(),
-              'branchName':
-                  (s['branchNameTh'] ?? s['branchName'] ?? '').toString(),
+              'branchName': (s['branchNameTh'] ?? s['branchName'] ?? '')
+                  .toString(),
             },
           )
           .where((s) => (s['id'] ?? '').isNotEmpty)
@@ -68,6 +77,8 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
     final barcodeController = TextEditingController();
     final unitController = TextEditingController();
     final priceController = TextEditingController();
+    final costController = TextEditingController(text: '0.00');
+    final minPriceController = TextEditingController();
     final shelfController = TextEditingController();
     final qtyController = TextEditingController();
     // ค่าเริ่มต้น = คลังหลัก (main). ถ้าโหลดคลังไม่ได้ ปล่อย null แล้ว backend
@@ -176,6 +187,18 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
+                        controller: costController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'ต้นทุน',
+                          isDense: true,
+                        ),
+                        validator: _validateNonNegativePrice,
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
                         controller: priceController,
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
@@ -198,6 +221,23 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                             return 'ราคาขายต้องมากกว่าหรือเท่ากับ 0';
                           }
                           return null;
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: minPriceController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'ราคาลดได้ (ราคาขายขั้นต่ำ)',
+                          hintText: 'ไม่กรอก = 90% ของราคาขายจริง',
+                          isDense: true,
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty)
+                            return null;
+                          return _validateNonNegativePrice(value);
                         },
                       ),
                     ],
@@ -228,6 +268,20 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                             final price = double.parse(
                               priceController.text.replaceAll(',', ''),
                             );
+                            final cost = double.parse(
+                              costController.text.replaceAll(',', ''),
+                            );
+                            final minPriceText = minPriceController.text
+                                .replaceAll(',', '')
+                                .trim();
+                            final minPrice = minPriceText.isEmpty
+                                ? price * 0.90
+                                : double.parse(minPriceText);
+                            if (minPrice > price) {
+                              throw Exception(
+                                'ราคาลดได้ต้องไม่สูงกว่าราคาขายจริง',
+                              );
+                            }
 
                             final uri = Uri.parse(
                               '${ApiService.baseUrl}/parts',
@@ -244,13 +298,13 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                 'barcode': barcodeController.text.trim(),
                                 'unit': unitController.text.trim(),
                                 'price': price,
+                                'cost': cost,
+                                'minPrice': minPrice,
                                 if (selectedStoreId != null) ...{
                                   'storeId': selectedStoreId,
                                   'shelf': shelfController.text.trim(),
                                   'qty':
-                                      int.tryParse(
-                                        qtyController.text.trim(),
-                                      ) ??
+                                      int.tryParse(qtyController.text.trim()) ??
                                       0,
                                 },
                               }),
@@ -329,6 +383,18 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
           ? priceValue.toStringAsFixed(2)
           : (priceValue?.toString() ?? ''),
     );
+    final costValue = part['cost'];
+    final costController = TextEditingController(
+      text: costValue is num
+          ? costValue.toStringAsFixed(2)
+          : (costValue?.toString() ?? '0.00'),
+    );
+    final minPriceValue = part['minPrice'] ?? part['min_price'];
+    final minPriceController = TextEditingController(
+      text: minPriceValue is num
+          ? minPriceValue.toStringAsFixed(2)
+          : (minPriceValue?.toString() ?? ''),
+    );
     final formKey = GlobalKey<FormState>();
 
     await showDialog(
@@ -386,6 +452,18 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
+                        controller: costController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'ต้นทุน',
+                          isDense: true,
+                        ),
+                        validator: _validateNonNegativePrice,
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
                         controller: priceController,
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
@@ -409,6 +487,18 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                           }
                           return null;
                         },
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: minPriceController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'ราคาลดได้ (ราคาขายขั้นต่ำ)',
+                          isDense: true,
+                        ),
+                        validator: _validateNonNegativePrice,
                       ),
                     ],
                   ),
@@ -438,6 +528,17 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                             final price = double.parse(
                               priceController.text.replaceAll(',', ''),
                             );
+                            final cost = double.parse(
+                              costController.text.replaceAll(',', ''),
+                            );
+                            final minPrice = double.parse(
+                              minPriceController.text.replaceAll(',', ''),
+                            );
+                            if (minPrice > price) {
+                              throw Exception(
+                                'ราคาลดได้ต้องไม่สูงกว่าราคาขายจริง',
+                              );
+                            }
 
                             final uri = Uri.parse(
                               '${ApiService.baseUrl}/parts/$code',
@@ -453,6 +554,8 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                 'barcode': barcodeController.text.trim(),
                                 'unit': unitController.text.trim(),
                                 'price': price,
+                                'cost': cost,
+                                'minPrice': minPrice,
                               }),
                             );
 
@@ -708,7 +811,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                     DataColumn(label: Text('Barcode')),
                                     DataColumn(label: Text('หน่วย')),
                                     DataColumn(label: Text('คลัง')),
-                                    DataColumn(label: Text('ราคาขาย')),
+                                    DataColumn(label: Text('ต้นทุน')),
+                                    DataColumn(label: Text('ราคาขายจริง')),
+                                    DataColumn(label: Text('ราคาลดได้')),
                                     DataColumn(label: Text('Actions')),
                                   ],
                                   rows: partsProvider.parts.map((p) {
@@ -745,12 +850,14 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                               '')
                                         : (unitMap?.toString() ?? '');
                                     final priceValue = p['price'];
-                                    String priceText;
-                                    if (priceValue is num) {
-                                      priceText = priceValue.toStringAsFixed(2);
-                                    } else {
-                                      priceText = priceValue?.toString() ?? '';
-                                    }
+                                    String money(dynamic value) => value is num
+                                        ? value.toStringAsFixed(2)
+                                        : (value?.toString() ?? '');
+                                    final priceText = money(priceValue);
+                                    final costText = money(p['cost']);
+                                    final minPriceText = money(
+                                      p['minPrice'] ?? p['min_price'],
+                                    );
                                     // คลังที่สินค้านี้อยู่ (จาก addresses ที่
                                     // backend แนบมา) เช่น "คลังหลัก: A-01 (100)"
                                     final addresses =
@@ -800,7 +907,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                             ),
                                           ),
                                         ),
+                                        DataCell(Text('฿$costText')),
                                         DataCell(Text('฿$priceText')),
+                                        DataCell(Text('฿$minPriceText')),
                                         DataCell(
                                           Row(
                                             mainAxisAlignment:
@@ -855,13 +964,18 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                   DropdownButton<int>(
                     value: partsProvider.pageSize,
                     items: const [20, 50, 100]
-                        .map((s) => DropdownMenuItem(value: s, child: Text('$s')))
+                        .map(
+                          (s) => DropdownMenuItem(value: s, child: Text('$s')),
+                        )
                         .toList(),
                     onChanged: partsProvider.isLoading
                         ? null
                         : (v) {
                             if (v != null) {
-                              context.read<PartsProvider>().setPageSize(token, v);
+                              context.read<PartsProvider>().setPageSize(
+                                token,
+                                v,
+                              );
                             }
                           },
                   ),
@@ -882,11 +996,14 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                       partsProvider.pageCount < 1 ? 1 : partsProvider.pageCount,
                     ),
                     items: [
-                      for (var p = 1;
-                          p <= (partsProvider.pageCount < 1
-                              ? 1
-                              : partsProvider.pageCount);
-                          p++)
+                      for (
+                        var p = 1;
+                        p <=
+                            (partsProvider.pageCount < 1
+                                ? 1
+                                : partsProvider.pageCount);
+                        p++
+                      )
                         DropdownMenuItem(value: p, child: Text('$p')),
                     ],
                     onChanged: partsProvider.isLoading
@@ -898,7 +1015,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                           },
                   ),
                   const SizedBox(width: 6),
-                  Text('/ ${partsProvider.pageCount}  (${partsProvider.total} รายการ)'),
+                  Text(
+                    '/ ${partsProvider.pageCount}  (${partsProvider.total} รายการ)',
+                  ),
                   IconButton(
                     icon: const Icon(Icons.chevron_right),
                     tooltip: 'ถัดไป',

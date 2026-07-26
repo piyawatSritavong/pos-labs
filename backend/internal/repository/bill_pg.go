@@ -936,7 +936,19 @@ func (r *billRepositoryPG) UpdatePayment(ctx context.Context, billID, paymentMet
 }
 
 func (r *billRepositoryPG) Delete(ctx context.Context, billID string) error {
-	result, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM "bill_discount_detail" WHERE "bill_id" = $1`, billID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM "bill_item_detail" WHERE "bill_id" = $1`, billID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `
 		DELETE FROM "bill_master"
 		WHERE "id" = $1
 	`, billID)
@@ -952,5 +964,5 @@ func (r *billRepositoryPG) Delete(ctx context.Context, billID string) error {
 		return ErrNotFound
 	}
 
-	return nil
+	return tx.Commit()
 }

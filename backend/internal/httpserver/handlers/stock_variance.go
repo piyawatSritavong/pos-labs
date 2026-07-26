@@ -34,6 +34,10 @@ func (h *StockVarianceHandler) GetVariance(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_stock_count"})
 		return
 	}
+	if !canReadOperationalBranch(c, count.BranchID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "stock_variance_access_denied"})
+		return
+	}
 
 	itemOut := make([]gin.H, 0, len(items))
 	for _, item := range items {

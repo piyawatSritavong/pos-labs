@@ -40,6 +40,15 @@ func (h *PartsHandler) List(c *gin.Context) {
 	if b := strings.TrimSpace(c.Query("branchId")); b != "" {
 		branchIDPtr = &b
 	}
+	if !canReadAllOperationalData(c) {
+		value, _ := c.Get("branch_id")
+		branchID, _ := value.(string)
+		if strings.TrimSpace(branchID) == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "part_access_denied"})
+			return
+		}
+		branchIDPtr = &branchID
+	}
 
 	items, err := h.parts.ListParts(c.Request.Context(), limit, offset, branchIDPtr)
 	if err != nil {
@@ -69,7 +78,9 @@ func (h *PartsHandler) List(c *gin.Context) {
 			"name":        p.Name,
 			"nameTh":      p.NameTH,
 			"receiptName": p.ReceiptName,
+			"cost":        p.Cost,
 			"price":       p.Price,
+			"minPrice":    p.MinPrice,
 			"isActive":    p.IsActive,
 			"category": gin.H{
 				"id":      p.CategoryID,
@@ -118,11 +129,22 @@ func (h *PartsHandler) Get(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	// Get part detail without branch filtering (general endpoint).
+	var branchID *string
+	if !canReadAllOperationalData(c) {
+		value, _ := c.Get("branch_id")
+		sessionBranch, _ := value.(string)
+		if strings.TrimSpace(sessionBranch) == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "part_access_denied"})
+			return
+		}
+		branchID = &sessionBranch
+	}
+	// Admin gets the global catalog; other roles get only addresses/stock in
+	// their current branch.
 	// If lookup by code misses, fall back to bar_code so a scan of either
 	// the part code or the printed barcode resolves to the same part.
 	start := time.Now()
-	part, addresses, err := h.parts.GetPartDetail(ctx, code, nil)
+	part, addresses, err := h.parts.GetPartDetail(ctx, code, branchID)
 	logSlowTiming("parts.get.detail_by_code", start, "code", code, "found", err == nil)
 	if err != nil {
 		if !repository.IsNotFoundError(err) {
@@ -130,7 +152,11 @@ func (h *PartsHandler) Get(c *gin.Context) {
 			return
 		}
 		start = time.Now()
-		part, addresses, err = h.parts.GetPartByBarcode(ctx, code, "")
+		barcodeBranch := ""
+		if branchID != nil {
+			barcodeBranch = *branchID
+		}
+		part, addresses, err = h.parts.GetPartByBarcode(ctx, code, barcodeBranch)
 		logSlowTiming("parts.get.detail_by_barcode", start, "barcode", code, "found", err == nil)
 		if err != nil {
 			if repository.IsNotFoundError(err) {
@@ -152,6 +178,7 @@ func (h *PartsHandler) Get(c *gin.Context) {
 		"details":     part.Details,
 		"cost":        part.Cost,
 		"price":       part.Price,
+		"minPrice":    part.MinPrice,
 		"image":       part.Image,
 		"isActive":    part.IsActive,
 		"category": gin.H{
@@ -244,6 +271,10 @@ func (h *PartsHandler) Search(c *gin.Context) {
 			crossBranch = val
 		}
 	}
+	if crossBranch && !canReadAllOperationalData(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cross_branch_access_denied"})
+		return
+	}
 
 	// If not cross-branch, get branchId from session
 	if !crossBranch {
@@ -321,6 +352,7 @@ func (h *PartsHandler) Search(c *gin.Context) {
 			"details":     part.Details,
 			"cost":        part.Cost,
 			"price":       part.Price,
+			"minPrice":    part.MinPrice,
 			"image":       part.Image,
 			"isActive":    part.IsActive,
 			"category": gin.H{
@@ -354,16 +386,17 @@ func (h *PartsHandler) Search(c *gin.Context) {
 // a unit_master id (stored NULL when it doesn't match).
 func (h *PartsHandler) Create(c *gin.Context) {
 	var req struct {
-		Code       string  `json:"code"`
-		Name       string  `json:"name"`
-		NameTh     string  `json:"nameTh"`
-		Barcode    string  `json:"barcode"`
-		Unit       string  `json:"unit"`
-		UnitId     string  `json:"unitId"`
-		CategoryId string  `json:"categoryId"`
-		Price      float64 `json:"price"`
-		Cost       float64 `json:"cost"`
-		Details    string  `json:"details"`
+		Code       string   `json:"code"`
+		Name       string   `json:"name"`
+		NameTh     string   `json:"nameTh"`
+		Barcode    string   `json:"barcode"`
+		Unit       string   `json:"unit"`
+		UnitId     string   `json:"unitId"`
+		CategoryId string   `json:"categoryId"`
+		Price      float64  `json:"price"`
+		Cost       float64  `json:"cost"`
+		MinPrice   *float64 `json:"minPrice"`
+		Details    string   `json:"details"`
 		// Optional initial warehouse placement: when storeId is given an
 		// address_master row is created so the part immediately lives in a store.
 		StoreID string `json:"storeId"`
@@ -372,6 +405,17 @@ func (h *PartsHandler) Create(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+	minPrice := req.Price * 0.90
+	if req.MinPrice != nil {
+		minPrice = *req.MinPrice
+	}
+	if req.Cost < 0 || req.Price < 0 || minPrice < 0 || minPrice > req.Price {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_prices",
+			"message": "cost and prices must be non-negative, and minPrice must not exceed price",
+		})
 		return
 	}
 	code := strings.TrimSpace(req.Code)
@@ -410,7 +454,7 @@ func (h *PartsHandler) Create(c *gin.Context) {
 	err := h.parts.CreatePart(c.Request.Context(), repository.PartInput{
 		Code: code, Name: name, NameTH: nameTh, BarCode: barcode,
 		UnitID: unitID, CategoryID: strings.TrimSpace(req.CategoryId),
-		Price: req.Price, Cost: req.Cost, Details: strings.TrimSpace(req.Details),
+		Price: req.Price, Cost: req.Cost, MinPrice: minPrice, Details: strings.TrimSpace(req.Details),
 		IsActive: true,
 	})
 	if err != nil {
@@ -464,15 +508,41 @@ func (h *PartsHandler) Update(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name    string  `json:"name"`
-		NameTh  string  `json:"nameTh"`
-		Barcode string  `json:"barcode"`
-		Unit    string  `json:"unit"`
-		UnitId  string  `json:"unitId"`
-		Price   float64 `json:"price"`
+		Name     string   `json:"name"`
+		NameTh   string   `json:"nameTh"`
+		Barcode  string   `json:"barcode"`
+		Unit     string   `json:"unit"`
+		UnitId   string   `json:"unitId"`
+		Price    float64  `json:"price"`
+		Cost     *float64 `json:"cost"`
+		MinPrice *float64 `json:"minPrice"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+	existing, _, err := h.parts.GetPartDetail(c.Request.Context(), code, nil)
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_part"})
+		return
+	}
+	cost := existing.Cost
+	if req.Cost != nil {
+		cost = *req.Cost
+	}
+	minPrice := existing.MinPrice
+	if req.MinPrice != nil {
+		minPrice = *req.MinPrice
+	}
+	if cost < 0 || req.Price < 0 || minPrice < 0 || minPrice > req.Price {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_prices",
+			"message": "cost and prices must be non-negative, and minPrice must not exceed price",
+		})
 		return
 	}
 	name := strings.TrimSpace(req.Name)
@@ -495,8 +565,9 @@ func (h *PartsHandler) Update(c *gin.Context) {
 	if unitID == "" {
 		unitID = "pcs" // หน่วยไม่บังคับ — ค่าเริ่มต้น "ชิ้น"
 	}
-	err := h.parts.UpdatePart(c.Request.Context(), code, repository.PartInput{
-		Name: name, NameTH: nameTh, BarCode: barcode, UnitID: unitID, Price: req.Price,
+	err = h.parts.UpdatePart(c.Request.Context(), code, repository.PartInput{
+		Name: name, NameTH: nameTh, BarCode: barcode, UnitID: unitID,
+		Price: req.Price, Cost: cost, MinPrice: minPrice,
 	})
 	if err != nil {
 		if repository.IsNotFoundError(err) {

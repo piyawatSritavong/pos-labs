@@ -151,6 +151,8 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       id: json['id']?.toString() ?? json['code']?.toString() ?? '',
       name: json['nameTh'] ?? json['name_th'] ?? json['name'] ?? '',
       price: _toDouble(json['price'] ?? json['unitPrice']),
+      cost: _toDouble(json['cost']),
+      minPrice: _toDouble(json['minPrice'] ?? json['min_price']),
       code: json['code']?.toString() ?? '',
       receiptName: json['receiptName']?.toString(),
       defaultAddressCode: defaultAddressCode,

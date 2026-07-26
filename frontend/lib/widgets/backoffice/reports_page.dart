@@ -17,6 +17,7 @@ class ReportsExportSection extends StatefulWidget {
 class _ReportsExportSectionState extends State<ReportsExportSection>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  late final bool _canViewIncome;
 
   DateTime _startDate = DateTime.now();
   DateTime _endDate = DateTime.now();
@@ -24,11 +25,15 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
   bool _isExportingBills = false;
   bool _isExportingParts = false;
   bool _isExportingInventory = false;
+  bool _isLoadingIncome = false;
+  Map<String, dynamic>? _incomeReport;
+  String? _incomeError;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _canViewIncome = context.read<AuthProvider>().isSuperAdmin;
+    _tabController = TabController(length: _canViewIncome ? 4 : 3, vsync: this);
   }
 
   @override
@@ -100,16 +105,19 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
         includeItems: _includeBillItems,
       );
       final label = from == to ? from : '${from}_to_$to';
-      final filename =
-          _includeBillItems ? 'bills_${label}_items.csv' : 'bills_$label.csv';
+      final filename = _includeBillItems
+          ? 'bills_${label}_items.csv'
+          : 'bills_$label.csv';
       _downloadCsv(bytes, filename);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('ดาวน์โหลด $filename แล้ว')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ดาวน์โหลด $filename แล้ว')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Export bills ไม่สำเร็จ: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Export bills ไม่สำเร็จ: $e')));
     } finally {
       if (mounted) setState(() => _isExportingBills = false);
     }
@@ -122,15 +130,16 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
     setState(() => _isExportingParts = true);
     try {
       final bytes = await ApiService.exportPartsReportCsv(token: token);
-      _downloadCsv(
-          bytes, 'parts_${DateTime.now().millisecondsSinceEpoch}.csv');
+      _downloadCsv(bytes, 'parts_${DateTime.now().millisecondsSinceEpoch}.csv');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ดาวน์โหลด parts report แล้ว')));
+        const SnackBar(content: Text('ดาวน์โหลด parts report แล้ว')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Export parts ไม่สำเร็จ: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Export parts ไม่สำเร็จ: $e')));
     } finally {
       if (mounted) setState(() => _isExportingParts = false);
     }
@@ -144,16 +153,41 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
     try {
       final bytes = await ApiService.exportInventoryReportCsv(token: token);
       _downloadCsv(
-          bytes, 'inventory_${DateTime.now().millisecondsSinceEpoch}.csv');
+        bytes,
+        'inventory_${DateTime.now().millisecondsSinceEpoch}.csv',
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ดาวน์โหลด inventory report แล้ว')));
+        const SnackBar(content: Text('ดาวน์โหลด inventory report แล้ว')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export inventory ไม่สำเร็จ: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Export inventory ไม่สำเร็จ: $e')));
     } finally {
       if (mounted) setState(() => _isExportingInventory = false);
+    }
+  }
+
+  Future<void> _loadIncome() async {
+    final token = context.read<AuthProvider>().token;
+    if (token == null || token.isEmpty) return;
+    setState(() {
+      _isLoadingIncome = true;
+      _incomeError = null;
+    });
+    try {
+      final report = await ApiService.getIncomeReport(
+        token: token,
+        dateFrom: _formatDate(_startDate),
+        dateTo: _formatDate(_endDate),
+      );
+      if (mounted) setState(() => _incomeReport = report);
+    } catch (e) {
+      if (mounted) setState(() => _incomeError = e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoadingIncome = false);
     }
   }
 
@@ -161,7 +195,7 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
   Widget build(BuildContext context) {
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760),
+        constraints: const BoxConstraints(maxWidth: 1200),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -179,12 +213,24 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
               const SizedBox(height: 20),
               TabBar(
                 controller: _tabController,
-                tabs: const [
-                  Tab(icon: Icon(Icons.receipt_long_outlined), text: 'Bills'),
-                  Tab(icon: Icon(Icons.inventory_2_outlined), text: 'Parts'),
-                  Tab(
-                      icon: Icon(Icons.warehouse_outlined),
-                      text: 'Inventory'),
+                tabs: [
+                  const Tab(
+                    icon: Icon(Icons.receipt_long_outlined),
+                    text: 'Bills',
+                  ),
+                  const Tab(
+                    icon: Icon(Icons.inventory_2_outlined),
+                    text: 'Parts',
+                  ),
+                  const Tab(
+                    icon: Icon(Icons.warehouse_outlined),
+                    text: 'Inventory',
+                  ),
+                  if (_canViewIncome)
+                    const Tab(
+                      icon: Icon(Icons.insights_outlined),
+                      text: 'รายได้',
+                    ),
                 ],
                 labelColor: AppColors.primary,
                 unselectedLabelColor: AppColors.muted,
@@ -198,6 +244,7 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
                     _buildBillsTab(),
                     _buildPartsTab(),
                     _buildInventoryTab(),
+                    if (_canViewIncome) _buildIncomeTab(),
                   ],
                 ),
               ),
@@ -249,10 +296,15 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
       child: _TabCard(
         icon: Icons.receipt_long_outlined,
         title: 'Bills Report',
-        description: 'รายงานบิลขาย / ใบเสร็จรับเงิน ตามช่วงวันที่ (หลายวัน/หลายเดือน)',
+        description:
+            'รายงานบิลขาย / ใบเสร็จรับเงิน ตามช่วงวันที่ (หลายวัน/หลายเดือน)',
         fields: const [
-          'billId', 'branchId', 'status', 'totalAmount',
-          'paymentMethod', 'createdAt',
+          'billId',
+          'branchId',
+          'status',
+          'totalAmount',
+          'paymentMethod',
+          'createdAt',
           '(+ รายการสินค้าในบิล ถ้าเปิดตัวเลือก)',
         ],
         actions: Column(
@@ -277,8 +329,11 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2,
-                            color: Colors.white))
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
                     : const Icon(Icons.download),
                 label: const Text('ดาวน์โหลด Bills CSV'),
               ),
@@ -294,10 +349,15 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
       child: _TabCard(
         icon: Icons.inventory_2_outlined,
         title: 'Parts / Products Report',
-        description: 'รายการสินค้าทั้งหมดในระบบ (master data) พร้อมราคาและหมวดหมู่',
+        description:
+            'รายการสินค้าทั้งหมดในระบบ (master data) พร้อมราคาและหมวดหมู่',
         fields: const [
-          'partCode', 'nameTh', 'nameEn', 'category',
-          'unitPrice', 'isActive',
+          'partCode',
+          'nameTh',
+          'nameEn',
+          'category',
+          'unitPrice',
+          'isActive',
         ],
         actions: SizedBox(
           width: double.infinity,
@@ -308,7 +368,10 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(Icons.download),
             label: const Text('ดาวน์โหลด Parts CSV'),
           ),
@@ -324,7 +387,10 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
         title: 'Inventory Report',
         description: 'ยอดสินค้าคงคลังแยกตามสาขาและที่เก็บ ณ ปัจจุบัน',
         fields: const [
-          'partCode', 'partName', 'branchId', 'addressCode',
+          'partCode',
+          'partName',
+          'branchId',
+          'addressCode',
           'quantity',
         ],
         actions: SizedBox(
@@ -336,11 +402,223 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(Icons.download),
             label: const Text('ดาวน์โหลด Inventory CSV'),
           ),
         ),
+      ),
+    );
+  }
+
+  double _amount(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _money(dynamic value) => '฿${_amount(value).toStringAsFixed(2)}';
+
+  Widget _buildIncomeTab() {
+    final report = _incomeReport;
+    final summary = report?['summary'] is Map
+        ? Map<String, dynamic>.from(report!['summary'] as Map)
+        : <String, dynamic>{};
+    final accounts = report?['accounts'] is List
+        ? (report!['accounts'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+        : <Map<String, dynamic>>[];
+    final expenses = report?['expenseDetails'] is List
+        ? (report!['expenseDetails'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+        : <Map<String, dynamic>>[];
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildDateRangeBox(),
+          const SizedBox(height: 10),
+          ElevatedButton.icon(
+            onPressed: _isLoadingIncome ? null : _loadIncome,
+            icon: _isLoadingIncome
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.refresh),
+            label: const Text('โหลดรายงานรายได้'),
+          ),
+          if (_incomeError != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _incomeError!,
+              style: const TextStyle(color: AppColors.danger),
+            ),
+          ],
+          if (report != null) ...[
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _IncomeMetric('รายได้', _money(summary['revenue'])),
+                _IncomeMetric('ยอดคืน', _money(summary['returns'])),
+                _IncomeMetric('รายได้สุทธิ', _money(summary['netRevenue'])),
+                _IncomeMetric('ต้นทุนสุทธิ', _money(summary['netCost'])),
+                _IncomeMetric('กำไรขั้นต้น', _money(summary['grossProfit'])),
+                _IncomeMetric('ค่าใช้จ่าย', _money(summary['expenses'])),
+                _IncomeMetric(
+                  _amount(summary['netProfit']) < 0
+                      ? 'ขาดทุนสุทธิ'
+                      : 'กำไรสุทธิ',
+                  _money(summary['netProfit']),
+                  danger: _amount(summary['netProfit']) < 0,
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'แยกตามบัญชีผู้ใช้',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text('บัญชี')),
+                  DataColumn(label: Text('รายได้')),
+                  DataColumn(label: Text('คืน')),
+                  DataColumn(label: Text('รายได้สุทธิ')),
+                  DataColumn(label: Text('ต้นทุนสุทธิ')),
+                  DataColumn(label: Text('กำไรขั้นต้น')),
+                  DataColumn(label: Text('ค่าใช้จ่าย')),
+                  DataColumn(label: Text('กำไร/ขาดทุน')),
+                ],
+                rows: accounts
+                    .map(
+                      (a) => DataRow(
+                        cells: [
+                          DataCell(
+                            Text('${a['username'] ?? '-'}\n${a['name'] ?? ''}'),
+                          ),
+                          DataCell(Text(_money(a['revenue']))),
+                          DataCell(Text(_money(a['returns']))),
+                          DataCell(Text(_money(a['netRevenue']))),
+                          DataCell(Text(_money(a['netCost']))),
+                          DataCell(Text(_money(a['grossProfit']))),
+                          DataCell(Text(_money(a['expenses']))),
+                          DataCell(Text(_money(a['netProfit']))),
+                        ],
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'ข้อมูลเพิ่มเติม / ค่าใช้จ่ายจากการปิดยอด',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            if (expenses.isEmpty)
+              const Text('ไม่มีข้อมูลในช่วงวันที่เลือก')
+            else
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: const [
+                    DataColumn(label: Text('วันที่')),
+                    DataColumn(label: Text('บัญชี')),
+                    DataColumn(label: Text('สาขา/POS')),
+                    DataColumn(label: Text('น้ำมัน')),
+                    DataColumn(label: Text('อาหาร')),
+                    DataColumn(label: Text('รายการพิเศษ')),
+                    DataColumn(label: Text('ลดปลาย')),
+                    DataColumn(label: Text('รวมค่าใช้จ่าย')),
+                    DataColumn(label: Text('ยอดโอน')),
+                    DataColumn(label: Text('ยอดสรุป')),
+                    DataColumn(label: Text('หมายเหตุ')),
+                  ],
+                  rows: expenses
+                      .map(
+                        (e) => DataRow(
+                          cells: [
+                            DataCell(Text(e['closeDate']?.toString() ?? '-')),
+                            DataCell(Text(e['username']?.toString() ?? '-')),
+                            DataCell(Text('${e['branchId']}/${e['posId']}')),
+                            DataCell(Text(_money(e['fuelAmount']))),
+                            DataCell(Text(_money(e['foodAmount']))),
+                            DataCell(Text(_money(e['specialAmount']))),
+                            DataCell(Text(_money(e['tailDiscountAmount']))),
+                            DataCell(Text(_money(e['totalExpense']))),
+                            DataCell(Text(_money(e['transferAmount']))),
+                            DataCell(Text(_money(e['finalSummaryAmount']))),
+                            DataCell(
+                              Text(
+                                [e['notes'], e['specialNote']]
+                                    .where(
+                                      (v) =>
+                                          v != null &&
+                                          v.toString().trim().isNotEmpty,
+                                    )
+                                    .join(' • '),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _IncomeMetric extends StatelessWidget {
+  const _IncomeMetric(this.label, this.value, {this.danger = false});
+
+  final String label;
+  final String value;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 150,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: danger ? AppColors.danger : AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: AppColors.muted)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: danger ? AppColors.danger : null,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -365,8 +643,7 @@ class _TabCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 1,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -376,37 +653,47 @@ class _TabCard extends StatelessWidget {
               children: [
                 Icon(icon, color: AppColors.primary, size: 28),
                 const SizedBox(width: 10),
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(description,
-                style: const TextStyle(color: AppColors.muted)),
+            Text(description, style: const TextStyle(color: AppColors.muted)),
             const SizedBox(height: 16),
-            const Text('ข้อมูลที่ export:',
-                style: TextStyle(
-                    fontWeight: FontWeight.w600, fontSize: 13)),
+            const Text(
+              'ข้อมูลที่ export:',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
               runSpacing: 6,
               children: fields
-                  .map((f) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color:
-                              AppColors.primary.withValues(alpha: 0.07),
-                          borderRadius: BorderRadius.circular(6),
+                  .map(
+                    (f) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        f,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.primary,
+                          fontFamily: 'monospace',
                         ),
-                        child: Text(f,
-                            style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.primary,
-                                fontFamily: 'monospace')),
-                      ))
+                      ),
+                    ),
+                  )
                   .toList(),
             ),
             const SizedBox(height: 24),

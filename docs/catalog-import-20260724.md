@@ -18,6 +18,7 @@ Source: `สินค้าและคลังสินค้า.xlsx`
 | ชื่อแสดงในใบเสร็จ | `part_master.receipt_name` | blank input gets a short ASCII name or `ITEM Pxxxx` |
 | ต้นทุน | `part_master.cost` | copied exactly to 2 decimals |
 | ราคาขาย | `part_master.price` | copied exactly to 2 decimals |
+| ราคาลดได้ | `part_master.min_price` | defaults to 90% of selling price |
 | ที่อยู่สต๊อก | `address_master.store_id` | ร้าน→`main`, รถ1→`vehicle_POS001`, รถ2→`store_00001` |
 | จำนวนที่มี | `address_master.qty` | rounded half-up to the integer schema |
 

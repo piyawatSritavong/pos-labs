@@ -494,10 +494,23 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
           const SizedBox(height: 10),
           TextField(
             controller: _specialNoteController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'หมายเหตุรายการพิเศษ (ไม่บังคับ)',
               hintText: 'เช่น บูท 1x20 = 20\nรวม 180',
-              border: OutlineInputBorder(),
+              filled: true,
+              fillColor: AppColors.bg,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.primary),
+              ),
               isDense: true,
             ),
             maxLines: 4,
@@ -519,7 +532,20 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
         decoration: InputDecoration(
           labelText: '$label (ไม่บังคับ)',
           hintText: hint,
-          border: const OutlineInputBorder(),
+          filled: true,
+          fillColor: AppColors.bg,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.primary),
+          ),
           isDense: true,
           prefixText: '฿ ',
         ),

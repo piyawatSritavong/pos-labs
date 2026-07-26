@@ -18,13 +18,24 @@ func NewAddressRepository(db *sql.DB) AddressRepository {
 
 func (r *addressRepositoryPG) GetByCode(ctx context.Context, code string) (*Address, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT "code", "part_code", "store_id", "shelf", "qty", "min", "max", "rop", "remarks"
-		FROM "address_master"
-		WHERE "code" = $1
+		SELECT a."code", a."part_code", a."store_id", a."shelf", a."qty",
+		       a."min", a."max", a."rop", a."remarks",
+		       COALESCE(NULLIF(p."name_th", ''), p."name", ''),
+		       COALESCE(NULLIF(s."label_th", ''), s."label", a."store_id"),
+		       COALESCE(s."branch_id", ''),
+		       COALESCE(p."cost", 0), COALESCE(p."price", 0), COALESCE(p."min_price", 0)
+		FROM "address_master" a
+		LEFT JOIN "part_master" p ON p."code" = a."part_code"
+		LEFT JOIN "store_master" s ON s."id" = a."store_id"
+		WHERE a."code" = $1
 	`, code)
 
 	var a Address
-	err := row.Scan(&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty, &a.Min, &a.Max, &a.Rop, &a.Remarks)
+	err := row.Scan(
+		&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty,
+		&a.Min, &a.Max, &a.Rop, &a.Remarks, &a.PartName, &a.StoreName, &a.BranchID,
+		&a.Cost, &a.Price, &a.MinPrice,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -39,7 +50,7 @@ func (r *addressRepositoryPG) GetByCode(ctx context.Context, code string) (*Addr
 // (part code / part name / store name) and/or storeID, plus LIMIT/OFFSET paging.
 // This lets the Addresses page filter+page on the server instead of loading the
 // whole catalog and filtering in Dart. Empty q/storeID behaves like List.
-func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, limit, offset int) ([]Address, error) {
+func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, branchID *string, limit, offset int) ([]Address, error) {
 	var conds []string
 	var args []interface{}
 	argn := 1
@@ -58,6 +69,11 @@ func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, lim
 		args = append(args, sid)
 		argn++
 	}
+	if branchID != nil && strings.TrimSpace(*branchID) != "" {
+		conds = append(conds, fmt.Sprintf(`s."branch_id" = $%d`, argn))
+		args = append(args, strings.TrimSpace(*branchID))
+		argn++
+	}
 
 	where := ""
 	if len(conds) > 0 {
@@ -69,7 +85,9 @@ func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, lim
 			a."code", a."part_code", a."store_id", a."shelf", a."qty",
 			a."min", a."max", a."rop", a."remarks",
 			COALESCE(NULLIF(p."name_th", ''), p."name", '') AS part_name,
-			COALESCE(NULLIF(s."label_th", ''), s."label", a."store_id") AS store_name
+			COALESCE(NULLIF(s."label_th", ''), s."label", a."store_id") AS store_name,
+			COALESCE(s."branch_id", '') AS branch_id,
+			COALESCE(p."cost", 0), COALESCE(p."price", 0), COALESCE(p."min_price", 0)
 		FROM "address_master" a
 		LEFT JOIN "part_master"  p ON p."code" = a."part_code"
 		LEFT JOIN "store_master" s ON s."id"   = a."store_id"` +
@@ -89,7 +107,7 @@ func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, lim
 		if err := rows.Scan(
 			&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty,
 			&a.Min, &a.Max, &a.Rop, &a.Remarks,
-			&a.PartName, &a.StoreName,
+			&a.PartName, &a.StoreName, &a.BranchID, &a.Cost, &a.Price, &a.MinPrice,
 		); err != nil {
 			return nil, err
 		}
@@ -104,7 +122,7 @@ func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, lim
 
 // Count mirrors the Search WHERE clause (q + storeID) but returns COUNT(*) so
 // the Addresses page can render a page-jump dropdown.
-func (r *addressRepositoryPG) Count(ctx context.Context, q, storeID string) (int, error) {
+func (r *addressRepositoryPG) Count(ctx context.Context, q, storeID string, branchID *string) (int, error) {
 	var conds []string
 	var args []interface{}
 	argn := 1
@@ -121,6 +139,11 @@ func (r *addressRepositoryPG) Count(ctx context.Context, q, storeID string) (int
 	if sid := strings.TrimSpace(storeID); sid != "" {
 		conds = append(conds, fmt.Sprintf(`a."store_id" = $%d`, argn))
 		args = append(args, sid)
+		argn++
+	}
+	if branchID != nil && strings.TrimSpace(*branchID) != "" {
+		conds = append(conds, fmt.Sprintf(`s."branch_id" = $%d`, argn))
+		args = append(args, strings.TrimSpace(*branchID))
 		argn++
 	}
 
@@ -151,7 +174,9 @@ func (r *addressRepositoryPG) List(ctx context.Context, limit, offset int) ([]Ad
 			a."code", a."part_code", a."store_id", a."shelf", a."qty",
 			a."min", a."max", a."rop", a."remarks",
 			COALESCE(NULLIF(p."name_th", ''), p."name", '') AS part_name,
-			COALESCE(NULLIF(s."label_th", ''), s."label", a."store_id") AS store_name
+			COALESCE(NULLIF(s."label_th", ''), s."label", a."store_id") AS store_name,
+			COALESCE(s."branch_id", '') AS branch_id,
+			COALESCE(p."cost", 0), COALESCE(p."price", 0), COALESCE(p."min_price", 0)
 		FROM "address_master" a
 		LEFT JOIN "part_master"  p ON p."code" = a."part_code"
 		LEFT JOIN "store_master" s ON s."id"   = a."store_id"
@@ -169,7 +194,7 @@ func (r *addressRepositoryPG) List(ctx context.Context, limit, offset int) ([]Ad
 		if err := rows.Scan(
 			&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty,
 			&a.Min, &a.Max, &a.Rop, &a.Remarks,
-			&a.PartName, &a.StoreName,
+			&a.PartName, &a.StoreName, &a.BranchID, &a.Cost, &a.Price, &a.MinPrice,
 		); err != nil {
 			return nil, err
 		}

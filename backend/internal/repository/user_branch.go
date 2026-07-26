@@ -16,4 +16,3 @@ type UserBranchRepository interface {
 	Create(ctx context.Context, userBranch *UserBranch) error
 	Delete(ctx context.Context, userID, branchID string) error
 }
-

@@ -18,4 +18,3 @@ type PromotionRepository interface {
 	Update(ctx context.Context, promotion *Promotion) error
 	Delete(ctx context.Context, code string) error
 }
-

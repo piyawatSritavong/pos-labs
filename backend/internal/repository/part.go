@@ -20,6 +20,7 @@ type PartDetail struct {
 	Details         string
 	Cost            float64
 	Price           float64
+	MinPrice        float64
 	Image           string
 	IsActive        bool
 	TotalStock      int
@@ -37,7 +38,9 @@ type PartSummary struct {
 	Name            string
 	NameTH          string
 	ReceiptName     string
+	Cost            float64
 	Price           float64
+	MinPrice        float64
 	IsActive        bool
 	TotalStock      int
 	// ReorderPoint / MinStock are summed across the part's addresses. Used for
@@ -93,6 +96,7 @@ type PartInput struct {
 	CategoryID string
 	Price      float64
 	Cost       float64
+	MinPrice   float64
 	Details    string
 	IsActive   bool
 }

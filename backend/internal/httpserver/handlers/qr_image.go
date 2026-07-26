@@ -68,7 +68,7 @@ func (h *QRImageHandler) Put(c *gin.Context) {
 	var ext string
 	var validType bool
 	contentTypeLower := strings.ToLower(contentType)
-	
+
 	if strings.Contains(contentTypeLower, "image/png") {
 		ext = ".png"
 		validType = true
@@ -162,4 +162,3 @@ func (h *QRImageHandler) Put(c *gin.Context) {
 		"path":    newImagePath,
 	})
 }
-

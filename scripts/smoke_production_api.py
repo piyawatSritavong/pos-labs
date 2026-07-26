@@ -34,6 +34,7 @@ BASE_URL = os.getenv("POS_API_BASE_URL", "https://pos-labs.onrender.com").rstrip
 ADMIN_USERNAME = os.getenv("POS_API_ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("POS_API_ADMIN_PASSWORD", "")
 REPORT_DIR = Path(os.getenv("POS_API_REPORT_DIR", "reports"))
+ROUTE_MANIFEST = Path(__file__).with_name("api_routes.txt")
 RUN_ID = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S")
 FAKE_ID = f"SMOKE-NOT-FOUND-{RUN_ID}"
 
@@ -220,7 +221,10 @@ def ws_open(path: str) -> tuple[socket.socket, int, str]:
 
 
 def ws_read_frame(sock: socket.socket) -> bytes:
-    header = sock.recv(2)
+    try:
+        header = sock.recv(2)
+    except (TimeoutError, socket.timeout):
+        return b""
     if len(header) < 2:
         return b""
     length = header[1] & 0x7F
@@ -349,6 +353,13 @@ def main() -> int:
             200,
             token=admin_token,
             require_content_type="text/csv",
+        )
+        check(
+            "GET /reports/income",
+            "GET",
+            f"/reports/income?dateFrom={today}&dateTo={today}",
+            200,
+            token=admin_token,
         )
         check(
             "GET /reports/stock-variance",
@@ -498,7 +509,7 @@ def main() -> int:
             token=admin_token,
             json_body={
                 "code": temp_part, "name": "API Smoke Product", "nameTh": "สินค้าทดสอบ API",
-                "barcode": temp_barcode, "unitId": "pcs", "price": 10, "cost": 5,
+                "barcode": temp_barcode, "unitId": "pcs", "price": 10, "cost": 5, "minPrice": 9,
                 "details": "temporary fixture", "storeId": "main", "shelf": "SMOKE", "qty": 5,
             },
         )
@@ -514,7 +525,7 @@ def main() -> int:
             token=admin_token,
             json_body={
                 "name": "API Smoke Product Updated", "nameTh": "สินค้าทดสอบ API แก้ไข",
-                "barcode": temp_barcode, "unitId": "pcs", "price": 10,
+                "barcode": temp_barcode, "unitId": "pcs", "price": 10, "cost": 5, "minPrice": 9,
             },
         )
         status, _, _ = check(
@@ -980,7 +991,14 @@ def main() -> int:
             except Exception:
                 pass
 
-        unique_routes = {(row["method"], row["route"]) for row in results}
+        expected_routes = {
+            line.strip()
+            for line in ROUTE_MANIFEST.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        observed_routes = {row["route"] for row in results}
+        missing_routes = sorted(expected_routes - observed_routes)
+        unexpected_routes = sorted(observed_routes - expected_routes)
         passed = sum(1 for row in results if row["passed"])
         failed = len(results) - passed
         report = {
@@ -989,11 +1007,13 @@ def main() -> int:
             "startedForDate": dt.datetime.now(dt.timezone.utc).isoformat(),
             "summary": {
                 "calls": len(results),
-                "uniqueRoutes": len(unique_routes),
+                "uniqueRoutes": len(observed_routes),
                 "passedCalls": passed,
                 "failedCalls": failed,
-                "expectedRouterRoutes": 121,
-                "coverageComplete": len(unique_routes) == 121,
+                "expectedRouterRoutes": len(expected_routes),
+                "coverageComplete": not missing_routes and not unexpected_routes,
+                "missingRoutes": missing_routes,
+                "unexpectedRoutes": unexpected_routes,
                 "cleanupOk": all(row["ok"] for row in cleanup_report),
             },
             "cleanup": cleanup_report,
@@ -1005,7 +1025,7 @@ def main() -> int:
         print(f"\nReport: {report_path}", flush=True)
         print(json.dumps(report["summary"], ensure_ascii=False, indent=2), flush=True)
 
-    return 0 if results and all(row["passed"] for row in results) and len({(r["method"], r["route"]) for r in results}) == 121 and all(row["ok"] for row in cleanup_report) else 1
+    return 0 if results and all(row["passed"] for row in results) and not missing_routes and not unexpected_routes and all(row["ok"] for row in cleanup_report) else 1
 
 
 if __name__ == "__main__":

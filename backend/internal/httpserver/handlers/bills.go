@@ -696,7 +696,19 @@ func (h *BillsHandler) List(c *gin.Context) {
 	var branchFilter *string
 	var posFilter *string
 	switch scope {
+	case "all":
+		if !canReadAllOperationalData(c) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "scope_access_denied",
+				"message": "scope=all is restricted to administrators",
+			})
+			return
+		}
 	case "branch":
+		if isPOSRole(currentRequestUser(c)) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "scope_access_denied", "message": "POS operators are restricted to scope=pos"})
+			return
+		}
 		branchFilter = &branchID
 	case "pos", "":
 		branchFilter = &branchID
@@ -704,7 +716,7 @@ func (h *BillsHandler) List(c *gin.Context) {
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "invalid_scope",
-			"message": "scope must be 'pos' or 'branch'",
+			"message": "scope must be 'pos', 'branch', or 'all'",
 		})
 		return
 	}
@@ -794,12 +806,12 @@ func (h *BillsHandler) List(c *gin.Context) {
 				b.PurchaseAmount-b.TotalDiscount,
 				0,
 			),
-			"totalAmount": b.TotalAmount,
-			"vatAmount":   b.VATAmount,
-			"xvatAmount":  b.XVATAmount,
-			"dateTime":    b.CreatedAt.Format(time.RFC3339),
-			"createdAt":   b.CreatedAt.Format(time.RFC3339),
-			"updatedAt":   b.UpdatedAt.Format(time.RFC3339),
+			"totalAmount":   b.TotalAmount,
+			"vatAmount":     b.VATAmount,
+			"xvatAmount":    b.XVATAmount,
+			"dateTime":      b.CreatedAt.Format(time.RFC3339),
+			"createdAt":     b.CreatedAt.Format(time.RFC3339),
+			"updatedAt":     b.UpdatedAt.Format(time.RFC3339),
 			"createdBy":     b.CreatedBy,
 			"updatedBy":     b.UpdatedBy,
 			"createdByName": userDisplayName(userNames, b.CreatedBy),
@@ -838,22 +850,6 @@ func (h *BillsHandler) Get(c *gin.Context) {
 		return
 	}
 
-	// Get branchId and posId from session (optional for admin users)
-	branchIDVal, branchExists := c.Get("branch_id")
-	posIDVal, posExists := c.Get("pos_id")
-
-	var branchID, posID string
-	if branchExists && branchIDVal != nil {
-		if b, ok := branchIDVal.(string); ok && b != "" {
-			branchID = b
-		}
-	}
-	if posExists && posIDVal != nil {
-		if p, ok := posIDVal.(string); ok && p != "" {
-			posID = p
-		}
-	}
-
 	b, details, discounts, err := h.bills.GetFullByID(c.Request.Context(), id)
 	if err != nil {
 		if repository.IsNotFoundError(err) {
@@ -866,14 +862,12 @@ func (h *BillsHandler) Get(c *gin.Context) {
 
 	// Only validate branch/POS access if user has branchId/posId in session
 	// Admin users without POS session can view any bill
-	if branchID != "" && posID != "" {
-		if b.BranchID != branchID || b.POSID != posID {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error":   "bill_access_denied",
-				"message": "Bill does not belong to your current branch and POS",
-			})
-			return
-		}
+	if !canReadOperationalRecord(c, b.BranchID, b.POSID) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "bill_access_denied",
+			"message": "Bill does not belong to your permitted scope",
+		})
+		return
 	}
 
 	detailOut := buildBillDetailOutput(details)
@@ -895,12 +889,12 @@ func (h *BillsHandler) Get(c *gin.Context) {
 			b.PurchaseAmount-b.TotalDiscount,
 			0,
 		),
-		"totalAmount": b.TotalAmount,
-		"vatAmount":   b.VATAmount,
-		"xvatAmount":  b.XVATAmount,
-		"dateTime":    b.CreatedAt.Format(time.RFC3339),
-		"createdAt":   b.CreatedAt.Format(time.RFC3339),
-		"updatedAt":   b.UpdatedAt.Format(time.RFC3339),
+		"totalAmount":   b.TotalAmount,
+		"vatAmount":     b.VATAmount,
+		"xvatAmount":    b.XVATAmount,
+		"dateTime":      b.CreatedAt.Format(time.RFC3339),
+		"createdAt":     b.CreatedAt.Format(time.RFC3339),
+		"updatedAt":     b.UpdatedAt.Format(time.RFC3339),
 		"createdBy":     b.CreatedBy,
 		"updatedBy":     b.UpdatedBy,
 		"createdByName": userDisplayName(userNames, b.CreatedBy),
@@ -909,7 +903,7 @@ func (h *BillsHandler) Get(c *gin.Context) {
 		"totalQty":      totalQty,
 		"details":       detailOut,
 		"items":         detailOut,
-		"discounts":   discountOut,
+		"discounts":     discountOut,
 	}
 	attachPaymentOutput(response, b.PaymentMethod, b.PaymentRef)
 	c.JSON(http.StatusOK, response)
@@ -1434,13 +1428,28 @@ func (h *BillsHandler) UpdateItemPrice(c *gin.Context) {
 		return
 	}
 
-	baseLineTotal := partDetail.Price * float64(existingItem.Qty)
-	minAllowedLineTotal := baseLineTotal * 0.9
-	if req.LineTotal+0.0001 < minAllowedLineTotal {
+	minAllowedLineTotal, maxAllowedLineTotal, priceError := validateLinePrice(
+		req.LineTotal,
+		existingItem.Qty,
+		partDetail.MinPrice,
+		partDetail.Price,
+	)
+	if priceError == "price_below_minimum" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":                   "price_below_minimum",
-			"message":                 fmt.Sprintf("Line total cannot be lower than 90%% of catalog price (minimum %.2f)", minAllowedLineTotal),
+			"message":                 fmt.Sprintf("Line total cannot be lower than the configured minimum price (minimum %.2f)", minAllowedLineTotal),
 			"minimumAllowedLineTotal": minAllowedLineTotal,
+			"minimumUnitPrice":        partDetail.MinPrice,
+			"requestedLineTotal":      req.LineTotal,
+		})
+		return
+	}
+	if priceError == "price_above_catalog" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":                   "price_above_catalog",
+			"message":                 fmt.Sprintf("Line total cannot exceed the catalog price (maximum %.2f)", maxAllowedLineTotal),
+			"maximumAllowedLineTotal": maxAllowedLineTotal,
+			"maximumUnitPrice":        partDetail.Price,
 			"requestedLineTotal":      req.LineTotal,
 		})
 		return
@@ -1530,6 +1539,65 @@ func (h *BillsHandler) recalculateBillAmounts(ctx context.Context, billID string
 
 	// Update bill amounts
 	return h.bills.UpdateAmounts(ctx, billID, purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount)
+}
+
+func (h *BillsHandler) minimumAllowedBillTotal(ctx context.Context, items []repository.BillDetail, branchID string) (float64, error) {
+	minimum := 0.0
+	for _, item := range items {
+		part, _, err := h.parts.GetPartDetail(ctx, item.PartCode, &branchID)
+		if err != nil {
+			return 0, err
+		}
+		minimum += part.MinPrice * float64(item.Qty)
+	}
+	return minimum, nil
+}
+
+func discountValue(purchaseAmount float64, discount repository.BillDiscountDetail) float64 {
+	if discount.Unit == "THB" {
+		return discount.Amount
+	}
+	if discount.Unit == "percentage" {
+		return purchaseAmount * (discount.Amount / 100.0)
+	}
+	return 0
+}
+
+func (h *BillsHandler) validateDiscountFloor(
+	ctx context.Context,
+	billID, branchID string,
+	candidate *repository.BillDiscountDetail,
+) (float64, error) {
+	items, err := h.bills.GetAllItems(ctx, billID)
+	if err != nil {
+		return 0, err
+	}
+	purchaseAmount := 0.0
+	for _, item := range items {
+		purchaseAmount += item.Price * float64(item.Qty)
+	}
+	minimum, err := h.minimumAllowedBillTotal(ctx, items, branchID)
+	if err != nil {
+		return 0, err
+	}
+	discounts, err := h.bills.GetAllDiscounts(ctx, billID)
+	if err != nil {
+		return 0, err
+	}
+	totalDiscount := 0.0
+	for _, discount := range discounts {
+		if candidate != nil && discount.PromotionCode == candidate.PromotionCode {
+			continue
+		}
+		totalDiscount += discountValue(purchaseAmount, discount)
+	}
+	if candidate != nil {
+		totalDiscount += discountValue(purchaseAmount, *candidate)
+	}
+	if purchaseAmount-totalDiscount+0.0001 < minimum {
+		return minimum, fmt.Errorf("discount_below_minimum")
+	}
+	return minimum, nil
 }
 
 // AddDiscount applies a discount to a bill
@@ -1627,6 +1695,20 @@ func (h *BillsHandler) AddDiscount(c *gin.Context) {
 			Unit:          unit,
 			Amount:        *req.Amount,
 		}
+	}
+
+	minimum, err := h.validateDiscountFloor(ctx, id, branchID, discount)
+	if err != nil {
+		if err.Error() == "discount_below_minimum" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":                   "price_below_minimum",
+				"message":                 "Discount would make the bill lower than the configured minimum prices",
+				"minimumAllowedBillTotal": minimum,
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_validate_discount"})
+		return
 	}
 
 	if err := h.bills.AddDiscount(ctx, discount); err != nil {
@@ -2570,6 +2652,20 @@ func (h *BillsHandler) Payment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "empty_bill",
 			"message": "Bill must have at least one item before payment",
+		})
+		return
+	}
+	minimumBillTotal, err := h.minimumAllowedBillTotal(ctx, items, branchID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_validate_minimum_price"})
+		return
+	}
+	if billBeforePayment.TotalAmount+0.0001 < minimumBillTotal {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":                   "price_below_minimum",
+			"message":                 "Bill total is lower than the configured minimum prices",
+			"minimumAllowedBillTotal": minimumBillTotal,
+			"requestedBillTotal":      billBeforePayment.TotalAmount,
 		})
 		return
 	}

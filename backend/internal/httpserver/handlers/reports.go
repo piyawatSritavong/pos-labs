@@ -12,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var bangkokLocation = time.FixedZone("Asia/Bangkok", 7*60*60)
+
 type ReportsHandler struct {
 	reports repository.ReportRepository
 }
@@ -229,7 +231,7 @@ func (h *ReportsHandler) PartsReport(c *gin.Context) {
 	filename := fmt.Sprintf("parts_%s.csv", time.Now().Format("2006-01-02_150405"))
 	headers := []string{
 		"code", "bar_code", "category_id", "unit_id", "name", "name_th",
-		"receipt_name", "details", "cost", "price", "image", "is_active",
+		"receipt_name", "details", "cost", "price", "min_price", "image", "is_active",
 	}
 
 	var rows [][]string
@@ -245,6 +247,7 @@ func (h *ReportsHandler) PartsReport(c *gin.Context) {
 			p.Details,
 			toString(p.Cost),
 			toString(p.Price),
+			toString(p.MinPrice),
 			p.Image,
 			toString(p.IsActive),
 		}
@@ -266,7 +269,8 @@ func (h *ReportsHandler) InventoryReport(c *gin.Context) {
 
 	filename := fmt.Sprintf("inventory_%s.csv", time.Now().Format("2006-01-02_150405"))
 	headers := []string{
-		"code", "part_code", "store_id", "shelf", "qty", "min", "max", "rop", "remarks",
+		"code", "part_code", "store_id", "branch_id", "shelf", "qty", "min", "max", "rop", "remarks",
+		"cost", "price", "min_price",
 	}
 
 	var rows [][]string
@@ -275,15 +279,122 @@ func (h *ReportsHandler) InventoryReport(c *gin.Context) {
 			a.Code,
 			a.PartCode,
 			a.StoreID,
+			a.BranchID,
 			a.Shelf,
 			toString(a.Qty),
 			toString(a.Min),
 			toString(a.Max),
 			toString(a.Rop),
 			a.Remarks,
+			toString(a.Cost),
+			toString(a.Price),
+			toString(a.MinPrice),
 		}
 		rows = append(rows, row)
 	}
 
 	writeCSV(c, filename, headers, rows)
+}
+
+func (h *ReportsHandler) IncomeReport(c *gin.Context) {
+	if !canReadAllOperationalData(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "income_report_access_denied"})
+		return
+	}
+
+	fromStr := c.Query("dateFrom")
+	toStr := c.Query("dateTo")
+	if fromStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_date", "message": "dateFrom is required"})
+		return
+	}
+	if toStr == "" {
+		toStr = fromStr
+	}
+	fromDate, err := time.ParseInLocation("2006-01-02", fromStr, bangkokLocation)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_date_from"})
+		return
+	}
+	toDate, err := time.ParseInLocation("2006-01-02", toStr, bangkokLocation)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_date_to"})
+		return
+	}
+	if toDate.Before(fromDate) {
+		fromDate, toDate = toDate, fromDate
+	}
+	report, err := h.reports.GetIncomeReport(c.Request.Context(), fromDate.UTC(), toDate.AddDate(0, 0, 1).UTC())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_generate_income_report"})
+		return
+	}
+
+	accounts := make([]gin.H, 0, len(report.Accounts))
+	for _, account := range report.Accounts {
+		accounts = append(accounts, gin.H{
+			"userId":       account.UserID,
+			"username":     account.Username,
+			"name":         account.Name,
+			"revenue":      account.Revenue,
+			"returns":      account.Returns,
+			"netRevenue":   account.NetRevenue,
+			"soldCost":     account.SoldCost,
+			"returnedCost": account.ReturnedCost,
+			"netCost":      account.NetCost,
+			"grossProfit":  account.GrossProfit,
+			"expenses":     account.Expenses,
+			"netProfit":    account.NetProfit,
+			"result":       profitResult(account.NetProfit),
+		})
+	}
+	expenses := make([]gin.H, 0, len(report.ExpenseDetails))
+	for _, detail := range report.ExpenseDetails {
+		expenses = append(expenses, gin.H{
+			"id":                 detail.ID,
+			"closeDate":          detail.CloseDate.Format("2006-01-02"),
+			"createdAt":          detail.CreatedAt.Format(time.RFC3339),
+			"userId":             detail.UserID,
+			"username":           detail.Username,
+			"name":               detail.Name,
+			"branchId":           detail.BranchID,
+			"posId":              detail.POSID,
+			"fuelAmount":         detail.FuelAmount,
+			"foodAmount":         detail.FoodAmount,
+			"transferAmount":     detail.TransferAmount,
+			"specialAmount":      detail.SpecialAmount,
+			"tailDiscountAmount": detail.TailDiscountAmount,
+			"finalSummaryAmount": detail.FinalSummaryAmount,
+			"notes":              detail.Notes,
+			"specialNote":        detail.SpecialNote,
+			"totalExpense":       detail.TotalExpense,
+		})
+	}
+
+	s := report.Summary
+	c.JSON(http.StatusOK, gin.H{
+		"dateFrom": fromDate.Format("2006-01-02"),
+		"dateTo":   toDate.Format("2006-01-02"),
+		"summary": gin.H{
+			"revenue":      s.Revenue,
+			"returns":      s.Returns,
+			"netRevenue":   s.NetRevenue,
+			"soldCost":     s.SoldCost,
+			"returnedCost": s.ReturnedCost,
+			"netCost":      s.NetCost,
+			"grossProfit":  s.GrossProfit,
+			"expenses":     s.Expenses,
+			"netProfit":    s.NetProfit,
+			"result":       profitResult(s.NetProfit),
+		},
+		"accounts":       accounts,
+		"expenseDetails": expenses,
+	})
+}
+
+func profitResult(value float64) string {
+	if value < 0 {
+		return "loss"
+	}
+	return "profit"
 }

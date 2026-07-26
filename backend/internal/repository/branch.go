@@ -32,4 +32,3 @@ type BranchRepository interface {
 	Count(ctx context.Context) (int, error)
 	GetStoresByBranchID(ctx context.Context, branchID string) ([]Store, error)
 }
-

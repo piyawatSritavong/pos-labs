@@ -9,8 +9,7 @@ class ApiService {
   // Branch/POS ของเครื่องนี้ — บนเว็บ override ต่อแท็บได้ผ่าน URL query เช่น
   // http://localhost:8082/?branch=00001&pos=POS002 เพื่อทดสอบหลายสาขาพร้อมกัน
   // จาก build เดียว ไม่ใส่ query (รวมถึง desktop build) ใช้ค่าเดิม 00000/POS001
-  static String get _branchId =>
-      Uri.base.queryParameters['branch'] ?? '00000';
+  static String get _branchId => Uri.base.queryParameters['branch'] ?? '00000';
   static String get _posId => Uri.base.queryParameters['pos'] ?? 'POS001';
   // ใช้ String.fromEnvironment เพื่อดึงค่าตอน Build
   static const String _posSecret = String.fromEnvironment(
@@ -1407,7 +1406,8 @@ class ApiService {
       queryParams['categoryId'] = categoryId;
     }
     if (isActive != null) queryParams['isActive'] = isActive.toString();
-    if (crossBranch != null) queryParams['crossBranch'] = crossBranch.toString();
+    if (crossBranch != null)
+      queryParams['crossBranch'] = crossBranch.toString();
     if (storeId != null && storeId.isNotEmpty) queryParams['storeId'] = storeId;
 
     final uri = Uri.parse(
@@ -1517,6 +1517,45 @@ class ApiService {
 
     final decoded = jsonDecode(response.body);
     return _extractObjectFromResponse(decoded, '/parts/:code');
+  }
+
+  static Future<Map<String, dynamic>> updatePart({
+    required String token,
+    required String code,
+    required String name,
+    required String nameTh,
+    required String barcode,
+    required String unitId,
+    required double cost,
+    required double price,
+    required double minPrice,
+  }) async {
+    final uri = Uri.parse('$baseUrl/parts/$code');
+    final response = await http.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'name': name,
+        'nameTh': nameTh,
+        'barcode': barcode,
+        'unitId': unitId,
+        'cost': cost,
+        'price': price,
+        'minPrice': minPrice,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to update part: ${response.statusCode} ${response.body}',
+      );
+    }
+    return _extractObjectFromResponse(
+      jsonDecode(response.body),
+      '/parts/:code',
+    );
   }
 
   // ======================================================================
@@ -2258,8 +2297,9 @@ class ApiService {
     if (dateFrom != null && dateFrom.isNotEmpty) params['dateFrom'] = dateFrom;
     if (dateTo != null && dateTo.isNotEmpty) params['dateTo'] = dateTo;
     if (date != null && date.isNotEmpty) params['date'] = date;
-    final uri =
-        Uri.parse('$baseUrl/reports/bills').replace(queryParameters: params);
+    final uri = Uri.parse(
+      '$baseUrl/reports/bills',
+    ).replace(queryParameters: params);
 
     final response = await http.get(
       uri,
@@ -2311,6 +2351,30 @@ class ApiService {
     }
 
     return response.bodyBytes;
+  }
+
+  static Future<Map<String, dynamic>> getIncomeReport({
+    required String token,
+    required String dateFrom,
+    required String dateTo,
+  }) async {
+    final uri = Uri.parse(
+      '$baseUrl/reports/income',
+    ).replace(queryParameters: {'dateFrom': dateFrom, 'dateTo': dateTo});
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to load income report: ${response.statusCode} ${response.body}',
+      );
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('Unexpected /reports/income response');
+    }
+    return decoded;
   }
 
   // ======================================================================

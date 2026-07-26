@@ -198,7 +198,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
   String _friendlyItemPriceError(Object error) {
     final message = error.toString();
     if (message.contains('price_below_minimum')) {
-      return 'ลดราคาได้ไม่เกิน 10% ของยอดรายการนี้';
+      return 'ราคาต้องไม่ต่ำกว่า “ราคาลดได้” ที่กำหนดในสินค้า';
+    }
+    if (message.contains('price_above_catalog')) {
+      return 'ราคาต้องไม่สูงกว่าราคาขายจริงที่กำหนดในสินค้า';
     }
     if (message.contains('invalid_line_total')) {
       return 'กรุณากรอกราคามากกว่า 0';
@@ -2329,8 +2332,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () =>
-                            _handleFinalize(closeOnSuccess: false),
+                        onPressed: () => _handleFinalize(closeOnSuccess: false),
                         child: const Text('ลองใหม่อีกครั้ง'),
                       ),
                     ),

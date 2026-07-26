@@ -63,8 +63,8 @@ class _AddressesManagementSectionState
               'id': (s['id'] ?? '').toString(),
               'label': (s['labelTh'] ?? s['label'] ?? s['id'] ?? '').toString(),
               'branchId': (s['branchId'] ?? '').toString(),
-              'branchName':
-                  (s['branchNameTh'] ?? s['branchName'] ?? '').toString(),
+              'branchName': (s['branchNameTh'] ?? s['branchName'] ?? '')
+                  .toString(),
             },
           )
           .where((s) => (s['id'] ?? '').isNotEmpty)
@@ -150,7 +150,8 @@ class _AddressesManagementSectionState
     await _load();
   }
 
-  int get _pageCount => _total <= 0 ? 1 : ((_total + _pageSize - 1) ~/ _pageSize);
+  int get _pageCount =>
+      _total <= 0 ? 1 : ((_total + _pageSize - 1) ~/ _pageSize);
   int get _currentPage => (_offset ~/ _pageSize) + 1;
 
   Future<void> _goToPage(int page) async {
@@ -395,8 +396,7 @@ class _AddressesManagementSectionState
                     value: _pageSize,
                     items: const [20, 50, 100]
                         .map(
-                          (s) =>
-                              DropdownMenuItem(value: s, child: Text('$s')),
+                          (s) => DropdownMenuItem(value: s, child: Text('$s')),
                         )
                         .toList(),
                     onChanged: _isLoading
@@ -468,54 +468,97 @@ class _AddressesManagementSectionState
     final minC = TextEditingController(text: (a['min'] ?? '').toString());
     final ropC = TextEditingController(text: (a['rop'] ?? '').toString());
     final maxC = TextEditingController(text: (a['max'] ?? '').toString());
+    final costC = TextEditingController(text: (a['cost'] ?? '0').toString());
+    final priceC = TextEditingController(text: (a['price'] ?? '0').toString());
+    final minPriceC = TextEditingController(
+      text: (a['minPrice'] ?? a['min_price'] ?? '0').toString(),
+    );
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('แก้ไขสต๊อก/แจ้งเตือน — ${(a['partCode'] ?? '')}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: qtyC,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'จำนวนคงเหลือ (Qty)',
-                border: OutlineInputBorder(),
-                isDense: true,
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: qtyC,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'จำนวนคงเหลือ (Qty)',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: minC,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Min (ขั้นต่ำ)',
-                border: OutlineInputBorder(),
-                isDense: true,
+              const SizedBox(height: 10),
+              TextField(
+                controller: minC,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Min (ขั้นต่ำ)',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: ropC,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'ROP (จุดสั่งซื้อ — ใช้แจ้งเตือนสต๊อกใกล้หมด)',
-                border: OutlineInputBorder(),
-                isDense: true,
+              const SizedBox(height: 10),
+              TextField(
+                controller: ropC,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'ROP (จุดสั่งซื้อ — ใช้แจ้งเตือนสต๊อกใกล้หมด)',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: maxC,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Max (สูงสุด)',
-                border: OutlineInputBorder(),
-                isDense: true,
+              const SizedBox(height: 10),
+              TextField(
+                controller: maxC,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Max (สูงสุด)',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 10),
+              TextField(
+                controller: costC,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'ต้นทุน',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: priceC,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'ราคาขายจริง',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: minPriceC,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'ราคาลดได้ (ราคาขายขั้นต่ำ)',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -535,6 +578,39 @@ class _AddressesManagementSectionState
     if (token.isEmpty) return;
     int? toInt(dynamic v) => int.tryParse((v ?? '').toString().trim());
     try {
+      final cost = double.tryParse(costC.text.replaceAll(',', '').trim());
+      final price = double.tryParse(priceC.text.replaceAll(',', '').trim());
+      final minPrice = double.tryParse(
+        minPriceC.text.replaceAll(',', '').trim(),
+      );
+      if (cost == null ||
+          price == null ||
+          minPrice == null ||
+          cost < 0 ||
+          minPrice < 0 ||
+          minPrice > price) {
+        throw Exception(
+          'ราคาต้องเป็นตัวเลขไม่ติดลบ และราคาลดได้ต้องไม่สูงกว่าราคาขายจริง',
+        );
+      }
+      final part = await ApiService.getPartByCode(
+        token: token,
+        code: (a['partCode'] ?? '').toString(),
+      );
+      final unit = part['unit'];
+      await ApiService.updatePart(
+        token: token,
+        code: (a['partCode'] ?? '').toString(),
+        name: (part['name'] ?? part['nameTh'] ?? '').toString(),
+        nameTh: (part['nameTh'] ?? part['name'] ?? '').toString(),
+        barcode: (part['barCode'] ?? part['barcode'] ?? '').toString(),
+        unitId: unit is Map
+            ? (unit['id'] ?? 'pcs').toString()
+            : (unit ?? 'pcs').toString(),
+        cost: cost,
+        price: price,
+        minPrice: minPrice,
+      );
       await ApiService.updateAddress(
         token: token,
         code: code,
@@ -548,15 +624,15 @@ class _AddressesManagementSectionState
         max: toInt(maxC.text),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('บันทึกค่าแจ้งเตือนแล้ว')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('บันทึกค่าแจ้งเตือนแล้ว')));
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')));
     }
   }
 
@@ -576,6 +652,9 @@ class _AddressesManagementSectionState
               DataColumn(label: Text('Store')),
               DataColumn(label: Text('Shelf')),
               DataColumn(label: Text('Qty')),
+              DataColumn(label: Text('ต้นทุน')),
+              DataColumn(label: Text('ราคาขายจริง')),
+              DataColumn(label: Text('ราคาลดได้')),
               DataColumn(label: Text('Min / ROP')),
               DataColumn(label: Text('Max')),
               DataColumn(label: Text('แก้ไข')),
@@ -587,6 +666,11 @@ class _AddressesManagementSectionState
                   .toString();
               final shelf = (a['shelf'] ?? '').toString();
               final qty = (a['qty'] ?? '').toString();
+              String money(dynamic value) {
+                final parsed = double.tryParse((value ?? '').toString());
+                return parsed == null ? '-' : '฿${parsed.toStringAsFixed(2)}';
+              }
+
               final min = (a['min'] ?? '').toString();
               final rop = (a['rop'] ?? '').toString();
               final max = (a['max'] ?? '').toString();
@@ -598,6 +682,9 @@ class _AddressesManagementSectionState
                   DataCell(Text(storeName.isEmpty ? '-' : storeName)),
                   DataCell(Text(shelf.isEmpty ? '-' : shelf)),
                   DataCell(Text(qty.isEmpty ? '-' : qty)),
+                  DataCell(Text(money(a['cost']))),
+                  DataCell(Text(money(a['price']))),
+                  DataCell(Text(money(a['minPrice'] ?? a['min_price']))),
                   DataCell(
                     Text(
                       '${min.isEmpty ? '-' : min} / ${rop.isEmpty ? '-' : rop}',

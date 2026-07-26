@@ -58,6 +58,15 @@ func (h *CashReconciliationHandler) List(c *gin.Context) {
 	if raw := strings.TrimSpace(c.Query("branchId")); raw != "" {
 		branchID = &raw
 	}
+	if !canReadAllOperationalData(c) {
+		sessionBranch, _ := c.Get("branch_id")
+		value, _ := sessionBranch.(string)
+		if strings.TrimSpace(value) == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "cash_reconciliation_access_denied"})
+			return
+		}
+		branchID = &value
+	}
 
 	recons, err := h.recons.List(c.Request.Context(), limit, offset, branchID)
 	if err != nil {
@@ -68,6 +77,9 @@ func (h *CashReconciliationHandler) List(c *gin.Context) {
 
 	out := make([]gin.H, 0, len(recons))
 	for _, cr := range recons {
+		if !canReadOperationalRecord(c, cr.BranchID, cr.PosID) {
+			continue
+		}
 		crc := cr
 		out = append(out, buildCashReconciliationOutput(&crc))
 	}
@@ -106,6 +118,10 @@ func (h *CashReconciliationHandler) Create(c *gin.Context) {
 
 	if dailyClose.Status != "pending_reconciliation" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_status", "message": "Daily close must be in 'pending_reconciliation' status"})
+		return
+	}
+	if !canReadOperationalRecord(c, dailyClose.BranchID, dailyClose.PosID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cash_reconciliation_access_denied"})
 		return
 	}
 
@@ -158,6 +174,10 @@ func (h *CashReconciliationHandler) GetByID(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_cash_reconciliation"})
+		return
+	}
+	if !canReadOperationalRecord(c, cr.BranchID, cr.PosID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cash_reconciliation_access_denied"})
 		return
 	}
 

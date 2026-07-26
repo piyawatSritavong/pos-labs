@@ -76,6 +76,15 @@ func (h *StockCountHandler) List(c *gin.Context) {
 	if raw := strings.TrimSpace(c.Query("branchId")); raw != "" {
 		branchID = &raw
 	}
+	if !canReadAllOperationalData(c) {
+		sessionBranch, _ := c.Get("branch_id")
+		value, _ := sessionBranch.(string)
+		if strings.TrimSpace(value) == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "stock_count_access_denied"})
+			return
+		}
+		branchID = &value
+	}
 	if raw := strings.TrimSpace(c.Query("status")); raw != "" {
 		status = &raw
 	}
@@ -114,18 +123,22 @@ func (h *StockCountHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
 		return
 	}
+	req.BranchID = strings.TrimSpace(req.BranchID)
+	if !canReadOperationalBranch(c, req.BranchID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "stock_count_access_denied"})
+		return
+	}
 
 	storeID := strings.TrimSpace(req.StoreID)
+	stores, err := h.branches.GetStoresByBranchID(c.Request.Context(), req.BranchID)
+	if err != nil || len(stores) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "store_not_found",
+			"message": "ไม่พบคลังสินค้าของสาขานี้ กรุณาระบุ storeId",
+		})
+		return
+	}
 	if storeID == "" {
-		// Resolve the default store for this branch
-		stores, err := h.branches.GetStoresByBranchID(c.Request.Context(), strings.TrimSpace(req.BranchID))
-		if err != nil || len(stores) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "store_not_found",
-				"message": "ไม่พบคลังสินค้าของสาขานี้ กรุณาระบุ storeId",
-			})
-			return
-		}
 		// Prefer default store; fall back to first available
 		storeID = stores[0].ID
 		for _, s := range stores {
@@ -133,6 +146,18 @@ func (h *StockCountHandler) Create(c *gin.Context) {
 				storeID = s.ID
 				break
 			}
+		}
+	} else {
+		validStore := false
+		for _, store := range stores {
+			if store.ID == storeID {
+				validStore = true
+				break
+			}
+		}
+		if !validStore {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "store_not_in_branch"})
+			return
 		}
 	}
 
@@ -183,6 +208,10 @@ func (h *StockCountHandler) GetByID(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_stock_count"})
 		return
 	}
+	if !canReadOperationalBranch(c, count.BranchID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "stock_count_access_denied"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"data": buildStockCountOutput(count, items)})
 }
@@ -213,6 +242,10 @@ func (h *StockCountHandler) UpdateItems(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_stock_count"})
+		return
+	}
+	if !canReadOperationalBranch(c, count.BranchID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "stock_count_access_denied"})
 		return
 	}
 
@@ -259,6 +292,10 @@ func (h *StockCountHandler) Submit(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_stock_count"})
+		return
+	}
+	if !canReadOperationalBranch(c, count.BranchID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "stock_count_access_denied"})
 		return
 	}
 

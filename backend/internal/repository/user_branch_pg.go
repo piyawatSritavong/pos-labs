@@ -98,6 +98,7 @@ func (r *userBranchRepositoryPG) Create(ctx context.Context, userBranch *UserBra
 	return err
 }
 
+
 func (r *userBranchRepositoryPG) Delete(ctx context.Context, userID, branchID string) error {
 	_, err := r.db.ExecContext(ctx, `
 		DELETE FROM "user_branch"
@@ -105,4 +106,3 @@ func (r *userBranchRepositoryPG) Delete(ctx context.Context, userID, branchID st
 	`, userID, branchID)
 	return err
 }
-

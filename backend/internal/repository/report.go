@@ -44,6 +44,7 @@ type PartMaster struct {
 	Details     string
 	Cost        float64
 	Price       float64
+	MinPrice    float64
 	Image       string
 	IsActive    bool
 }
@@ -66,4 +67,59 @@ type ReportRepository interface {
 
 	// Get all addresses (inventory)
 	GetAllAddresses(ctx context.Context) ([]Address, error)
+
+	GetIncomeReport(ctx context.Context, dateStart, dateEnd time.Time) (*IncomeReport, error)
+}
+
+type IncomeAccount struct {
+	UserID       string
+	Username     string
+	Name         string
+	Revenue      float64
+	Returns      float64
+	NetRevenue   float64
+	SoldCost     float64
+	ReturnedCost float64
+	NetCost      float64
+	GrossProfit  float64
+	Expenses     float64
+	NetProfit    float64
+}
+
+type IncomeExpenseDetail struct {
+	ID                 string
+	CloseDate          time.Time
+	CreatedAt          time.Time
+	UserID             string
+	Username           string
+	Name               string
+	BranchID           string
+	POSID              string
+	FuelAmount         float64
+	FoodAmount         float64
+	TransferAmount     float64
+	SpecialAmount      float64
+	TailDiscountAmount float64
+	FinalSummaryAmount float64
+	Notes              string
+	SpecialNote        string
+	TotalExpense       float64
+}
+
+type IncomeSummary struct {
+	Revenue      float64
+	Returns      float64
+	NetRevenue   float64
+	SoldCost     float64
+	ReturnedCost float64
+	NetCost      float64
+	GrossProfit  float64
+	Expenses     float64
+	NetProfit    float64
+}
+
+type IncomeReport struct {
+	Summary        IncomeSummary
+	Accounts       []IncomeAccount
+	ExpenseDetails []IncomeExpenseDetail
 }

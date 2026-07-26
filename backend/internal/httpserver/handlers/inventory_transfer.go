@@ -143,7 +143,7 @@ func (h *InventoryTransferHandler) List(c *gin.Context) {
 
 	userVal, _ := c.Get("user")
 	user, _ := userVal.(*repository.User)
-	if user != nil && isPOSRole(user) && transferMode != nil && *transferMode == "pos_restock" {
+	if user != nil && isPOSRole(user) {
 		createdBy = &user.ID
 	}
 
@@ -157,6 +157,9 @@ func (h *InventoryTransferHandler) List(c *gin.Context) {
 	out := make([]gin.H, 0, len(transfers))
 	for _, t := range transfers {
 		tc := t
+		if !canAccessTransfer(c, &tc) {
+			continue
+		}
 		out = append(out, buildTransferOutput(&tc, nil))
 	}
 
@@ -520,6 +523,19 @@ func (h *InventoryTransferHandler) PrintLog(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	transfer, _, err := h.transfers.GetByID(c.Request.Context(), id)
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "transfer_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_transfer"})
+		return
+	}
+	if !canAccessTransfer(c, transfer) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "transfer_access_denied"})
+		return
+	}
 	if err := h.transfers.LogAudit(c.Request.Context(), id, "printed_pdf", user.ID, "browser_print"); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_log_print"})
 		return
@@ -865,10 +881,14 @@ func canAccessTransfer(c *gin.Context, transfer *repository.InventoryTransfer) b
 	if user == nil || transfer == nil {
 		return false
 	}
-	if transfer.TransferMode == "pos_restock" && isPOSRole(user) {
+	if isPOSRole(user) {
 		return transfer.CreatedBy == user.ID
 	}
-	return true
+	if canReadAllOperationalData(c) {
+		return true
+	}
+	branch, _, ok := branchAndPOSFromContext(c)
+	return ok && (transfer.FromBranchID == branch || transfer.ToBranchID == branch)
 }
 
 func transferStaleState(transfer *repository.InventoryTransfer, now time.Time) (bool, string) {
