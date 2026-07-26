@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -115,7 +117,10 @@ func (r *memoryStockCountRepository) UpdateItemCounts(_ context.Context, id stri
 	r.items = append([]repository.StockCountItem(nil), items...)
 	return nil
 }
-func (r *memoryStockCountRepository) Submit(_ context.Context, id string) error {
+func (r *memoryStockCountRepository) Submit(_ context.Context, id string, items []repository.StockCountItem) error {
+	if len(items) > 0 {
+		r.items = append([]repository.StockCountItem(nil), items...)
+	}
 	r.count.Status = "submitted"
 	now := time.Now().UTC()
 	r.count.SubmittedAt = &now
@@ -156,6 +161,87 @@ func TestCashierStockCountHappyPath(t *testing.T) {
 	handler.Submit(submitCtx)
 	if submitRecorder.Code != http.StatusOK || repo.count.Status != "submitted" {
 		t.Fatalf("submit got %d status=%q: %s", submitRecorder.Code, repo.count.Status, submitRecorder.Body.String())
+	}
+}
+
+func TestStockCountSubmitAcceptsFullInventoryBatch(t *testing.T) {
+	repo := &memoryStockCountRepository{
+		count: &repository.StockCount{
+			ID:       "SCTEST-BATCH",
+			BranchID: "00001",
+			StoreID:  "vehicle_POS001",
+			Status:   "draft",
+		},
+	}
+	for i := 1; i <= 806; i++ {
+		repo.items = append(repo.items, repository.StockCountItem{
+			CountID:    repo.count.ID,
+			PartCode:   fmt.Sprintf("P%04d", i),
+			SystemQty:  i,
+			CountedQty: i,
+		})
+	}
+	requestItems := make([]map[string]interface{}, 0, len(repo.items))
+	for _, item := range repo.items {
+		requestItems = append(requestItems, map[string]interface{}{
+			"partCode":   item.PartCode,
+			"countedQty": item.CountedQty,
+		})
+	}
+	body, err := json.Marshal(map[string]interface{}{"items": requestItems})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	handler := NewStockCountHandler(repo, stubBranchRepository{})
+	ctx, recorder := stockTestContext(
+		http.MethodPut,
+		"/stock-counts/SCTEST-BATCH/submit",
+		string(body),
+	)
+	ctx.Params = gin.Params{{Key: "id", Value: repo.count.ID}}
+	handler.Submit(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("submit status = %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+	if repo.count.Status != "submitted" {
+		t.Fatalf("status = %q, want submitted", repo.count.Status)
+	}
+	if got := len(repo.items); got != 806 {
+		t.Fatalf("submitted item count = %d, want 806", got)
+	}
+}
+
+func TestBranchCreateUsesGeneratedIDAndCreatesStore(t *testing.T) {
+	handler := NewBranchHandler(stubBranchRepository{})
+	body := `{
+		"companyId":"0000000000000",
+		"branchName":"Branch 3",
+		"branchNameTh":"สาขา 3",
+		"branchAddress":"Address",
+		"branchAddressTh":"ที่อยู่",
+		"phone":"0200000000"
+	}`
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/branches", strings.NewReader(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	handler.Create(ctx)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("create branch status = %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["branchId"] != "00003" {
+		t.Fatalf("branchId = %#v, want 00003", response["branchId"])
+	}
+	if _, ok := response["store"].(map[string]interface{}); !ok {
+		t.Fatalf("response does not include generated store: %#v", response)
 	}
 }
 

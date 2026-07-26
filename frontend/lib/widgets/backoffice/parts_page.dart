@@ -656,13 +656,26 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                 '${response.statusCode} ${response.body}',
                               );
                             }
+                            var archived = false;
+                            if (response.body.isNotEmpty) {
+                              final decoded = jsonDecode(response.body);
+                              archived =
+                                  decoded is Map<String, dynamic> &&
+                                  decoded['mode'] == 'archived';
+                            }
 
                             await partsProvider.fetchParts(token);
 
                             if (context.mounted) {
                               Navigator.of(dialogContext).pop(true);
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('ลบสินค้าสำเร็จ')),
+                                SnackBar(
+                                  content: Text(
+                                    archived
+                                        ? 'นำสินค้าออกแล้ว โดยเก็บประวัติรายการเดิมไว้'
+                                        : 'ลบสินค้าสำเร็จ',
+                                  ),
+                                ),
                               );
                             }
                           } catch (e) {

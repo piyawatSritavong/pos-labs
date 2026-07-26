@@ -239,6 +239,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	branches.Use(authMw.RequirePermission("branch", "read"))
 	{
 		branches.GET("", branchHandler.List)
+		branches.GET("/next-id", branchHandler.NextID)
 		branches.GET("/:id", branchHandler.Get)
 	}
 	branchesWrite := r.Group("/branches")
@@ -345,12 +346,6 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	{
 		storesRead.GET("", storeHandler.List)
 	}
-	storesWrite := r.Group("/stores")
-	storesWrite.Use(authMw.RequirePermission("addresses", "write"))
-	{
-		storesWrite.POST("", storeHandler.Create)
-	}
-
 	// Users (CRUD)
 	userHandler := handlers.NewUserHandler(userRepo)
 	users := r.Group("/users")

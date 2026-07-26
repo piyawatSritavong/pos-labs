@@ -86,7 +86,14 @@ func (r stubBranchRepository) List(ctx context.Context, limit, offset int) ([]re
 	return nil, nil
 }
 
+func (r stubBranchRepository) NextID(ctx context.Context) (string, error) {
+	return "00003", nil
+}
+
 func (r stubBranchRepository) Create(ctx context.Context, branch *repository.Branch) error {
+	if branch.BranchID == "" {
+		branch.BranchID = "00003"
+	}
 	return nil
 }
 

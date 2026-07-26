@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 type branchRepositoryPG struct {
@@ -78,8 +80,69 @@ func (r *branchRepositoryPG) List(ctx context.Context, limit, offset int) ([]Bra
 	return branches, nil
 }
 
+func (r *branchRepositoryPG) NextID(ctx context.Context) (string, error) {
+	var next int
+	err := r.db.QueryRowContext(ctx, `
+		WITH branch_max AS (
+			SELECT COALESCE(MAX(
+				CASE WHEN "branch_id" ~ '^[0-9]{5}$' THEN "branch_id"::integer END
+			), -1) AS value
+			FROM "branch_setting"
+		)
+		SELECT GREATEST(
+			(SELECT value + 1 FROM branch_max),
+			COALESCE((SELECT "value" + 1 FROM "counter" WHERE "key" = 'branch_id'), 0)
+		)
+	`).Scan(&next)
+	if err != nil {
+		return "", err
+	}
+	if next > 99999 {
+		return "", fmt.Errorf("branch id sequence exhausted")
+	}
+	return fmt.Sprintf("%05d", next), nil
+}
+
 func (r *branchRepositoryPG) Create(ctx context.Context, branch *Branch) error {
-	_, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Serialize allocation so concurrent branch creations cannot receive the
+	// same human-readable five-digit ID.
+	if _, err := tx.ExecContext(ctx, `
+		SELECT pg_advisory_xact_lock(hashtext('branch-id-sequence'))
+	`); err != nil {
+		return err
+	}
+
+	var next int
+	if err := tx.QueryRowContext(ctx, `
+		WITH branch_max AS (
+			SELECT COALESCE(MAX(
+				CASE WHEN "branch_id" ~ '^[0-9]{5}$' THEN "branch_id"::integer END
+			), -1) AS value
+			FROM "branch_setting"
+		)
+		INSERT INTO "counter"("key", "value")
+		SELECT 'branch_id', value + 1 FROM branch_max
+		ON CONFLICT ("key") DO UPDATE
+		SET "value" = GREATEST(
+			"counter"."value" + 1,
+			EXCLUDED."value"
+		)
+		RETURNING "value"
+	`).Scan(&next); err != nil {
+		return err
+	}
+	if next > 99999 {
+		return fmt.Errorf("branch id sequence exhausted")
+	}
+	branch.BranchID = fmt.Sprintf("%05d", next)
+
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO "branch_setting"(
 			"branch_id", "company_id", "branch_name", "branch_name_th",
 			"branch_address", "branch_address_th", "phone", "email"
@@ -88,8 +151,36 @@ func (r *branchRepositoryPG) Create(ctx context.Context, branch *Branch) error {
 	`,
 		branch.BranchID, branch.CompanyID, branch.BranchName, branch.BranchNameTH,
 		branch.BranchAddress, branch.BranchAddressTH, branch.Phone, branch.Email,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+
+	storeID := "store_" + branch.BranchID
+	label := strings.TrimSpace(branch.BranchName)
+	if label == "" {
+		label = branch.BranchID
+	}
+	label += " Warehouse"
+	labelTH := strings.TrimSpace(branch.BranchNameTH)
+	if labelTH == "" {
+		labelTH = branch.BranchID
+	}
+	labelTH = "คลัง" + labelTH
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
+		VALUES ($1, $2, $3, $4, true)
+	`, storeID, branch.BranchID, label, labelTH); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
+		VALUES ($1, $2, true)
+	`, branch.BranchID, storeID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (r *branchRepositoryPG) Update(ctx context.Context, branch *Branch) error {
@@ -107,8 +198,38 @@ func (r *branchRepositoryPG) Update(ctx context.Context, branch *Branch) error {
 }
 
 func (r *branchRepositoryPG) Delete(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM "branch_setting" WHERE "branch_id" = $1`, id)
-	return err
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM "branch_setting" WHERE "branch_id" = $1)
+	`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return ErrNotFound
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM "branch_store" WHERE "branch_id" = $1
+	`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM "store_master" WHERE "branch_id" = $1
+	`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM "branch_setting" WHERE "branch_id" = $1
+	`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *branchRepositoryPG) Count(ctx context.Context) (int, error) {

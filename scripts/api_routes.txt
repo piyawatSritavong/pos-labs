@@ -16,6 +16,7 @@ GET /bills
 GET /bills/:id
 GET /branches
 GET /branches/:id
+GET /branches/next-id
 GET /cash-reconciliations
 GET /cash-reconciliations/:id
 GET /company
@@ -82,7 +83,6 @@ POST /returns
 POST /returns/:id/print
 POST /roles
 POST /stock-counts
-POST /stores
 POST /transfers
 POST /transfers/:id/print-log
 POST /transfers/pos-restock

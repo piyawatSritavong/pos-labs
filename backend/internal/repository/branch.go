@@ -26,6 +26,7 @@ type Store struct {
 type BranchRepository interface {
 	GetByID(ctx context.Context, id string) (*Branch, error)
 	List(ctx context.Context, limit, offset int) ([]Branch, error)
+	NextID(ctx context.Context) (string, error)
 	Create(ctx context.Context, branch *Branch) error
 	Update(ctx context.Context, branch *Branch) error
 	Delete(ctx context.Context, id string) error

@@ -72,7 +72,8 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
-			WHERE EXISTS (
+			WHERE COALESCE(p.is_active, false) = true
+			  AND EXISTS (
 				SELECT 1 FROM "address_master" a
 				JOIN "branch_store" bs ON bs.store_id = a.store_id
 				WHERE a.part_code = p.code AND a.is_active = true AND bs.branch_id = $3
@@ -105,6 +106,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
 			LEFT JOIN "address_master" a ON a.part_code = p.code AND a.is_active = true
+			WHERE COALESCE(p.is_active, false) = true
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
@@ -387,15 +389,57 @@ func (r *partRepositoryPG) UpdatePart(ctx context.Context, code string, p PartIn
 	return nil
 }
 
-func (r *partRepositoryPG) DeletePart(ctx context.Context, code string) error {
-	res, err := r.db.ExecContext(ctx, `DELETE FROM "part_master" WHERE "code" = $1`, code)
+func (r *partRepositoryPG) DeletePart(ctx context.Context, code string) (string, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
+	defer func() { _ = tx.Rollback() }()
+
+	var exists, referenced bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT
+			EXISTS(SELECT 1 FROM "part_master" WHERE "code" = $1),
+			EXISTS(SELECT 1 FROM "bill_item_detail" WHERE "part_code" = $1)
+			OR EXISTS(SELECT 1 FROM "inventory_transfer_item" WHERE "part_code" = $1)
+			OR EXISTS(SELECT 1 FROM "stock_count_item" WHERE "part_code" = $1)
+	`, code).Scan(&exists, &referenced)
+	if err != nil {
+		return "", err
 	}
-	return nil
+	if !exists {
+		return "", ErrNotFound
+	}
+
+	mode := "deleted"
+	if referenced {
+		mode = "archived"
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE "part_master"
+			SET "is_active" = false
+			WHERE "code" = $1
+		`, code); err != nil {
+			return "", err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE "address_master"
+			SET "is_active" = false
+			WHERE "part_code" = $1
+		`, code); err != nil {
+			return "", err
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM "part_master" WHERE "code" = $1
+		`, code); err != nil {
+			return "", err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return mode, nil
 }
 
 func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []string, branchID *string) (map[string][]PartAddress, error) {

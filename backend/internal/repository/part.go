@@ -77,7 +77,10 @@ type PartRepository interface {
 	GetAddressesByPartCodes(ctx context.Context, codes []string, branchID *string) (map[string][]PartAddress, error)
 	CreatePart(ctx context.Context, p PartInput) error
 	UpdatePart(ctx context.Context, code string, p PartInput) error
-	DeletePart(ctx context.Context, code string) error
+	// DeletePart physically deletes an unreferenced part. Parts used by bills,
+	// transfers, or stock counts are archived so historical documents remain
+	// readable. The returned mode is "deleted" or "archived".
+	DeletePart(ctx context.Context, code string) (string, error)
 	// GenerateNextPartCode returns the next free running code in the "P%04d"
 	// convention (P0001, P0002, …). The same value doubles as the default
 	// barcode (Code128 renders the code directly — see migration 0012).

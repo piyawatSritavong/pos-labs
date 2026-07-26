@@ -387,9 +387,14 @@ class ApiOperationsService {
   static Future<Map<String, dynamic>> submitStockCount({
     required String token,
     required String id,
+    List<Map<String, dynamic>> items = const [],
   }) async {
     final uri = Uri.parse('$baseUrl/stock-counts/$id/submit');
-    final response = await http.put(uri, headers: _headers(token));
+    final response = await http.put(
+      uri,
+      headers: _headers(token),
+      body: jsonEncode({'items': items}),
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'PUT /stock-counts/$id/submit failed: ${response.statusCode} ${response.body}',

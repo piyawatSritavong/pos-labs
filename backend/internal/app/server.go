@@ -44,7 +44,19 @@ func RunServer(cfg config.Config) error {
 }
 
 func prepareDatabase(sqlDB *sql.DB, cfg config.Config) error {
-	if cfg.AutoMigrate {
+	runMigrations := cfg.AutoMigrate
+	if !runMigrations {
+		legacyProduction, err := db.HasProductionCatalog20260724(sqlDB)
+		if err != nil {
+			return err
+		}
+		if legacyProduction {
+			runMigrations = true
+			log.Printf("Applying pending migrations for the legacy Render production database")
+		}
+	}
+
+	if runMigrations {
 		if err := db.RunMigrations(cfg); err != nil {
 			return err
 		}

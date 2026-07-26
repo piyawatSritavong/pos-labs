@@ -1125,10 +1125,32 @@ class ApiService {
     return _extractObjectFromResponse(decoded, '/branches/:id');
   }
 
+  // GET /branches/next-id - preview the server-generated five-digit ID.
+  static Future<String> getNextBranchId({required String token}) async {
+    final uri = Uri.parse('$baseUrl/branches/next-id');
+    final response = await http.get(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to generate branch ID: ${response.statusCode} ${response.body}',
+      );
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      final id = decoded['branchId']?.toString() ?? '';
+      if (id.isNotEmpty) return id;
+    }
+    throw Exception('Backend did not return branchId');
+  }
+
   // POST /branches - สร้าง branch ใหม่
   static Future<Map<String, dynamic>> createBranch({
     required String token,
-    required String branchId,
     required String branchName,
     String companyId = '0000000000000',
     String? branchNameTh,
@@ -1146,7 +1168,6 @@ class ApiService {
         'Authorization': 'Bearer $token',
       },
       body: jsonEncode({
-        'branchId': branchId,
         'companyId': companyId,
         'branchName': branchName,
         'branchNameTh': branchNameTh ?? '',

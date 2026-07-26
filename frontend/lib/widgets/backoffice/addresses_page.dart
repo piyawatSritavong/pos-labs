@@ -183,119 +183,6 @@ class _AddressesManagementSectionState
         .toList();
   }
 
-  Future<void> _showCreateStoreDialog() async {
-    final token = context.read<AuthProvider>().token;
-    if (token == null || token.isEmpty) return;
-
-    // สาขาที่เลือกได้ = สาขาที่มีอยู่ (อนุมานจากรายการคลัง; unique ตาม branchId)
-    final branches = <String, String>{};
-    for (final s in _stores) {
-      final id = s['branchId'] ?? '';
-      if (id.isEmpty) continue;
-      branches[id] = s['branchName']?.isNotEmpty == true
-          ? s['branchName']!
-          : id;
-    }
-    final labelController = TextEditingController();
-    String? selectedBranchId = branches.keys.isNotEmpty
-        ? branches.keys.first
-        : null;
-    final formKey = GlobalKey<FormState>();
-
-    await showDialog(
-      context: context,
-      builder: (dialogContext) {
-        bool isSaving = false;
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              title: const Text('เพิ่มคลังใหม่'),
-              content: Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: labelController,
-                      decoration: const InputDecoration(
-                        labelText: 'ชื่อคลัง (เช่น คลังสาขา pos3)',
-                        isDense: true,
-                      ),
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'กรุณากรอกชื่อคลัง'
-                          : null,
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedBranchId,
-                      decoration: const InputDecoration(
-                        labelText: 'สาขา',
-                        isDense: true,
-                      ),
-                      items: branches.entries
-                          .map(
-                            (e) => DropdownMenuItem(
-                              value: e.key,
-                              child: Text('${e.value} (${e.key})'),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) => setLocal(() => selectedBranchId = v),
-                      validator: (v) =>
-                          (v == null || v.isEmpty) ? 'กรุณาเลือกสาขา' : null,
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSaving
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
-                  child: const Text('ยกเลิก'),
-                ),
-                ElevatedButton(
-                  onPressed: isSaving
-                      ? null
-                      : () async {
-                          if (!formKey.currentState!.validate()) return;
-                          final messenger = ScaffoldMessenger.of(context);
-                          final navigator = Navigator.of(dialogContext);
-                          setLocal(() => isSaving = true);
-                          try {
-                            await ApiService.createStore(
-                              token: token,
-                              branchId: selectedBranchId!,
-                              labelTh: labelController.text.trim(),
-                            );
-                            await _loadStores();
-                            navigator.pop();
-                            messenger.showSnackBar(
-                              const SnackBar(content: Text('เพิ่มคลังสำเร็จ')),
-                            );
-                          } catch (e) {
-                            setLocal(() => isSaving = false);
-                            messenger.showSnackBar(
-                              SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-                            );
-                          }
-                        },
-                  child: isSaving
-                      ? const SizedBox(
-                          height: 16,
-                          width: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('บันทึก'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -356,12 +243,6 @@ class _AddressesManagementSectionState
                     tooltip: 'รีเฟรช',
                     onPressed: _isLoading ? null : () => _load(),
                     icon: const Icon(Icons.refresh),
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
-                    onPressed: _showCreateStoreDialog,
-                    icon: const Icon(Icons.add),
-                    label: const Text('เพิ่มคลังใหม่'),
                   ),
                 ],
               ),

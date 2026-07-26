@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Stateful production verification for admin, pos1 and pos2.
 
-The script intentionally keeps completed bills, full returns and submitted
-stock counts with a SMOKE-* marker as deployment evidence. Every sale is fully
-returned, so inventory and net income return to their starting values.
+The script uses an existing saleable catalog item in each POS store instead of
+creating test products. Completed bills, full returns and submitted stock
+counts remain as deployment evidence; inventory and net income return to their
+starting values.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ POS1_PASSWORD = os.getenv("POS_API_POS1_PASSWORD", "pos123456")
 POS2_PASSWORD = os.getenv("POS_API_POS2_PASSWORD", "pos123456")
 REPORT_DIR = Path(os.getenv("POS_API_REPORT_DIR", "reports"))
 RUN_ID = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S")
-MARKER = f"SMOKE-{RUN_ID}"
+MARKER = f"VERIFY-{RUN_ID}"
 
 
 class APIError(RuntimeError):
@@ -145,7 +146,7 @@ def main() -> int:
     bill_owner: dict[str, str] = {}
     return_owner: dict[str, str] = {}
 
-    for index, username in enumerate(("admin", "pos1", "pos2"), start=1):
+    for username in ("admin", "pos1", "pos2"):
         token = tokens[username]
         profile = profiles[username]
         branch_id = profile["branchId"]
@@ -154,32 +155,31 @@ def main() -> int:
         if not store_id:
             raise RuntimeError(f"no inventory store configured for {username}/{pos_id}")
 
-        suffix = {"admin": "A", "pos1": "P1", "pos2": "P2"}[username]
-        part_code = f"SMK{RUN_ID[-9:]}{suffix}"
-        barcode = f"89{RUN_ID[-9:]}{index}"
-        address_code = f"ADDR-{part_code}-{store_id}"
-        _, created_part = call(
-            "POST",
-            "/parts",
-            token=admin_token,
-            body={
-                "code": part_code,
-                "name": f"{MARKER}-{username}",
-                "nameTh": f"{MARKER}-{username}",
-                "barcode": barcode,
-                "unitId": "pcs",
-                "cost": 60,
-                "price": 100,
-                "minPrice": 90,
-                "details": f"production role verification {MARKER}",
-                "storeId": store_id,
-                "shelf": "SMOKE",
-                "qty": 5,
-            },
-            expected=201,
+        _, saleable_payload = call(
+            "GET",
+            f"/parts/search?storeId={store_id}&saleableOnly=true&isActive=true&limit=1",
+            token=token,
         )
-        if created_part.get("warning"):
-            raise AssertionError(f"test product address creation failed: {created_part}")
+        saleable_parts = rows(saleable_payload, "parts")
+        if not saleable_parts:
+            raise AssertionError(f"no saleable catalog item for {username}/{store_id}")
+        saleable = saleable_parts[0]
+        part_code = saleable.get("code", "")
+        price = float(saleable.get("price", 0) or 0)
+        min_price = float(saleable.get("minPrice", saleable.get("min_price", price)) or price)
+        addresses = saleable.get("addresses", [])
+        address_code = next(
+            (
+                address.get("code", "")
+                for address in addresses
+                if isinstance(address, dict)
+                and (address.get("store", {}).get("id") if isinstance(address.get("store"), dict) else address.get("storeId")) == store_id
+                and float(address.get("qty", 0) or 0) > 0
+            ),
+            "",
+        )
+        if not part_code or not address_code or price <= 0:
+            raise AssertionError(f"incomplete saleable catalog item for {username}: {saleable}")
 
         held_bill_id = ""
         active_test_bill_id = ""
@@ -206,26 +206,26 @@ def main() -> int:
                 "PUT",
                 f"/bills/{bill_id}/update-item-price",
                 token=token,
-                body={"partCode": part_code, "addressCode": address_code, "lineTotal": 89.99},
+                body={"partCode": part_code, "addressCode": address_code, "lineTotal": round(min_price - 0.01, 2)},
                 expected=400,
             )
             call(
                 "PUT",
                 f"/bills/{bill_id}/update-item-price",
                 token=token,
-                body={"partCode": part_code, "addressCode": address_code, "lineTotal": 90},
+                body={"partCode": part_code, "addressCode": address_code, "lineTotal": min_price},
             )
             call(
                 "PUT",
                 f"/bills/{bill_id}/update-item-price",
                 token=token,
-                body={"partCode": part_code, "addressCode": address_code, "lineTotal": 100},
+                body={"partCode": part_code, "addressCode": address_code, "lineTotal": price},
             )
             call(
                 "PUT",
                 f"/bills/{bill_id}/update-item-price",
                 token=token,
-                body={"partCode": part_code, "addressCode": address_code, "lineTotal": 100.01},
+                body={"partCode": part_code, "addressCode": address_code, "lineTotal": round(price + 0.01, 2)},
                 expected=400,
             )
             call(
@@ -280,25 +280,19 @@ def main() -> int:
             stock_items = stock_count.get("items", [])
             if not stock_count_id or not stock_items:
                 raise AssertionError(f"{username} stock count fixture is incomplete")
-            first_item = stock_items[0]
-            call(
-                "PUT",
-                f"/stock-counts/{stock_count_id}/items",
-                token=token,
-                body={
-                    "items": [
-                        {
-                            "partCode": first_item["partCode"],
-                            "countedQty": int(first_item.get("systemQty", 0)),
-                        }
-                    ]
-                },
-            )
             call(
                 "PUT",
                 f"/stock-counts/{stock_count_id}/submit",
                 token=token,
-                body={},
+                body={
+                    "items": [
+                        {
+                            "partCode": item["partCode"],
+                            "countedQty": int(item.get("systemQty", 0)),
+                        }
+                        for item in stock_items
+                    ]
+                },
             )
 
             evidence["accounts"][username] = {

@@ -119,6 +119,13 @@ func (h *POSHandler) Create(c *gin.Context) {
 	}
 
 	if err := h.pos.Create(c.Request.Context(), pos); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   "branch_store_not_found",
+				"message": "สาขานี้ยังไม่มีคลังสินค้า",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_create_pos"})
 		return
 	}

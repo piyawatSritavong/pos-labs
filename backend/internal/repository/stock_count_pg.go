@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -64,9 +65,13 @@ func (r *stockCountRepositoryPG) Create(ctx context.Context, count *StockCount) 
 	// Snapshot current address_master quantities for this store
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO "stock_count_item" ("count_id", "part_code", "system_qty", "counted_qty")
-		SELECT $1, am."part_code", am."qty", am."qty"
+		SELECT $1, am."part_code", SUM(am."qty"), SUM(am."qty")
 		FROM "address_master" am
-		WHERE am."store_id" = $2 AND am."is_active" = true
+		JOIN "part_master" pm ON pm."code" = am."part_code"
+		WHERE am."store_id" = $2
+		  AND am."is_active" = true
+		  AND COALESCE(pm."is_active", false) = true
+		GROUP BY am."part_code"
 	`, count.ID, count.StoreID)
 	if err != nil {
 		return err
@@ -186,33 +191,101 @@ func (r *stockCountRepositoryPG) List(ctx context.Context, limit, offset int, br
 }
 
 func (r *stockCountRepositoryPG) UpdateItemCounts(ctx context.Context, countID string, items []StockCountItem) error {
+	if len(items) == 0 {
+		return nil
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	for _, item := range items {
-		_, err = tx.ExecContext(ctx, `
-			UPDATE "stock_count_item"
-			SET "counted_qty" = $1
-			WHERE "count_id" = $2 AND "part_code" = $3
-		`, item.CountedQty, countID, item.PartCode)
-		if err != nil {
-			return err
-		}
+	if err := updateStockCountItemsTx(ctx, tx, countID, items); err != nil {
+		return err
 	}
 
 	return tx.Commit()
 }
 
-func (r *stockCountRepositoryPG) Submit(ctx context.Context, countID string) error {
-	_, err := r.db.ExecContext(ctx, `
+func (r *stockCountRepositoryPG) Submit(ctx context.Context, countID string, items []StockCountItem) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if len(items) > 0 {
+		if err := updateStockCountItemsTx(ctx, tx, countID, items); err != nil {
+			return err
+		}
+	}
+
+	result, err := tx.ExecContext(ctx, `
 		UPDATE "stock_count"
 		SET "status" = 'submitted', "submitted_at" = now()
-		WHERE "id" = $1
+		WHERE "id" = $1 AND "status" = 'draft'
 	`, countID)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrInvalidStockCountState
+	}
+	return tx.Commit()
+}
+
+func updateStockCountItemsTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	countID string,
+	items []StockCountItem,
+) error {
+	payload := make([]struct {
+		PartCode   string `json:"partCode"`
+		CountedQty int    `json:"countedQty"`
+	}, 0, len(items))
+	for _, item := range items {
+		payload = append(payload, struct {
+			PartCode   string `json:"partCode"`
+			CountedQty int    `json:"countedQty"`
+		}{
+			PartCode:   item.PartCode,
+			CountedQty: item.CountedQty,
+		})
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	var updated int
+	err = tx.QueryRowContext(ctx, `
+		WITH input AS (
+			SELECT "partCode" AS part_code, "countedQty" AS counted_qty
+			FROM jsonb_to_recordset($2::jsonb)
+			  AS x("partCode" text, "countedQty" integer)
+		),
+		updated AS (
+			UPDATE "stock_count_item" sci
+			SET "counted_qty" = input.counted_qty
+			FROM input
+			WHERE sci."count_id" = $1
+			  AND sci."part_code" = input.part_code
+			RETURNING sci."part_code"
+		)
+		SELECT count(*) FROM updated
+	`, countID, string(encoded)).Scan(&updated)
+	if err != nil {
+		return err
+	}
+	if updated != len(items) {
+		return ErrInvalidStockCountItems
+	}
+	return nil
 }
 
 type stockCountScanner interface {

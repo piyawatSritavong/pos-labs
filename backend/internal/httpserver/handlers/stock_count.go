@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -264,6 +266,10 @@ func (h *StockCountHandler) UpdateItems(c *gin.Context) {
 	}
 
 	if err := h.counts.UpdateItemCounts(c.Request.Context(), id, items); err != nil {
+		if errors.Is(err, repository.ErrInvalidStockCountItems) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_stock_count_items"})
+			return
+		}
 		log.Printf("Error updating stock count items: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_update_stock_count_items"})
 		return
@@ -285,7 +291,20 @@ func (h *StockCountHandler) Submit(c *gin.Context) {
 		return
 	}
 
-	count, items, err := h.counts.GetByID(c.Request.Context(), id)
+	var req struct {
+		Items []struct {
+			PartCode   string `json:"partCode" binding:"required"`
+			CountedQty int    `json:"countedQty" binding:"min=0"`
+		} `json:"items"`
+	}
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+			return
+		}
+	}
+
+	count, currentItems, err := h.counts.GetByID(c.Request.Context(), id)
 	if err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "stock_count_not_found"})
@@ -304,7 +323,31 @@ func (h *StockCountHandler) Submit(c *gin.Context) {
 		return
 	}
 
-	if err := h.counts.Submit(c.Request.Context(), id); err != nil {
+	items := make([]repository.StockCountItem, 0, len(req.Items))
+	seen := make(map[string]struct{}, len(req.Items))
+	for _, item := range req.Items {
+		code := strings.TrimSpace(item.PartCode)
+		if _, duplicate := seen[code]; duplicate {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "duplicate_stock_count_item"})
+			return
+		}
+		seen[code] = struct{}{}
+		items = append(items, repository.StockCountItem{
+			CountID:    id,
+			PartCode:   code,
+			CountedQty: item.CountedQty,
+		})
+	}
+
+	if err := h.counts.Submit(c.Request.Context(), id, items); err != nil {
+		if errors.Is(err, repository.ErrInvalidStockCountItems) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_stock_count_items"})
+			return
+		}
+		if errors.Is(err, repository.ErrInvalidStockCountState) {
+			c.JSON(http.StatusConflict, gin.H{"error": "invalid_status"})
+			return
+		}
 		log.Printf("Error submitting stock count: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_submit_stock_count"})
 		return
@@ -316,6 +359,9 @@ func (h *StockCountHandler) Submit(c *gin.Context) {
 		now := time.Now().UTC()
 		count.Status = "submitted"
 		count.SubmittedAt = &now
+		if len(items) == 0 {
+			items = currentItems
+		}
 		c.JSON(http.StatusOK, gin.H{"data": buildStockCountOutput(count, items)})
 		return
 	}

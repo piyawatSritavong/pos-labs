@@ -64,5 +64,6 @@ void main() {
     expect(find.text('คลังสินค้า'), findsOneWidget);
     expect(find.text('ทุกคลัง'), findsOneWidget);
     expect(find.text('ไม่พบข้อมูลคลังสินค้า'), findsOneWidget);
+    expect(find.text('เพิ่มคลังใหม่'), findsNothing);
   });
 }

@@ -627,7 +627,7 @@ func (h *PartsHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_code"})
 		return
 	}
-	err := h.parts.DeletePart(c.Request.Context(), code)
+	mode, err := h.parts.DeletePart(c.Request.Context(), code)
 	if err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})
@@ -636,5 +636,5 @@ func (h *PartsHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_delete_part", "message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "mode": mode})
 }

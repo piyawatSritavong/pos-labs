@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -33,5 +34,10 @@ type StockCountRepository interface {
 	GetByID(ctx context.Context, id string) (*StockCount, []StockCountItem, error)
 	List(ctx context.Context, limit, offset int, branchID, status *string) ([]StockCount, error)
 	UpdateItemCounts(ctx context.Context, countID string, items []StockCountItem) error
-	Submit(ctx context.Context, countID string) error
+	Submit(ctx context.Context, countID string, items []StockCountItem) error
 }
+
+var (
+	ErrInvalidStockCountItems = errors.New("invalid stock count items")
+	ErrInvalidStockCountState = errors.New("invalid stock count state")
+)

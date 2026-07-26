@@ -132,32 +132,29 @@ func (r *posRepositoryPG) Create(ctx context.Context, pos *POS) error {
 		}
 		pos.POSSecret = secret
 	}
-	if strings.TrimSpace(pos.VehicleStoreID) == "" {
-		pos.VehicleStoreID = "vehicle_" + strings.TrimSpace(pos.POSID)
-	}
-
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
-		VALUES ($1, $2, $3, $4, false)
-		ON CONFLICT ("id") DO NOTHING
-	`, pos.VehicleStoreID, pos.BranchID, pos.POSName+" Vehicle Store", pos.POSName+" รถ")
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
-		VALUES ($1, $2, false)
-		ON CONFLICT ("branch_id", "store_id") DO NOTHING
-	`, pos.BranchID, pos.VehicleStoreID)
-	if err != nil {
-		return err
+	if strings.TrimSpace(pos.VehicleStoreID) == "" {
+		err = tx.QueryRowContext(ctx, `
+			SELECT s."id"
+			FROM "store_master" s
+			JOIN "branch_store" bs
+			  ON bs."branch_id" = s."branch_id"
+			 AND bs."store_id" = s."id"
+			WHERE s."branch_id" = $1
+			ORDER BY bs."is_default" DESC, s."is_default" DESC, s."id"
+			LIMIT 1
+		`, pos.BranchID).Scan(&pos.VehicleStoreID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	_, err = tx.ExecContext(ctx, `

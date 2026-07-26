@@ -155,9 +155,10 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
       // showing the old name/address until a full reload. Force-refresh it so
       // the edited values appear on the next printed/previewed receipt.
       if (mounted) {
-        await context
-            .read<CompanyProvider>()
-            .loadCompany(token: token, force: true);
+        await context.read<CompanyProvider>().loadCompany(
+          token: token,
+          force: true,
+        );
       }
 
       if (!mounted) return;
@@ -337,7 +338,7 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
                                             return null;
                                           },
                                         ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 16),
                                         TextFormField(
                                           controller: _companyNameEnController,
                                           decoration: const InputDecoration(
@@ -351,7 +352,7 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
                                             return null;
                                           },
                                         ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 16),
                                         TextFormField(
                                           controller: _addressThController,
                                           decoration: const InputDecoration(
@@ -359,7 +360,7 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
                                           ),
                                           maxLines: 2,
                                         ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 16),
                                         TextFormField(
                                           controller: _addressEnController,
                                           decoration: const InputDecoration(
@@ -367,7 +368,7 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
                                           ),
                                           maxLines: 2,
                                         ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 16),
                                         Row(
                                           children: [
                                             Expanded(
@@ -391,14 +392,14 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 16),
                                         TextFormField(
                                           controller: _websiteController,
                                           decoration: const InputDecoration(
                                             labelText: 'Website',
                                           ),
                                         ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 16),
                                         Row(
                                           children: [
                                             Expanded(

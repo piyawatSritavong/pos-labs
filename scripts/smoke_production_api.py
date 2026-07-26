@@ -269,7 +269,6 @@ def main() -> int:
     temp_address = f"ADDR-SMOKE-{RUN_ID}"
     temp_member_phone = "09" + RUN_ID[-8:]
     temp_promo = f"SMOKE{RUN_ID[-8:]}"
-    temp_branch = f"S{RUN_ID[-7:]}"
     temp_user = f"smoke_{RUN_ID[-10:]}"
     temp_user_password = secrets.token_urlsafe(18)
     temp_user_id = ""
@@ -315,6 +314,7 @@ def main() -> int:
         check("GET /addresses", "GET", "/addresses?limit=2", 200, token=admin_token)
         check("GET /stores", "GET", "/stores", 200, token=admin_token)
         check("GET /branches", "GET", "/branches?limit=10", 200, token=admin_token)
+        check("GET /branches/next-id", "GET", "/branches/next-id", 200, token=admin_token)
         check("GET /pos", "GET", "/pos?limit=20", 200, token=admin_token)
         check("GET /users", "GET", "/users?limit=10", 200, token=admin_token)
         check("GET /roles", "GET", "/roles", 200, token=admin_token)
@@ -421,29 +421,33 @@ def main() -> int:
                 note="Invalid image exercises validation without creating a new asset.",
             )
 
-        # Reversible branch CRUD.
-        branch_body = {
-            "branchId": temp_branch,
-            "companyId": company.get("taxId", "0000000000000"),
-            "branchName": "API Smoke Branch",
-            "branchNameTh": "สาขาทดสอบ API",
-            "branchAddress": "Temporary",
-            "branchAddressTh": "ชั่วคราว",
-            "phone": "0200000000",
-            "email": f"{temp_branch.lower()}@example.test",
-        }
-        status, _, _ = check("POST /branches", "POST", "/branches", 201, token=admin_token, json_body=branch_body)
-        if status == 201:
-            add_cleanup("DELETE", f"/branches/{temp_branch}", admin_token, label="temporary branch")
-        check("GET /branches/:id", "GET", f"/branches/{temp_branch}", 200, token=admin_token)
-        branch_update = dict(branch_body)
-        branch_update.pop("branchId")
-        branch_update["branchName"] = "API Smoke Branch Updated"
-        check("PUT /branches/:id", "PUT", f"/branches/{temp_branch}", 200, token=admin_token, json_body=branch_update)
-        check("DELETE /branches/:id", "DELETE", f"/branches/{temp_branch}", 200, token=admin_token)
-        cleanup_actions[:] = [action for action in cleanup_actions if action[0] != "temporary branch"]
+        # Exercise branch routes without consuming the monotonic branch ID counter
+        # in production. Actual generated-ID/store CRUD is covered by integration
+        # tests against a fresh database.
+        check(
+            "POST /branches",
+            "POST",
+            "/branches",
+            400,
+            token=admin_token,
+            raw_body=b"[",
+            content_type="application/json",
+            mode="validation",
+            note="Invalid JSON exercises validation without consuming a branch ID.",
+        )
+        check("GET /branches/:id", "GET", f"/branches/{FAKE_ID}", 404, token=admin_token, mode="validation")
+        check(
+            "PUT /branches/:id",
+            "PUT",
+            f"/branches/{FAKE_ID}",
+            400,
+            token=admin_token,
+            json_body={"branchName": "not-created"},
+            mode="validation",
+        )
+        check("DELETE /branches/:id", "DELETE", f"/branches/{FAKE_ID}", 404, token=admin_token, mode="validation")
 
-        # POS has no cleanup for its auto-created vehicle store, so mutation routes use nonexistent fixtures.
+        # Exercise POS create validation without adding a persistent terminal.
         check("GET /pos/:id", "GET", "/pos/POS003", 200, token=admin_token)
         check(
             "POST /pos",
@@ -454,7 +458,7 @@ def main() -> int:
             raw_body=b"[",
             content_type="application/json",
             mode="validation",
-            note="Avoids an orphan vehicle store because POS deletion does not remove it.",
+            note="Invalid JSON exercises validation without adding a POS.",
         )
         check("PUT /pos/:id/toggle-activate", "PUT", f"/pos/{FAKE_ID}/toggle-activate", 404, token=admin_token, mode="validation")
         _, _, secret_raw = check("GET /pos/:id/secret", "GET", "/pos/POS003/secret", 200, token=admin_token)
@@ -605,17 +609,7 @@ def main() -> int:
             json_body={"details": "temporary fixture updated", "unit": "THB", "amount": 1},
         )
 
-        # Store/role create routes have no delete counterpart.
-        check(
-            "POST /stores",
-            "POST",
-            "/stores",
-            409,
-            token=admin_token,
-            json_body={"id": "main", "branchId": "00000", "label": "Main Warehouse", "labelTh": "คลังหลัก"},
-            mode="validation",
-            note="Duplicate canonical ID validates the route without leaving a store behind.",
-        )
+        # Role creation has no delete counterpart.
         check(
             "POST /roles",
             "POST",
@@ -981,7 +975,15 @@ def main() -> int:
         cleanup_actions[:] = [action for action in cleanup_actions if action[0] != "temporary promotion"]
         check("DELETE /addresses/:code", "DELETE", f"/addresses/{auto_address}", 200, token=admin_token)
         cleanup_actions[:] = [action for action in cleanup_actions if action[0] != "temporary auto address"]
-        check("DELETE /parts/:code", "DELETE", f"/parts/{temp_part}", 200, token=admin_token)
+        _, _, delete_part_raw = check(
+            "DELETE /parts/:code",
+            "DELETE",
+            f"/parts/{temp_part}",
+            200,
+            token=admin_token,
+        )
+        if response_json(delete_part_raw).get("mode") != "deleted":
+            raise RuntimeError("unreferenced temporary product was not hard-deleted")
         cleanup_actions[:] = [action for action in cleanup_actions if action[0] != "temporary part"]
     finally:
         cleanup_report = run_cleanup()

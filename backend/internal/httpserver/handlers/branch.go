@@ -109,9 +109,17 @@ func (h *BranchHandler) Get(c *gin.Context) {
 	})
 }
 
+func (h *BranchHandler) NextID(c *gin.Context) {
+	id, err := h.branch.NextID(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_generate_branch_id"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"branchId": id})
+}
+
 func (h *BranchHandler) Create(c *gin.Context) {
 	var req struct {
-		BranchID        string  `json:"branchId" binding:"required"`
 		CompanyID       string  `json:"companyId" binding:"required"`
 		BranchName      string  `json:"branchName" binding:"required"`
 		BranchNameTH    string  `json:"branchNameTh" binding:"required"`
@@ -127,7 +135,6 @@ func (h *BranchHandler) Create(c *gin.Context) {
 	}
 
 	branch := &repository.Branch{
-		BranchID:        req.BranchID,
 		CompanyID:       req.CompanyID,
 		BranchName:      req.BranchName,
 		BranchNameTH:    req.BranchNameTH,
@@ -142,6 +149,13 @@ func (h *BranchHandler) Create(c *gin.Context) {
 		return
 	}
 
+	stores, err := h.branch.GetStoresByBranchID(c.Request.Context(), branch.BranchID)
+	if err != nil || len(stores) != 1 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_created_branch_store"})
+		return
+	}
+	store := stores[0]
+
 	c.JSON(http.StatusCreated, gin.H{
 		"branchId":        branch.BranchID,
 		"companyId":       branch.CompanyID,
@@ -151,6 +165,13 @@ func (h *BranchHandler) Create(c *gin.Context) {
 		"branchAddressTh": branch.BranchAddressTH,
 		"phone":           branch.Phone,
 		"email":           branch.Email,
+		"store": gin.H{
+			"id":        store.ID,
+			"branchId":  store.BranchID,
+			"label":     store.Label,
+			"labelTh":   store.LabelTH,
+			"isDefault": store.IsDefault,
+		},
 	})
 }
 

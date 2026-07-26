@@ -88,22 +88,6 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
     }
   }
 
-  // Suggest the next branch id (max existing numeric + 1, zero-padded to the
-  // existing width, e.g. 00000 → 00001). Editable in the form; uniqueness is
-  // enforced by the validator.
-  String _nextBranchId() {
-    var maxNum = -1;
-    var width = 5;
-    for (final b in _branches) {
-      final id = (b['branchId'] ?? b['id'] ?? '').toString().trim();
-      if (id.isEmpty) continue;
-      if (id.length > width) width = id.length;
-      final n = int.tryParse(id);
-      if (n != null && n > maxNum) maxNum = n;
-    }
-    return (maxNum + 1).toString().padLeft(width, '0');
-  }
-
   Future<void> _openBranchForm({Map<String, dynamic>? branch}) async {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
@@ -115,9 +99,22 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
     }
 
     final isEdit = branch != null;
+    String generatedBranchId = '';
+    if (!isEdit) {
+      try {
+        generatedBranchId = await ApiService.getNextBranchId(token: token);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('สร้าง Branch ID ไม่สำเร็จ: $e')),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
 
     final branchIdController = TextEditingController(
-      text: isEdit ? (branch['branchId']?.toString() ?? '') : _nextBranchId(),
+      text: isEdit ? (branch['branchId']?.toString() ?? '') : generatedBranchId,
     );
     final branchNameController = TextEditingController(
       text: branch?['branchName']?.toString() ?? '',
@@ -158,22 +155,14 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
                     TextFormField(
                       controller: branchIdController,
                       decoration: const InputDecoration(
-                        labelText: 'Branch ID',
+                        labelText: 'Branch ID (สร้างอัตโนมัติ)',
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
-                      readOnly: isEdit, // ไม่ให้แก้ branchId ตอนแก้ไข
+                      readOnly: true,
                       validator: (value) {
                         final v = value?.trim() ?? '';
                         if (v.isEmpty) return 'กรุณากรอก Branch ID';
-                        if (!isEdit &&
-                            _branches.any((b) =>
-                                (b['branchId'] ?? b['id'] ?? '')
-                                    .toString()
-                                    .trim() ==
-                                v)) {
-                          return 'Branch ID นี้มีอยู่แล้ว';
-                        }
                         return null;
                       },
                     ),
@@ -278,7 +267,6 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
                   } else {
                     await ApiService.createBranch(
                       token: token,
-                      branchId: branchIdController.text.trim(),
                       branchName: branchNameController.text.trim(),
                       branchNameTh: branchNameThController.text.trim(),
                       address: branchAddressController.text.trim(),
@@ -289,9 +277,10 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
                     );
                   }
 
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   Navigator.of(context).pop(true);
                 } catch (e) {
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
                   );
