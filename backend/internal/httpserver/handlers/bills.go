@@ -47,16 +47,25 @@ func (h *BillsHandler) getBranchAndPOSFromContext(c *gin.Context) (branchID, pos
 	return branchID, posID, nil
 }
 
-// getVehicleStoreID intentionally returns "" — the vehicle-store sales
-// restriction is disabled by business configuration. POS/admin sell directly
-// from branch/HQ stock (no requisition-into-vehicle step), so any branch
-// address with stock is sellable.
-func (h *BillsHandler) getVehicleStoreID(ctx context.Context, posID string) string {
-	return ""
+func (h *BillsHandler) getVehicleStoreID(ctx context.Context, posID string) (string, error) {
+	pos, err := h.pos.GetByID(ctx, posID)
+	if err != nil {
+		return "", err
+	}
+	storeID := strings.TrimSpace(pos.VehicleStoreID)
+	if storeID == "" {
+		return "", fmt.Errorf("pos_store_not_configured")
+	}
+	return storeID, nil
 }
 
 func salesAddressForPOS(addresses []repository.PartAddress, vehicleStoreID string) (repository.PartAddress, bool) {
 	if strings.TrimSpace(vehicleStoreID) != "" {
+		for _, addr := range addresses {
+			if addr.StoreID == vehicleStoreID && addr.Qty > 0 {
+				return addr, true
+			}
+		}
 		for _, addr := range addresses {
 			if addr.StoreID == vehicleStoreID {
 				return addr, true
@@ -997,7 +1006,12 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_address_code", "message": "Address code does not exist for this part"})
 		return
 	}
-	if vehicleStoreID := h.getVehicleStoreID(ctx, posID); vehicleStoreID != "" && selectedAddress.StoreID != vehicleStoreID {
+	vehicleStoreID, err := h.getVehicleStoreID(ctx, posID)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "pos_store_not_configured"})
+		return
+	}
+	if selectedAddress.StoreID != vehicleStoreID {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_address_code", "message": "Part must be sold from this POS vehicle store"})
 		return
 	}
@@ -1154,7 +1168,11 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 		return
 	}
 
-	vehicleStoreID := h.getVehicleStoreID(ctx, posID)
+	vehicleStoreID, err := h.getVehicleStoreID(ctx, posID)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "pos_store_not_configured"})
+		return
+	}
 	stepStart = time.Now()
 	selectedAddress, hasSalesAddress := salesAddressForPOS(addresses, vehicleStoreID)
 	logSlowTiming("bills.add_by_barcode.address_select", stepStart, "bill_id", id, "vehicle_store_id", vehicleStoreID, "ok", hasSalesAddress)

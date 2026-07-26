@@ -4,6 +4,7 @@ import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_parts.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/utils/pos_error_message.dart';
 import 'package:provider/provider.dart';
 
 class SearchBarcodeSection extends StatefulWidget {
@@ -278,7 +279,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
       }
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('เพิ่มสินค้าไม่สำเร็จ: $e')),
+        SnackBar(content: Text('เพิ่มสินค้าไม่สำเร็จ: ${posErrorMessage(e)}')),
       );
       return false;
     } finally {

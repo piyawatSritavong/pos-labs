@@ -105,6 +105,7 @@ class ApiPartsService {
     String? categoryId,
     bool? isActive,
     bool? crossBranch,
+    bool saleableOnly = false,
     int limit = 20,
     int offset = 0,
   }) async {
@@ -124,6 +125,9 @@ class ApiPartsService {
     }
     if (crossBranch != null) {
       queryParams['crossBranch'] = crossBranch.toString();
+    }
+    if (saleableOnly) {
+      queryParams['saleableOnly'] = 'true';
     }
 
     final uri = Uri.parse(

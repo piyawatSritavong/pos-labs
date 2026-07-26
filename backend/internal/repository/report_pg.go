@@ -265,6 +265,7 @@ func (r *reportRepositoryPG) GetAllAddresses(ctx context.Context) ([]Address, er
 		FROM "address_master" a
 		LEFT JOIN "part_master" p ON p."code" = a."part_code"
 		LEFT JOIN "store_master" s ON s."id" = a."store_id"
+		WHERE a."is_active" = true
 		ORDER BY a."code" ASC
 	`)
 	if err != nil {

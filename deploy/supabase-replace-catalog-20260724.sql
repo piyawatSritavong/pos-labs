@@ -1708,8 +1708,8 @@ ON CONFLICT (code) DO UPDATE SET
 
 -- Replace the incoming inventory codes.
 INSERT INTO address_master
-  (code, part_code, store_id, shelf, qty, "min", "max", rop, remarks)
-SELECT code, part_code, store_id, shelf, qty, "min", "max", rop, remarks
+  (code, part_code, store_id, shelf, qty, "min", "max", rop, remarks, is_active)
+SELECT code, part_code, store_id, shelf, qty, "min", "max", rop, remarks, true
   FROM incoming_address
 ON CONFLICT (code) DO UPDATE SET
   part_code = EXCLUDED.part_code,
@@ -1719,7 +1719,8 @@ ON CONFLICT (code) DO UPDATE SET
   "min" = EXCLUDED."min",
   "max" = EXCLUDED."max",
   rop = EXCLUDED.rop,
-  remarks = EXCLUDED.remarks;
+  remarks = EXCLUDED.remarks,
+  is_active = true;
 
 -- Remove old inventory unless a historical bill still references it.
 DELETE FROM address_master a
@@ -1733,6 +1734,7 @@ UPDATE address_master a
        "min" = 0,
        "max" = 0,
        rop = 0,
+       is_active = false,
        remarks = 'archived by catalog replacement 2026-07-24'
  WHERE NOT EXISTS (SELECT 1 FROM incoming_address i WHERE i.code = a.code);
 
@@ -1764,7 +1766,8 @@ BEGIN
       ON i.code = a.code
      AND i.part_code = a.part_code
      AND i.store_id = a.store_id
-     AND i.qty = a.qty;
+     AND i.qty = a.qty
+     AND a.is_active = true;
   IF active_incoming <> 800 OR exact_addresses <> 800 THEN
     RAISE EXCEPTION 'catalog verification failed: active %, addresses %', active_incoming, exact_addresses;
   END IF;

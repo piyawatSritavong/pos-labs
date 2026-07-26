@@ -68,10 +68,10 @@ type PartRepository interface {
 	ListParts(ctx context.Context, limit, offset int, branchID *string) ([]PartSummary, error)
 	GetPartByBarcode(ctx context.Context, barcode string, branchID string) (*PartDetail, []PartAddress, error)
 	CheckPartExistsInBranch(ctx context.Context, partCode, branchID string) (bool, error)
-	SearchParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID, storeID *string, limit, offset int) ([]PartDetail, error)
+	SearchParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID, storeID *string, saleableOnly bool, limit, offset int) ([]PartDetail, error)
 	// CountParts returns the total number of parts matching the same filters as
 	// SearchParts (ignoring limit/offset) — used for page-jump pagination.
-	CountParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID, storeID *string) (int, error)
+	CountParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID, storeID *string, saleableOnly bool) (int, error)
 	// GetAddressesByPartCodes loads addresses for many parts in a single query
 	// (avoids N+1 when building search/list responses). Result is keyed by part code.
 	GetAddressesByPartCodes(ctx context.Context, codes []string, branchID *string) (map[string][]PartAddress, error)

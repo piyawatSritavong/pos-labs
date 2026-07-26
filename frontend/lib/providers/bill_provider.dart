@@ -1,7 +1,3 @@
-import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:frontend/services/api_service.dart';
 
@@ -14,10 +10,6 @@ double _toDouble(dynamic v) {
 const String kManualDiscountPromotionCode = 'SYS_MANUAL_DISCOUNT';
 
 class BillProvider extends ChangeNotifier {
-  BillProvider() {
-    _initWebSync();
-  }
-
   String? _billId;
   Map<String, dynamic>? _currentBill;
   Map<String, dynamic>? get currentBill => _currentBill;
@@ -218,9 +210,6 @@ class BillProvider extends ChangeNotifier {
     _mirroredReturnCreditAmount = null;
     _mirroredNetSettlementAmount = null;
     _assignedMember = null;
-    if (kIsWeb) {
-      html.window.localStorage.remove('bill_state');
-    }
     if (notify) {
       notifyListeners();
     }
@@ -270,41 +259,9 @@ class BillProvider extends ChangeNotifier {
   }
 
   void _syncToLocalStorage() {
-    if (!kIsWeb || _currentBill == null) return;
-    try {
-      final json = jsonEncode(_currentBill);
-      html.window.localStorage['bill_state'] = json;
-    } catch (_) {
-      // ignore serialization errors
-    }
-  }
-
-  void _initWebSync() {
-    if (!kIsWeb) return;
-
-    // 1) โหลดค่าล่าสุดจาก localStorage ตอนเปิดแท็บ
-    final raw = html.window.localStorage['bill_state'];
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        final map = jsonDecode(raw) as Map<String, dynamic>;
-        _applyBill(map, sync: false);
-      } catch (_) {
-        // ignore parse errors
-      }
-    }
-
-    // 2) ฟัง storage event จากแท็บอื่น แล้วอัปเดต state
-    html.window.onStorage.listen((event) {
-      if (event.key != 'bill_state') return;
-      final newValue = event.newValue;
-      if (newValue == null || newValue.isEmpty) return;
-      try {
-        final map = jsonDecode(newValue) as Map<String, dynamic>;
-        _applyBill(map, sync: false);
-      } catch (_) {
-        // ignore parse errors
-      }
-    });
+    // Cart recovery through browser localStorage is intentionally disabled.
+    // The server owns active/held bill state and pos_mirror_state handles the
+    // customer display without reviving a stale cashier cart.
   }
 
   List<Map<String, dynamic>> _extractItems(Map<String, dynamic> bill) {

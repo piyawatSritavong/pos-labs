@@ -27,7 +27,7 @@ func (r *addressRepositoryPG) GetByCode(ctx context.Context, code string) (*Addr
 		FROM "address_master" a
 		LEFT JOIN "part_master" p ON p."code" = a."part_code"
 		LEFT JOIN "store_master" s ON s."id" = a."store_id"
-		WHERE a."code" = $1
+		WHERE a."code" = $1 AND a."is_active" = true
 	`, code)
 
 	var a Address
@@ -74,6 +74,7 @@ func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, bra
 		args = append(args, strings.TrimSpace(*branchID))
 		argn++
 	}
+	conds = append(conds, `a."is_active" = true`)
 
 	where := ""
 	if len(conds) > 0 {
@@ -146,6 +147,7 @@ func (r *addressRepositoryPG) Count(ctx context.Context, q, storeID string, bran
 		args = append(args, strings.TrimSpace(*branchID))
 		argn++
 	}
+	conds = append(conds, `a."is_active" = true`)
 
 	where := ""
 	if len(conds) > 0 {
@@ -180,6 +182,7 @@ func (r *addressRepositoryPG) List(ctx context.Context, limit, offset int) ([]Ad
 		FROM "address_master" a
 		LEFT JOIN "part_master"  p ON p."code" = a."part_code"
 		LEFT JOIN "store_master" s ON s."id"   = a."store_id"
+		WHERE a."is_active" = true
 		ORDER BY a."code"
 		LIMIT $1 OFFSET $2
 	`, limit, offset)
@@ -220,7 +223,7 @@ func (r *addressRepositoryPG) Update(ctx context.Context, address *Address) erro
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE "address_master"
 		SET "part_code" = $1, "store_id" = $2, "shelf" = $3, "qty" = $4, "min" = $5, "max" = $6, "rop" = $7, "remarks" = $8
-		WHERE "code" = $9
+		WHERE "code" = $9 AND "is_active" = true
 	`, address.PartCode, address.StoreID, address.Shelf, address.Qty, address.Min, address.Max, address.Rop, address.Remarks, address.Code)
 	if err != nil {
 		return err
@@ -240,7 +243,7 @@ func (r *addressRepositoryPG) Update(ctx context.Context, address *Address) erro
 func (r *addressRepositoryPG) Delete(ctx context.Context, code string) error {
 	result, err := r.db.ExecContext(ctx, `
 		DELETE FROM "address_master"
-		WHERE "code" = $1
+		WHERE "code" = $1 AND "is_active" = true
 	`, code)
 	if err != nil {
 		return err
@@ -261,7 +264,7 @@ func (r *addressRepositoryPG) DecreaseInventory(ctx context.Context, addressCode
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE "address_master"
 		SET "qty" = "qty" - $1
-		WHERE "code" = $2 AND "qty" >= $1
+		WHERE "code" = $2 AND "is_active" = true AND "qty" >= $1
 	`, qty, addressCode)
 	if err != nil {
 		return false, err

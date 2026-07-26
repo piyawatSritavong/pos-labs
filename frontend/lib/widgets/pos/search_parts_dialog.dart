@@ -5,6 +5,7 @@ import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_parts.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/utils/pos_error_message.dart';
 import 'package:provider/provider.dart';
 
 class SearchPartsDialog extends StatefulWidget {
@@ -55,6 +56,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       final raw = await ApiPartsService.searchParts(
         token: token,
         query: '',
+        saleableOnly: true,
         limit: 45,
         offset: 0,
       );
@@ -102,6 +104,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       final raw = await ApiPartsService.searchParts(
         token: token,
         query: query,
+        saleableOnly: true,
         limit: 20,
         offset: 0,
       );
@@ -133,15 +136,21 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
     final rawAddresses = (json['addresses'] as List?) ?? [];
     Map<String, dynamic>? defaultAddress;
     for (final addr in rawAddresses) {
-      if (addr is Map<String, dynamic> && addr['is_default'] == true) {
+      if (addr is Map<String, dynamic> &&
+          _toDouble(addr['qty']) > 0 &&
+          (addr['isDefault'] == true || addr['is_default'] == true)) {
         defaultAddress = addr;
         break;
       }
     }
-    defaultAddress ??=
-        rawAddresses.isNotEmpty && rawAddresses.first is Map<String, dynamic>
-        ? rawAddresses.first as Map<String, dynamic>
-        : null;
+    if (defaultAddress == null) {
+      for (final addr in rawAddresses) {
+        if (addr is Map<String, dynamic> && _toDouble(addr['qty']) > 0) {
+          defaultAddress = addr;
+          break;
+        }
+      }
+    }
 
     final defaultAddressCode =
         defaultAddress?['addressCode']?.toString() ??
@@ -354,7 +363,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       }
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('เพิ่มสินค้าไม่สำเร็จ: $e')),
+        SnackBar(content: Text('เพิ่มสินค้าไม่สำเร็จ: ${posErrorMessage(e)}')),
       );
     }
   }

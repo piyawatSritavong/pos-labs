@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/utils/store_summary.dart';
 import 'package:http/http.dart' as http;
 
 class PartsManagementSection extends StatefulWidget {
@@ -858,35 +859,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                     final minPriceText = money(
                                       p['minPrice'] ?? p['min_price'],
                                     );
-                                    // คลังที่สินค้านี้อยู่ (จาก addresses ที่
-                                    // backend แนบมา) เช่น "คลังหลัก: A-01 (100)"
-                                    final addresses =
-                                        (p['addresses'] as List?)
-                                            ?.whereType<Map>()
-                                            .toList() ??
-                                        [];
-                                    final storeText = addresses.isEmpty
-                                        ? '-'
-                                        : addresses
-                                              .map((a) {
-                                                final store = a['store'];
-                                                final label = (store is Map)
-                                                    ? (store['labelTh'] ??
-                                                              store['label'] ??
-                                                              store['id'] ??
-                                                              '')
-                                                          .toString()
-                                                    : '';
-                                                final shelf =
-                                                    a['shelf']?.toString() ??
-                                                    '';
-                                                final qty =
-                                                    a['qty']?.toString() ?? '';
-                                                return shelf.isEmpty
-                                                    ? '$label ($qty)'
-                                                    : '$label: $shelf ($qty)';
-                                              })
-                                              .join(', ');
+                                    final storeText = formatPartStoreSummary(
+                                      p['addresses'] as List?,
+                                    );
 
                                     return DataRow(
                                       cells: [

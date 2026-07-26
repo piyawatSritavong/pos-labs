@@ -199,6 +199,7 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 				SELECT SUM(am."qty")
 				FROM "address_master" am
 				WHERE am."part_code" = bid."part_code"
+				  AND am."is_active" = true
 				  AND am."store_id" = b."branch_id"
 			), 0) AS "total_stock"
 		FROM "bill_item_detail" bid
@@ -297,6 +298,7 @@ func (r *billRepositoryPG) GetDetailsByBillIDs(ctx context.Context, ids []string
 				SELECT SUM(am."qty")
 				FROM "address_master" am
 				WHERE am."part_code" = bid."part_code"
+				  AND am."is_active" = true
 				  AND am."store_id" = b."branch_id"
 			), 0) AS "total_stock"
 		FROM "bill_item_detail" bid

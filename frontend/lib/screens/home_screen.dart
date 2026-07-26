@@ -51,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
       GlobalKey<SearchBarcodeSectionState>();
   final FocusNode _barcodeFocusNode = FocusNode();
   bool _isCheckingPendingBill = true;
+  String? _pendingBillError;
   final PosMirrorService _posMirrorService = PosMirrorService();
   int _holdCount = 0;
 
@@ -182,6 +183,14 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    billProvider.resetCurrentBillState();
+    if (mounted) {
+      setState(() {
+        _isCheckingPendingBill = true;
+        _pendingBillError = null;
+      });
+    }
+
     try {
       final pendingBills = await ApiBillsService.getBills(
         token: token,
@@ -193,47 +202,20 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       if (!mounted) return;
 
-      if (pendingBills.isEmpty) {
-        billProvider.resetCurrentBillState();
-        return;
-      }
-
-      final pendingBill = Map<String, dynamic>.from(pendingBills.first);
-      final shouldContinue = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => _PendingBillDialog(bill: pendingBill),
-      );
-      if (!mounted) return;
-
-      if (shouldContinue == true) {
-        billProvider.loadBillSnapshot(pendingBill);
-        return;
-      }
-
-      final pendingBillId = pendingBill['id']?.toString() ?? '';
-      if (pendingBillId.isEmpty) {
-        billProvider.resetCurrentBillState();
-        return;
-      }
-
-      try {
+      for (final pendingBill in pendingBills) {
+        final pendingBillId = pendingBill['id']?.toString() ?? '';
+        if (pendingBillId.isEmpty) {
+          throw Exception('ไม่พบเลขที่บิลที่ค้างอยู่');
+        }
         await ApiBillsService.cancelBill(token: token, billId: pendingBillId);
-        billProvider.resetCurrentBillState();
-        messenger.showSnackBar(
-          const SnackBar(content: Text('ยกเลิกบิลที่ค้างอยู่แล้ว')),
-        );
-      } catch (e) {
-        billProvider.loadBillSnapshot(pendingBill);
-        messenger.showSnackBar(
-          SnackBar(content: Text('ยกเลิกบิลที่ค้างอยู่ไม่สำเร็จ: $e')),
-        );
       }
+      billProvider.resetCurrentBillState();
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text('ตรวจสอบบิลที่ค้างอยู่ไม่สำเร็จ: $e')),
-      );
+      setState(() {
+        _pendingBillError = 'ยกเลิกบิลที่ค้างอยู่ไม่สำเร็จ: $e';
+      });
+      messenger.showSnackBar(SnackBar(content: Text(_pendingBillError!)));
     } finally {
       if (mounted) {
         setState(() {
@@ -263,6 +245,50 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(color: context.colorMuted),
                 ),
               ],
+            ),
+          ),
+        ),
+      );
+    }
+    if (_pendingBillError != null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 52,
+                      color: Colors.redAccent,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'ยังไม่สามารถเริ่มขายได้',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _pendingBillError!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: context.colorMuted),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      onPressed: _handlePendingBillOnLaunch,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('ลองใหม่'),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -583,15 +609,14 @@ class _HomeScreenState extends State<HomeScreen> {
           Icons.open_in_new_rounded,
           'หน้าจอลูกค้า',
           null,
-          () => HomeScreen.openCustomerWindowFn?.call(
-            auth.branchId,
-            auth.posId,
-          ),
+          () =>
+              HomeScreen.openCustomerWindowFn?.call(auth.branchId, auth.posId),
         ),
     ];
   }
 }
 
+// ignore: unused_element
 class _PendingBillDialog extends StatelessWidget {
   const _PendingBillDialog({required this.bill});
 
@@ -1227,10 +1252,7 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
             icon: Icons.open_in_new_rounded,
             isCompact: widget.isCompact,
             onTap: () {
-              HomeScreen.openCustomerWindowFn?.call(
-                auth.branchId,
-                auth.posId,
-              );
+              HomeScreen.openCustomerWindowFn?.call(auth.branchId, auth.posId);
             },
           ),
         const SizedBox(width: 16),

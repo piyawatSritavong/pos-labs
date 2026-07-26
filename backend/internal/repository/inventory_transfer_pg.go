@@ -442,7 +442,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 		err := tx.QueryRowContext(ctx, `
 			SELECT "code", COALESCE("qty", 0)
 			FROM "address_master"
-			WHERE "store_id" = $1 AND "part_code" = $2
+			WHERE "store_id" = $1 AND "part_code" = $2 AND "is_active" = true
 			ORDER BY "code"
 			LIMIT 1
 			FOR UPDATE
@@ -482,7 +482,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 		_, err = tx.ExecContext(ctx, `
 			UPDATE "address_master"
 			SET "qty" = "qty" - $1
-			WHERE "code" = $2
+			WHERE "code" = $2 AND "is_active" = true
 		`, item.requestedQty, item.sourceAddrCode)
 		if err != nil {
 			return err
@@ -493,7 +493,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 			SELECT "code"
 			FROM "address_master"
 			WHERE "store_id" = $1 AND "part_code" = $2
-			ORDER BY "code"
+			ORDER BY "is_active" DESC, "code"
 			LIMIT 1
 			FOR UPDATE
 		`, transfer.ToStoreID, item.partCode).Scan(&destAddrCode)
@@ -514,7 +514,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 		} else {
 			_, err = tx.ExecContext(ctx, `
 				UPDATE "address_master"
-				SET "qty" = "qty" + $1
+				SET "qty" = "qty" + $1, "is_active" = true
 				WHERE "code" = $2
 			`, item.requestedQty, destAddrCode)
 			if err != nil {
@@ -564,7 +564,8 @@ func (r *inventoryTransferRepositoryPG) adjustAddressQtyTx(ctx context.Context, 
 			SELECT am."code"
 			FROM "address_master" am
 			JOIN "branch_store" bs ON bs."store_id" = am."store_id"
-			WHERE am."part_code" = $2 AND bs."branch_id" = $3 AND bs."is_default" = true
+			WHERE am."part_code" = $2 AND am."is_active" = true
+			  AND bs."branch_id" = $3 AND bs."is_default" = true
 			LIMIT 1
 		)
 	`, delta, partCode, branchID)

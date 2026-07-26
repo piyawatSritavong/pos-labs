@@ -15,10 +15,11 @@ import (
 type PartsHandler struct {
 	parts     repository.PartRepository
 	addresses repository.AddressRepository
+	pos       repository.POSRepository
 }
 
-func NewPartsHandler(parts repository.PartRepository, addresses repository.AddressRepository) *PartsHandler {
-	return &PartsHandler{parts: parts, addresses: addresses}
+func NewPartsHandler(parts repository.PartRepository, addresses repository.AddressRepository, pos repository.POSRepository) *PartsHandler {
+	return &PartsHandler{parts: parts, addresses: addresses, pos: pos}
 }
 
 func (h *PartsHandler) List(c *gin.Context) {
@@ -226,6 +227,7 @@ func (h *PartsHandler) Get(c *gin.Context) {
 //   - categoryId: filter by category ID (optional)
 //   - isActive: filter by active status (true/false) (optional)
 //   - crossBranch: if true, search across all branches; if false, only session branch (default: false)
+//   - saleableOnly: if true, force the session POS store and qty > 0
 //   - limit: pagination limit (default: 20, max: 500)
 //   - offset: pagination offset (default: 0)
 func (h *PartsHandler) Search(c *gin.Context) {
@@ -234,6 +236,7 @@ func (h *PartsHandler) Search(c *gin.Context) {
 	categoryID := c.Query("categoryId")
 	isActiveStr := c.Query("isActive")
 	crossBranchStr := c.Query("crossBranch")
+	saleableOnlyStr := c.Query("saleableOnly")
 
 	limit := config.DefaultLimit
 	offset := config.DefaultOffset
@@ -265,6 +268,7 @@ func (h *PartsHandler) Search(c *gin.Context) {
 
 	// Determine branch filtering
 	var branchID *string
+	var storeIDPtr *string
 	crossBranch := false
 	if crossBranchStr != "" {
 		if val, err := strconv.ParseBool(crossBranchStr); err == nil {
@@ -274,6 +278,32 @@ func (h *PartsHandler) Search(c *gin.Context) {
 	if crossBranch && !canReadAllOperationalData(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "cross_branch_access_denied"})
 		return
+	}
+
+	saleableOnly := false
+	if saleableOnlyStr != "" {
+		if val, err := strconv.ParseBool(saleableOnlyStr); err == nil {
+			saleableOnly = val
+		}
+	}
+	if saleableOnly {
+		// A sale search is always scoped by the authenticated terminal. Caller
+		// supplied cross-branch/store filters must never widen the stock source.
+		crossBranch = false
+		posIDValue, _ := c.Get("pos_id")
+		posID, _ := posIDValue.(string)
+		posSetting, err := h.pos.GetByID(c.Request.Context(), posID)
+		if err != nil || strings.TrimSpace(posSetting.VehicleStoreID) == "" {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   "pos_store_not_configured",
+				"message": "POS does not have a stock store configured",
+			})
+			return
+		}
+		storeID := strings.TrimSpace(posSetting.VehicleStoreID)
+		storeIDPtr = &storeID
+		active := true
+		isActive = &active
 	}
 
 	// If not cross-branch, get branchId from session
@@ -287,15 +317,16 @@ func (h *PartsHandler) Search(c *gin.Context) {
 	}
 
 	// Optional store (คลังสินค้า) filter for the Parts page.
-	var storeIDPtr *string
-	if st := strings.TrimSpace(c.Query("storeId")); st != "" {
-		storeIDPtr = &st
+	if !saleableOnly {
+		if st := strings.TrimSpace(c.Query("storeId")); st != "" {
+			storeIDPtr = &st
+		}
 	}
 
 	ctx := c.Request.Context()
 
 	// Search parts
-	parts, err := h.parts.SearchParts(ctx, query, categoryIDPtr, isActive, branchID, storeIDPtr, limit, offset)
+	parts, err := h.parts.SearchParts(ctx, query, categoryIDPtr, isActive, branchID, storeIDPtr, saleableOnly, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_search_parts"})
 		return
@@ -321,6 +352,15 @@ func (h *PartsHandler) Search(c *gin.Context) {
 	out := make([]gin.H, 0, len(parts))
 	for _, part := range parts {
 		addresses := addressesByCode[part.Code]
+		if storeIDPtr != nil {
+			filtered := make([]repository.PartAddress, 0, len(addresses))
+			for _, address := range addresses {
+				if address.StoreID == *storeIDPtr && (!saleableOnly || address.Qty > 0) {
+					filtered = append(filtered, address)
+				}
+			}
+			addresses = filtered
+		}
 
 		// Build addresses array
 		addrs := make([]gin.H, 0, len(addresses))
@@ -371,7 +411,7 @@ func (h *PartsHandler) Search(c *gin.Context) {
 	}
 
 	// Total matching count (ignores limit/offset) for page-jump pagination.
-	total, err := h.parts.CountParts(ctx, query, categoryIDPtr, isActive, branchID, storeIDPtr)
+	total, err := h.parts.CountParts(ctx, query, categoryIDPtr, isActive, branchID, storeIDPtr, saleableOnly)
 	if err != nil {
 		total = len(out) // degrade gracefully
 	}

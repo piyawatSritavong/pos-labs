@@ -41,6 +41,21 @@ func TestValidateLinePriceBoundaries(t *testing.T) {
 	}
 }
 
+func TestSalesAddressForPOSUsesOnlyConfiguredStore(t *testing.T) {
+	addresses := []repository.PartAddress{
+		{Code: "MAIN", StoreID: "main", Qty: 20},
+		{Code: "POS1-ZERO", StoreID: "vehicle_POS001", Qty: 0},
+		{Code: "POS1-STOCK", StoreID: "vehicle_POS001", Qty: 5},
+	}
+	selected, ok := salesAddressForPOS(addresses, "vehicle_POS001")
+	if !ok || selected.Code != "POS1-STOCK" {
+		t.Fatalf("expected POS1 store address, got %#v ok=%v", selected, ok)
+	}
+	if _, ok := salesAddressForPOS(addresses, "store_00001"); ok {
+		t.Fatal("must not fall back to another store when POS store has no address")
+	}
+}
+
 func TestOperationalAccessMatrix(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	makeContext := func(user *repository.User, branch, pos string) *gin.Context {

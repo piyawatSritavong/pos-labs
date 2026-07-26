@@ -8,7 +8,9 @@ import 'package:frontend/services/api_service.dart';
 import 'package:frontend/providers/auth_provider.dart';
 
 class AddressesManagementSection extends StatefulWidget {
-  const AddressesManagementSection({super.key});
+  const AddressesManagementSection({super.key, this.autoLoad = true});
+
+  final bool autoLoad;
 
   @override
   State<AddressesManagementSection> createState() =>
@@ -48,8 +50,10 @@ class _AddressesManagementSectionState
   @override
   void initState() {
     super.initState();
-    _load(resetOffset: true);
-    _loadStores();
+    if (widget.autoLoad) {
+      _load(resetOffset: true);
+      _loadStores();
+    }
   }
 
   Future<void> _loadStores() async {
@@ -308,7 +312,7 @@ class _AddressesManagementSectionState
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       decoration: const InputDecoration(
-                        labelText: 'Store',
+                        labelText: 'คลังสินค้า',
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
@@ -316,7 +320,7 @@ class _AddressesManagementSectionState
                       items: [
                         const DropdownMenuItem<String>(
                           value: null,
-                          child: Text('All Stores'),
+                          child: Text('ทุกคลัง'),
                         ),
                         ..._buildStoreDropdownItems(),
                       ],
@@ -335,7 +339,7 @@ class _AddressesManagementSectionState
                       controller: _searchController,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.search),
-                        hintText: 'Search by part code, name, store...',
+                        hintText: 'ค้นหาด้วยรหัสสินค้า ชื่อสินค้า หรือคลัง...',
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
@@ -349,7 +353,7 @@ class _AddressesManagementSectionState
                   ),
                   const SizedBox(width: 12),
                   IconButton(
-                    tooltip: 'Refresh',
+                    tooltip: 'รีเฟรช',
                     onPressed: _isLoading ? null : () => _load(),
                     icon: const Icon(Icons.refresh),
                   ),
@@ -379,7 +383,7 @@ class _AddressesManagementSectionState
                         : _errorMessage != null
                         ? _buildErrorState()
                         : _addresses.isEmpty
-                        ? const Center(child: Text('No addresses found.'))
+                        ? const Center(child: Text('ไม่พบข้อมูลคลังสินค้า'))
                         : _buildDataTable(_addresses),
                   ),
                 ),
@@ -647,16 +651,16 @@ class _AddressesManagementSectionState
             dataRowMaxHeight: 56,
             columnSpacing: 24,
             columns: const [
-              DataColumn(label: Text('Part Code')),
-              DataColumn(label: Text('Part Name')),
-              DataColumn(label: Text('Store')),
-              DataColumn(label: Text('Shelf')),
-              DataColumn(label: Text('Qty')),
+              DataColumn(label: Text('รหัสสินค้า')),
+              DataColumn(label: Text('ชื่อสินค้า')),
+              DataColumn(label: Text('คลัง')),
+              DataColumn(label: Text('ชั้นวาง')),
+              DataColumn(label: Text('จำนวน')),
               DataColumn(label: Text('ต้นทุน')),
               DataColumn(label: Text('ราคาขายจริง')),
               DataColumn(label: Text('ราคาลดได้')),
-              DataColumn(label: Text('Min / ROP')),
-              DataColumn(label: Text('Max')),
+              DataColumn(label: Text('ขั้นต่ำ / จุดสั่งซื้อ')),
+              DataColumn(label: Text('สูงสุด')),
               DataColumn(label: Text('แก้ไข')),
             ],
             rows: items.map((a) {
@@ -694,7 +698,7 @@ class _AddressesManagementSectionState
                   DataCell(
                     IconButton(
                       icon: const Icon(Icons.edit_outlined),
-                      tooltip: 'แก้ไขจำนวน/จุดแจ้งเตือน (Qty/Min/ROP/Max)',
+                      tooltip: 'แก้ไขจำนวนและจุดแจ้งเตือน',
                       onPressed: () => _editThreshold(a),
                     ),
                   ),

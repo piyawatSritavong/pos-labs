@@ -55,19 +55,19 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 					SELECT SUM(a2.qty)
 					FROM "address_master" a2
 					JOIN "branch_store" bs2 ON bs2.store_id = a2.store_id
-					WHERE a2.part_code = p.code AND bs2.branch_id = $3
+					WHERE a2.part_code = p.code AND a2.is_active = true AND bs2.branch_id = $3
 				), 0) AS total_stock,
 				COALESCE((
 					SELECT SUM(a3.rop)
 					FROM "address_master" a3
 					JOIN "branch_store" bs3 ON bs3.store_id = a3.store_id
-					WHERE a3.part_code = p.code AND bs3.branch_id = $3
+					WHERE a3.part_code = p.code AND a3.is_active = true AND bs3.branch_id = $3
 				), 0) AS total_rop,
 				COALESCE((
 					SELECT SUM(a4.min)
 					FROM "address_master" a4
 					JOIN "branch_store" bs4 ON bs4.store_id = a4.store_id
-					WHERE a4.part_code = p.code AND bs4.branch_id = $3
+					WHERE a4.part_code = p.code AND a4.is_active = true AND bs4.branch_id = $3
 				), 0) AS total_min
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
@@ -75,7 +75,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			WHERE EXISTS (
 				SELECT 1 FROM "address_master" a
 				JOIN "branch_store" bs ON bs.store_id = a.store_id
-				WHERE a.part_code = p.code AND bs.branch_id = $3
+				WHERE a.part_code = p.code AND a.is_active = true AND bs.branch_id = $3
 			)
 			ORDER BY p.code
 			LIMIT $1 OFFSET $2
@@ -104,7 +104,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
-			LEFT JOIN "address_master" a ON a.part_code = p.code
+			LEFT JOIN "address_master" a ON a.part_code = p.code AND a.is_active = true
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
 				p.unit_id, u.label, u.label_th,
@@ -181,7 +181,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
-			LEFT JOIN "address_master" a ON a.part_code = p.code
+			LEFT JOIN "address_master" a ON a.part_code = p.code AND a.is_active = true
 			LEFT JOIN "store_master" s ON s.id = a.store_id
 			LEFT JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $2
 			WHERE p.code = $1
@@ -215,7 +215,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
-			LEFT JOIN "address_master" a ON a.part_code = p.code
+			LEFT JOIN "address_master" a ON a.part_code = p.code AND a.is_active = true
 			WHERE p.code = $1
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,
@@ -275,7 +275,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			FROM "address_master" a
 			JOIN "store_master" s ON s.id = a.store_id
 			JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $2
-			WHERE a.part_code = $1
+			WHERE a.part_code = $1 AND a.is_active = true
 			ORDER BY bs.is_default DESC, a.code
 		`, code, *branchID)
 	} else {
@@ -295,7 +295,7 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 				false as is_default
 			FROM "address_master" a
 			JOIN "store_master" s ON s.id = a.store_id
-			WHERE a.part_code = $1
+			WHERE a.part_code = $1 AND a.is_active = true
 			ORDER BY a.code
 		`, code)
 	}
@@ -424,7 +424,7 @@ func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []
 			FROM "address_master" a
 			JOIN "store_master" s ON s.id = a.store_id
 			JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $2
-			WHERE a.part_code = ANY($1)
+			WHERE a.part_code = ANY($1) AND a.is_active = true
 			ORDER BY a.part_code, bs.is_default DESC, a.code
 		`, pq.Array(codes), *branchID)
 	} else {
@@ -444,7 +444,7 @@ func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []
 				false as is_default
 			FROM "address_master" a
 			JOIN "store_master" s ON s.id = a.store_id
-			WHERE a.part_code = ANY($1)
+			WHERE a.part_code = ANY($1) AND a.is_active = true
 			ORDER BY a.part_code, a.code
 		`, pq.Array(codes))
 	}
@@ -520,7 +520,7 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 		FROM "part_master" p
 		LEFT JOIN "category_master" c ON c.id = p.category_id
 		LEFT JOIN "unit_master" u ON u.id = p.unit_id
-		LEFT JOIN "address_master" a ON a.part_code = p.code
+		LEFT JOIN "address_master" a ON a.part_code = p.code AND a.is_active = true
 		LEFT JOIN "store_master" s ON s.id = a.store_id
 		LEFT JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $2
 		WHERE p.bar_code = $1
@@ -575,7 +575,7 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 		FROM "address_master" a
 		JOIN "store_master" s ON s.id = a.store_id
 		JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $2
-		WHERE a.part_code = $1
+		WHERE a.part_code = $1 AND a.is_active = true
 		ORDER BY bs.is_default DESC, a.code
 	`, d.Code, branchID)
 	if err != nil {
@@ -619,7 +619,7 @@ func (r *partRepositoryPG) CheckPartExistsInBranch(ctx context.Context, partCode
 			FROM "address_master" a
 			JOIN "store_master" s ON s.id = a.store_id
 			JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $2
-			WHERE a.part_code = $1
+			WHERE a.part_code = $1 AND a.is_active = true
 		)
 	`, partCode, branchID).Scan(&exists)
 	if err != nil {
@@ -628,7 +628,7 @@ func (r *partRepositoryPG) CheckPartExistsInBranch(ctx context.Context, partCode
 	return exists, nil
 }
 
-func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID, storeID *string) (int, error) {
+func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID, storeID *string, saleableOnly bool) (int, error) {
 	whereClauses := []string{}
 	args := []interface{}{}
 	argIndex := 1
@@ -642,6 +642,7 @@ func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categor
 			SELECT 1 FROM "address_master" a_search
 			JOIN "store_master" s_search ON s_search.id = a_search.store_id
 			WHERE a_search.part_code = p.code
+				AND a_search.is_active = true
 				AND (a_search.code ILIKE $%d OR a_search.shelf ILIKE $%d OR a_search.remarks ILIKE $%d
 					OR s_search.label ILIKE $%d OR s_search.label_th ILIKE $%d))`,
 			argIndex, argIndex, argIndex, argIndex, argIndex)
@@ -656,9 +657,13 @@ func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categor
 	}
 	// Store (คลังสินค้า) filter — part must have an address in that store.
 	if storeID != nil && *storeID != "" {
+		stockClause := ""
+		if saleableOnly {
+			stockClause = " AND a_st.qty > 0"
+		}
 		whereClauses = append(whereClauses, fmt.Sprintf(`EXISTS(
 			SELECT 1 FROM "address_master" a_st
-			WHERE a_st.part_code = p.code AND a_st.store_id = $%d)`, argIndex))
+			WHERE a_st.part_code = p.code AND a_st.is_active = true AND a_st.store_id = $%d%s)`, argIndex, stockClause))
 		args = append(args, *storeID)
 		argIndex++
 	}
@@ -672,7 +677,7 @@ func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categor
 			SELECT 1 FROM "address_master" a2
 			JOIN "store_master" s2 ON s2.id = a2.store_id
 			JOIN "branch_store" bs2 ON bs2.store_id = s2.id AND bs2.branch_id = $%d
-			WHERE a2.part_code = p.code)`, argIndex))
+			WHERE a2.part_code = p.code AND a2.is_active = true)`, argIndex))
 		args = append(args, *branchID)
 		argIndex++
 	}
@@ -691,7 +696,7 @@ func (r *partRepositoryPG) CountParts(ctx context.Context, query string, categor
 	return n, nil
 }
 
-func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID, storeID *string, limit, offset int) ([]PartDetail, error) {
+func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, categoryID *string, isActive *bool, branchID, storeID *string, saleableOnly bool, limit, offset int) ([]PartDetail, error) {
 	if limit <= 0 {
 		limit = config.DefaultLimit
 	}
@@ -726,6 +731,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			FROM "address_master" a_search
 			JOIN "store_master" s_search ON s_search.id = a_search.store_id
 			WHERE a_search.part_code = p.code
+				AND a_search.is_active = true
 				AND (a_search.code ILIKE $%d OR a_search.shelf ILIKE $%d OR a_search.remarks ILIKE $%d 
 					OR s_search.label ILIKE $%d OR s_search.label_th ILIKE $%d)
 		)`, argIndex, argIndex, argIndex, argIndex, argIndex)
@@ -743,9 +749,13 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 	}
 	// Store (คลังสินค้า) filter — part must have an address in that store.
 	if storeID != nil && *storeID != "" {
+		stockClause := ""
+		if saleableOnly {
+			stockClause = " AND a_st.qty > 0"
+		}
 		whereClauses = append(whereClauses, fmt.Sprintf(`EXISTS(
 			SELECT 1 FROM "address_master" a_st
-			WHERE a_st.part_code = p.code AND a_st.store_id = $%d)`, argIndex))
+			WHERE a_st.part_code = p.code AND a_st.is_active = true AND a_st.store_id = $%d%s)`, argIndex, stockClause))
 		args = append(args, *storeID)
 		argIndex++
 	}
@@ -777,7 +787,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 				FROM "address_master" a2
 				JOIN "store_master" s2 ON s2.id = a2.store_id
 				JOIN "branch_store" bs2 ON bs2.store_id = s2.id AND bs2.branch_id = $%d
-				WHERE a2.part_code = p.code
+				WHERE a2.part_code = p.code AND a2.is_active = true
 			)
 		`, branchArgIndex)
 
@@ -815,7 +825,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
-			LEFT JOIN "address_master" a ON a.part_code = p.code
+			LEFT JOIN "address_master" a ON a.part_code = p.code AND a.is_active = true
 			LEFT JOIN "store_master" s ON s.id = a.store_id
 			LEFT JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $%d
 			%s
@@ -855,7 +865,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
-			LEFT JOIN "address_master" a ON a.part_code = p.code
+			LEFT JOIN "address_master" a ON a.part_code = p.code AND a.is_active = true
 			%s
 			GROUP BY
 				p.code, p.bar_code, p.category_id, c.label, c.label_th,

@@ -52,6 +52,10 @@ func prepareDatabase(sqlDB *sql.DB, cfg config.Config) error {
 		log.Printf("Skipping database migrations (AUTO_MIGRATE=false)")
 	}
 
+	if err := db.EnsureAddressActiveState(sqlDB); err != nil {
+		return err
+	}
+
 	if cfg.AutoSeedCore {
 		if err := db.SeedCoreData(sqlDB); err != nil {
 			return err

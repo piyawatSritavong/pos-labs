@@ -86,7 +86,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	partRepo := repository.NewPartRepository(db)
 	memberRepo := repository.NewMemberRepository(db)
 	addressRepo := repository.NewAddressRepository(db)
-	partsHandler := handlers.NewPartsHandler(partRepo, addressRepo)
+	partsHandler := handlers.NewPartsHandler(partRepo, addressRepo, posRepo)
 	memberHandler := handlers.NewMemberHandler(memberRepo)
 	parts := r.Group("/parts")
 	parts.Use(authMw.RequirePermission("parts", "read"))

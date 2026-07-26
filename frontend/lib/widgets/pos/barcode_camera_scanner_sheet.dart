@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/utils/pos_error_message.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 class BarcodeCameraScannerSheet extends StatefulWidget {
@@ -104,7 +105,7 @@ class _BarcodeCameraScannerSheetState extends State<BarcodeCameraScannerSheet> {
       } catch (e) {
         if (!mounted) return;
         setState(() {
-          _errorMessage = 'เพิ่มสินค้าไม่สำเร็จ: $e';
+          _errorMessage = 'เพิ่มสินค้าไม่สำเร็จ: ${posErrorMessage(e)}';
           _statusMessage = 'สแกนต่อได้ หรือพิมพ์บาร์โค้ดแทน';
         });
       }

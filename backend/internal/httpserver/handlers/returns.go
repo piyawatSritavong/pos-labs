@@ -567,14 +567,12 @@ func normalizeReturnSettlementMode(raw string) string {
 }
 
 func (h *ReturnNotesHandler) Create(c *gin.Context) {
-	branchIDVal, branchExists := c.Get("branch_id")
-	posIDVal, posExists := c.Get("pos_id")
+	_, branchExists := c.Get("branch_id")
+	_, posExists := c.Get("pos_id")
 	if !branchExists || !posExists {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_branch_or_pos"})
 		return
 	}
-	branchID, _ := branchIDVal.(string)
-	posID, _ := posIDVal.(string)
 
 	userVal, _ := c.Get("user")
 	user, _ := userVal.(*repository.User)
@@ -617,7 +615,7 @@ func (h *ReturnNotesHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_reference_bill"})
 		return
 	}
-	if referenceBill.BranchID != branchID {
+	if !canReadOperationalRecord(c, referenceBill.BranchID, referenceBill.POSID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "bill_access_denied"})
 		return
 	}
@@ -637,7 +635,9 @@ func (h *ReturnNotesHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_purchase_bill"})
 			return
 		}
-		if purchaseBill.BranchID != branchID || strings.ToLower(strings.TrimSpace(purchaseBill.Status)) != "completed" {
+		if purchaseBill.BranchID != referenceBill.BranchID ||
+			!canReadOperationalRecord(c, purchaseBill.BranchID, purchaseBill.POSID) ||
+			strings.ToLower(strings.TrimSpace(purchaseBill.Status)) != "completed" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_purchase_bill"})
 			return
 		}
@@ -729,19 +729,22 @@ func (h *ReturnNotesHandler) Create(c *gin.Context) {
 		ID:              returnNoteID,
 		ReferenceBillID: referenceBill.ID,
 		PurchaseBillID:  strings.TrimSpace(req.PurchaseBillID),
-		BranchID:        branchID,
-		POSID:           posID,
-		Status:          "completed",
-		SettlementMode:  settlementMode,
-		PaymentMethod:   paymentMethod,
-		PaymentRef:      paymentRef,
-		MemberID:        referenceBill.MemberID,
-		CustomerName:    referenceBill.CustomerName,
-		PurchaseAmount:  purchaseAmount,
-		RefundAmount:    refundAmount,
-		NetAmount:       netAmount,
-		CreatedAt:       time.Now().UTC(),
-		UpdatedAt:       time.Now().UTC(),
+		// Attribute the return to the original sale account even when an
+		// administrator processes it from another POS. CreatedBy still records
+		// the administrator for the audit trail.
+		BranchID:       referenceBill.BranchID,
+		POSID:          referenceBill.POSID,
+		Status:         "completed",
+		SettlementMode: settlementMode,
+		PaymentMethod:  paymentMethod,
+		PaymentRef:     paymentRef,
+		MemberID:       referenceBill.MemberID,
+		CustomerName:   referenceBill.CustomerName,
+		PurchaseAmount: purchaseAmount,
+		RefundAmount:   refundAmount,
+		NetAmount:      netAmount,
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
 	}
 	if user != nil {
 		note.CreatedBy = user.ID
@@ -814,15 +817,13 @@ func (h *ReturnNotesHandler) PrintReceipt(c *gin.Context) {
 		return
 	}
 
-	branchIDVal, branchExists := c.Get("branch_id")
-	posIDVal, posExists := c.Get("pos_id")
+	_, branchExists := c.Get("branch_id")
+	_, posExists := c.Get("pos_id")
 	if !branchExists || !posExists {
 		h.completePrint(req.IdempotencyKey, false)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_branch_or_pos"})
 		return
 	}
-	branchID, _ := branchIDVal.(string)
-	posID, _ := posIDVal.(string)
 
 	ctx := c.Request.Context()
 	note, items, err := h.returns.GetByID(ctx, id)
@@ -836,7 +837,7 @@ func (h *ReturnNotesHandler) PrintReceipt(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_return_note"})
 		return
 	}
-	if note.BranchID != branchID || note.POSID != posID {
+	if !canReadOperationalRecord(c, note.BranchID, note.POSID) {
 		h.completePrint(req.IdempotencyKey, false)
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":   "return_note_access_denied",

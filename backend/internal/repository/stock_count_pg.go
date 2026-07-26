@@ -66,7 +66,7 @@ func (r *stockCountRepositoryPG) Create(ctx context.Context, count *StockCount) 
 		INSERT INTO "stock_count_item" ("count_id", "part_code", "system_qty", "counted_qty")
 		SELECT $1, am."part_code", am."qty", am."qty"
 		FROM "address_master" am
-		WHERE am."store_id" = $2
+		WHERE am."store_id" = $2 AND am."is_active" = true
 	`, count.ID, count.StoreID)
 	if err != nil {
 		return err
