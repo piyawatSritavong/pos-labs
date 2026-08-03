@@ -1,3 +1,9 @@
+-- Vehicle stock locations live under the POS branch and must coexist with the
+-- single user-visible warehouse. Remove the superseded one-store constraint
+-- for databases that applied the original migration 0023.
+DROP INDEX IF EXISTS "uq_store_master_one_store_per_branch";
+DROP INDEX IF EXISTS "uq_branch_store_one_store_per_branch";
+
 ALTER TABLE "store_master"
   ADD COLUMN IF NOT EXISTS "location_type" text NOT NULL DEFAULT 'warehouse';
 
