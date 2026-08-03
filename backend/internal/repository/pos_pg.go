@@ -139,22 +139,31 @@ func (r *posRepositoryPG) Create(ctx context.Context, pos *POS) error {
 	defer func() { _ = tx.Rollback() }()
 
 	if strings.TrimSpace(pos.VehicleStoreID) == "" {
-		err = tx.QueryRowContext(ctx, `
-			SELECT s."id"
-			FROM "store_master" s
-			JOIN "branch_store" bs
-			  ON bs."branch_id" = s."branch_id"
-			 AND bs."store_id" = s."id"
-			WHERE s."branch_id" = $1
-			ORDER BY bs."is_default" DESC, s."is_default" DESC, s."id"
-			LIMIT 1
-		`, pos.BranchID).Scan(&pos.VehicleStoreID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
+		pos.VehicleStoreID = "vehicle_" + pos.POSID
+	}
+
+	var branchExists bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM "branch_setting" WHERE "branch_id" = $1)
+	`, pos.BranchID).Scan(&branchExists); err != nil {
+		return err
+	}
+	if !branchExists {
+		return ErrNotFound
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO "store_master"(
+			"id", "branch_id", "label", "label_th", "is_default", "location_type"
+		) VALUES ($1, $2, $3, $4, true, 'vehicle')
+	`, pos.VehicleStoreID, pos.BranchID, pos.POSName+" Vehicle Stock", "สต๊อกรถ "+pos.POSName); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
+		VALUES ($1, $2, true)
+	`, pos.BranchID, pos.VehicleStoreID); err != nil {
+		return err
 	}
 
 	_, err = tx.ExecContext(ctx, `

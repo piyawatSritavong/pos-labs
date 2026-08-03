@@ -5,6 +5,7 @@ import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/utils/pos_error_message.dart';
 import 'package:frontend/utils/store_summary.dart';
 import 'package:frontend/widgets/backoffice/addresses_page.dart';
+import 'package:frontend/widgets/backoffice/purchase_orders_page.dart';
 import 'package:provider/provider.dart';
 
 void main() {
@@ -65,5 +66,24 @@ void main() {
     expect(find.text('ทุกคลัง'), findsOneWidget);
     expect(find.text('ไม่พบข้อมูลคลังสินค้า'), findsOneWidget);
     expect(find.text('เพิ่มคลังใหม่'), findsNothing);
+  });
+
+  testWidgets('purchase order page exposes the bulk inbound action', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => AuthProvider(),
+        child: const MaterialApp(home: Scaffold(body: PurchaseOrdersPage())),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('สร้างใบสั่งซื้อสินค้าเข้า'), findsOneWidget);
+    expect(
+      find.text('บันทึกแล้วสินค้าและจำนวนจะเข้าคลังหลักทันที'),
+      findsOneWidget,
+    );
   });
 }

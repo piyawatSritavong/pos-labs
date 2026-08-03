@@ -165,4 +165,3 @@ class UsersProvider extends ChangeNotifier {
     notifyListeners();
   }
 }
-

@@ -16,6 +16,8 @@ import 'package:frontend/widgets/backoffice/user_branches_page.dart';
 import 'package:frontend/widgets/backoffice/user_page.dart';
 import 'package:frontend/widgets/backoffice/inventory_transfer_page.dart';
 import 'package:frontend/widgets/backoffice/pos_restock_requests_page.dart';
+import 'package:frontend/widgets/backoffice/purchase_orders_page.dart';
+import 'package:frontend/widgets/backoffice/vehicle_inventory_page.dart';
 import 'package:frontend/widgets/backoffice/cash_reconciliation_page.dart';
 import 'package:frontend/widgets/backoffice/stock_variance_page.dart';
 import 'package:frontend/widgets/backoffice/support_pos_page.dart';
@@ -128,7 +130,7 @@ class PartsProvider extends ChangeNotifier {
   String? error;
   List<Map<String, dynamic>> parts = [];
   String query = '';
-  String? storeId; // คลังสินค้าที่เลือกกรอง (null = ทุกคลัง)
+  String? storeId = 'main'; // หน้าสินค้าแสดงเฉพาะคลังหลัก
   int offset = 0;
   int pageSize = 50; // selectable page size (20/50/100)
   int total = 0; // total matching parts (for page-jump)
@@ -482,11 +484,11 @@ class _BackofficeShellState extends State<_BackofficeShell> {
       subtitle: 'ตั้งค่า QR รับเงิน',
     ),
     _SidebarItem(
-      label: 'โอนสินค้า',
-      page: 'โอนย้ายสินค้า',
-      icon: Icons.local_shipping_outlined,
-      pageIndex: 13,
-      subtitle: 'โอนย้ายสินค้า HQ → รถ',
+      label: 'ใบสั่งซื้อสินค้าเข้า',
+      page: 'ใบสั่งซื้อสินค้าเข้า',
+      icon: Icons.playlist_add_outlined,
+      pageIndex: 20,
+      subtitle: 'เพิ่มสินค้าหลายรายการเข้าคลังหลัก',
     ),
     _SidebarItem(
       label: 'ใบเบิกสินค้าเข้ารถ',
@@ -494,6 +496,13 @@ class _BackofficeShellState extends State<_BackofficeShell> {
       icon: Icons.assignment_turned_in_outlined,
       pageIndex: 18,
       subtitle: 'ตรวจเอกสารเบิกสินค้าและยืนยันโอนเข้ารถ',
+    ),
+    _SidebarItem(
+      label: 'สต๊อกรถ',
+      page: 'สต๊อกรถ',
+      icon: Icons.local_shipping_outlined,
+      pageIndex: 21,
+      subtitle: 'คงเหลือ เบิกเข้า ขายสุทธิ และมูลค่าตามรถ',
     ),
     _SidebarItem(
       label: 'รายงานปิดยอดประจำวัน',
@@ -530,7 +539,9 @@ class _BackofficeShellState extends State<_BackofficeShell> {
     UserBranchesSection(),
     CompanySettingsSection(),
     BranchesManagementSection(),
-    HomeScreen(embedded: true), // index 4 — admin POS sell page (was POS Management)
+    HomeScreen(
+      embedded: true,
+    ), // index 4 — admin POS sell page (was POS Management)
     PartsManagementSection(),
     AddressesManagementSection(),
     PromotionsManagementSection(),
@@ -546,6 +557,8 @@ class _BackofficeShellState extends State<_BackofficeShell> {
     BarcodePrintPage(), // index 17 — admin-only (hidden for hq_manager)
     PosRestockRequestsPage(),
     PosManagementSection(), // index 19 — จัดการเครื่อง POS (admin-only)
+    PurchaseOrdersPage(), // index 20 — admin-only inbound inventory
+    VehicleInventoryPage(), // index 21 — admin-only vehicle stock overview
   ];
 
   int _currentPageIndex =
@@ -572,7 +585,7 @@ class _BackofficeShellState extends State<_BackofficeShell> {
     // HQ Manager: hide User-Branches/Company/Branches/POS (1-4), Payment (12),
     // SUPPORT (16), "พิมพ์บาร์โค้ด" (17) and เครื่อง POS (19) — admin-only.
     // Users (0) stays visible so HQ Manager can manage POS Staff accounts
-    const hiddenPageIndices = {1, 2, 3, 4, 12, 16, 17, 19};
+    const hiddenPageIndices = {1, 2, 3, 4, 12, 16, 17, 19, 20, 21};
     return _sidebarItems.where((item) {
       if (item.isHeader) {
         if (item.label == 'ช่วยเหลือ') return false;
@@ -668,8 +681,7 @@ class _BackofficeShellState extends State<_BackofficeShell> {
                   child: IconButton(
                     icon: const Icon(Icons.menu),
                     tooltip: 'แสดงเมนู',
-                    onPressed: () =>
-                        setState(() => _sidebarCollapsed = false),
+                    onPressed: () => setState(() => _sidebarCollapsed = false),
                   ),
                 ),
               ),
@@ -738,7 +750,7 @@ class _BackofficeSidebar extends StatelessWidget {
                 child: Image.asset(
                   'assets/images/pp-logo.png',
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
+                  errorBuilder: (_, _, _) =>
                       Icon(Icons.dashboard_customize, color: cs.primary),
                 ),
               ),

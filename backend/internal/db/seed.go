@@ -101,6 +101,8 @@ func SeedCoreData(db *sql.DB) error {
 		{"perm.cash_reconciliation.read", "Read cash reconciliations", "read", "cash_reconciliation", "Read cash reconciliation records"},
 		{"perm.cash_reconciliation.write", "Write cash reconciliations", "write", "cash_reconciliation", "Create cash reconciliation records"},
 		{"perm.reports_variance.read", "Read variance reports", "read", "reports_variance", "View stock variance reports"},
+		{"perm.purchase_orders.read", "Read purchase orders", "read", "purchase_orders", "Read inbound purchase orders"},
+		{"perm.purchase_orders.write", "Write purchase orders", "write", "purchase_orders", "Create inbound purchase orders"},
 	}
 
 	for _, p := range permissions {
@@ -311,10 +313,10 @@ func SeedCoreData(db *sql.DB) error {
 	// store_master: main warehouse (admin) + pos1's own store. Each is the
 	// default store of its branch and the stock source for sales at that POS.
 	if _, err := tx.Exec(`
-		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
+		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default", "location_type")
 		VALUES
-			('main', '00000', 'Main Warehouse', 'คลังหลัก', true),
-			('vehicle_POS001', '00001', 'POS1 Store', 'คลังสาขา pos1', true)
+			('main', '00000', 'Main Warehouse', 'คลังหลัก', true, 'warehouse'),
+			('vehicle_POS001', '00001', 'POS1 Vehicle Stock', 'สต๊อกรถ POS1', true, 'vehicle')
 	`); err != nil {
 		return err
 	}

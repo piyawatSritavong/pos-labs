@@ -13,23 +13,11 @@ type StoreListItem struct {
 	Label        string
 	LabelTH      string
 	IsDefault    bool
-}
-
-// StoreInput is the writable shape for creating a store (the "เพิ่มคลังใหม่"
-// button on the Addresses page).
-type StoreInput struct {
-	ID        string
-	BranchID  string
-	Label     string
-	LabelTH   string
-	IsDefault bool
+	LocationType string
 }
 
 type StoreRepository interface {
-	// ListStores returns every store with its branch name, ordered by branch
-	// then default-first.
+	// ListStores returns user-facing warehouse locations only. Vehicle stock
+	// locations are deliberately exposed through the vehicle inventory API.
 	ListStores(ctx context.Context) ([]StoreListItem, error)
-	// CreateStore inserts a store_master row and links it to its branch via
-	// branch_store (both in one transaction).
-	CreateStore(ctx context.Context, s StoreInput) error
 }

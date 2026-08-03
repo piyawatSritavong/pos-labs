@@ -74,7 +74,7 @@ func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, bra
 		args = append(args, strings.TrimSpace(*branchID))
 		argn++
 	}
-	conds = append(conds, `a."is_active" = true`)
+	conds = append(conds, `a."is_active" = true`, `p."is_active" = true`, `s."location_type" = 'warehouse'`)
 
 	where := ""
 	if len(conds) > 0 {
@@ -147,7 +147,7 @@ func (r *addressRepositoryPG) Count(ctx context.Context, q, storeID string, bran
 		args = append(args, strings.TrimSpace(*branchID))
 		argn++
 	}
-	conds = append(conds, `a."is_active" = true`)
+	conds = append(conds, `a."is_active" = true`, `p."is_active" = true`, `s."location_type" = 'warehouse'`)
 
 	where := ""
 	if len(conds) > 0 {
@@ -183,6 +183,8 @@ func (r *addressRepositoryPG) List(ctx context.Context, limit, offset int) ([]Ad
 		LEFT JOIN "part_master"  p ON p."code" = a."part_code"
 		LEFT JOIN "store_master" s ON s."id"   = a."store_id"
 		WHERE a."is_active" = true
+		  AND p."is_active" = true
+		  AND s."location_type" = 'warehouse'
 		ORDER BY a."code"
 		LIMIT $1 OFFSET $2
 	`, limit, offset)

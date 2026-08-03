@@ -594,15 +594,16 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ).then((_) => PosMirrorService.current?.notifyDialog(null));
         }),
-        tile(
-          Icons.local_shipping_outlined,
-          'เบิกสินค้าเข้ารถ',
-          null,
-          () => showDialog(
-            context: context,
-            builder: (_) => const RequisitionDialog(),
+        if (auth.isPOSOperator)
+          tile(
+            Icons.local_shipping_outlined,
+            'เบิกสินค้าเข้ารถ',
+            null,
+            () => showDialog(
+              context: context,
+              builder: (_) => const RequisitionDialog(),
+            ),
           ),
-        ),
       ],
       if (HomeScreen.openCustomerWindowFn != null)
         tile(
@@ -1234,17 +1235,19 @@ class _HeaderActionGroupState extends State<_HeaderActionGroup> {
               ).then((_) => PosMirrorService.current?.notifyDialog(null));
             },
           ),
-          SizedBox(width: gap),
-          _HeaderIconButton(
-            icon: Icons.local_shipping_outlined,
-            isCompact: widget.isCompact,
-            onTap: () {
-              showDialog(
-                context: context,
-                builder: (_) => const RequisitionDialog(),
-              );
-            },
-          ),
+          if (auth.isPOSOperator) ...[
+            SizedBox(width: gap),
+            _HeaderIconButton(
+              icon: Icons.local_shipping_outlined,
+              isCompact: widget.isCompact,
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => const RequisitionDialog(),
+                );
+              },
+            ),
+          ],
         ],
         SizedBox(width: gap),
         if (HomeScreen.openCustomerWindowFn != null)

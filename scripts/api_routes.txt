@@ -35,6 +35,8 @@ GET /parts/search
 GET /pos
 GET /pos/:id
 GET /pos/:id/secret
+GET /purchase-orders
+GET /purchase-orders/:id
 GET /promotions
 GET /promotions/:code
 GET /ready
@@ -53,11 +55,14 @@ GET /stores
 GET /test
 GET /transfers
 GET /transfers/:id
+GET /transfers/pos-restock/catalog
+GET /transfers/vehicle-daily-summary
 GET /user-branches/:user_id/:branch_id
 GET /user-branches/branch/:branch_id
 GET /user-branches/user/:user_id
 GET /users
 GET /users/:id
+GET /vehicle-inventory
 GET /ws/customer-display
 GET /ws/pos-mirror
 POST /addresses
@@ -78,6 +83,7 @@ POST /pos-mirror/test-state
 POST /pos/printer/open-drawer
 POST /pos/printer/test-print
 POST /pos/printer/test-receipt
+POST /purchase-orders
 POST /promotions
 POST /returns
 POST /returns/:id/print

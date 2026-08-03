@@ -43,6 +43,10 @@ func (r *stubInventoryTransferRepository) List(ctx context.Context, limit, offse
 	return nil, nil
 }
 
+func (r *stubInventoryTransferRepository) ListCompletedRestocksByPOSDate(ctx context.Context, posID string, dateFrom, dateTo time.Time) ([]repository.InventoryTransfer, error) {
+	return nil, nil
+}
+
 func (r *stubInventoryTransferRepository) UpdateItems(ctx context.Context, transferID string, items []repository.InventoryTransferItem) error {
 	r.items = append([]repository.InventoryTransferItem(nil), items...)
 	return nil
@@ -160,7 +164,7 @@ func TestInventoryTransferCreateAllowsSameBranch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := &stubInventoryTransferRepository{}
-	handler := NewInventoryTransferHandler(repo, nil, nil)
+	handler := NewInventoryTransferHandler(repo, nil, nil, nil)
 
 	body := `{
 		"fromBranchId":"00000",
@@ -217,6 +221,7 @@ func TestCreatePosRestockCreatesDraft(t *testing.T) {
 			VehicleStoreID: "vehicle_POS001",
 			IsActive:       true,
 		}},
+		nil,
 	)
 
 	body := `{
@@ -245,8 +250,46 @@ func TestCreatePosRestockCreatesDraft(t *testing.T) {
 	if repo.transfer.FromStoreID != "main" || repo.transfer.ToStoreID != "vehicle_POS001" {
 		t.Fatalf("unexpected stores from=%q to=%q", repo.transfer.FromStoreID, repo.transfer.ToStoreID)
 	}
+	if repo.transfer.TargetPOSID != "POS001" {
+		t.Fatalf("expected target POS001, got %q", repo.transfer.TargetPOSID)
+	}
 	if len(repo.items) != 1 || repo.items[0].PartCode != "P0001" || repo.items[0].RequestedQty != 2 {
 		t.Fatalf("unexpected items: %#v", repo.items)
+	}
+}
+
+func TestCreatePosRestockRejectsNonVehiclePOS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &stubInventoryTransferRepository{}
+	handler := NewInventoryTransferHandler(
+		repo,
+		stubBranchRepository{},
+		stubPOSRepository{pos: &repository.POS{
+			POSID:          "POS003",
+			BranchID:       "00000",
+			VehicleStoreID: "main",
+			IsActive:       true,
+		}},
+		nil,
+	)
+
+	body := `{"items":[{"partCode":"P0001","requestedQty":2}]}`
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/transfers/pos-restock", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("branch_id", "00000")
+	c.Set("pos_id", "POS003")
+	c.Set("user", &repository.User{ID: "user.admin", RoleID: "role.admin"})
+
+	handler.CreatePosRestock(c)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d with body %s", http.StatusBadRequest, recorder.Code, recorder.Body.String())
+	}
+	if repo.transfer != nil {
+		t.Fatal("expected no restock transfer to be created for main warehouse POS")
 	}
 }
 
@@ -272,7 +315,7 @@ func TestSubmitPosRestockMovesDraftToReview(t *testing.T) {
 			RequestedQty: 1,
 		}},
 	}
-	handler := NewInventoryTransferHandler(repo, nil, nil)
+	handler := NewInventoryTransferHandler(repo, nil, nil, nil)
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)

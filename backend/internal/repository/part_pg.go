@@ -402,6 +402,7 @@ func (r *partRepositoryPG) DeletePart(ctx context.Context, code string) (string,
 			EXISTS(SELECT 1 FROM "part_master" WHERE "code" = $1),
 			EXISTS(SELECT 1 FROM "bill_item_detail" WHERE "part_code" = $1)
 			OR EXISTS(SELECT 1 FROM "inventory_transfer_item" WHERE "part_code" = $1)
+			OR EXISTS(SELECT 1 FROM "purchase_order_item" WHERE "part_code" = $1)
 			OR EXISTS(SELECT 1 FROM "stock_count_item" WHERE "part_code" = $1)
 	`, code).Scan(&exists, &referenced)
 	if err != nil {
@@ -429,6 +430,11 @@ func (r *partRepositoryPG) DeletePart(ctx context.Context, code string) (string,
 			return "", err
 		}
 	} else {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM "address_master" WHERE "part_code" = $1
+		`, code); err != nil {
+			return "", err
+		}
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM "part_master" WHERE "code" = $1
 		`, code); err != nil {

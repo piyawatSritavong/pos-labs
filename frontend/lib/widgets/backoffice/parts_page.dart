@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/utils/store_summary.dart';
+import 'package:frontend/widgets/backoffice/purchase_orders_page.dart';
 import 'package:http/http.dart' as http;
 
 class PartsManagementSection extends StatefulWidget {
@@ -18,10 +19,6 @@ class PartsManagementSection extends StatefulWidget {
 }
 
 class _PartsManagementSectionState extends State<PartsManagementSection> {
-  // คลังสินค้าทั้งหมด (ทุกสาขา) สำหรับ dropdown กรอง/เลือกที่อยู่คลัง
-  // แต่ละรายการ: {id, label, branchName}
-  List<Map<String, String>> _stores = [];
-
   String? _validateNonNegativePrice(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'กรุณากรอกราคา';
@@ -42,30 +39,8 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
       final token = context.read<AuthProvider>().token ?? '';
       if (token.isNotEmpty) {
         context.read<PartsProvider>().fetchParts(token);
-        _loadStores(token);
       }
     });
-  }
-
-  Future<void> _loadStores(String token) async {
-    try {
-      // ใช้ endpoint กลาง /stores เดียวกับหน้าคลังสินค้า → รายการคลังตรงกันเสมอ
-      final storeList = await ApiService.getStores(token: token);
-      final stores = storeList
-          .map(
-            (s) => {
-              'id': (s['id'] ?? '').toString(),
-              'label': (s['labelTh'] ?? s['label'] ?? s['id'] ?? '').toString(),
-              'branchName': (s['branchNameTh'] ?? s['branchName'] ?? '')
-                  .toString(),
-            },
-          )
-          .where((s) => (s['id'] ?? '').isNotEmpty)
-          .toList();
-      if (mounted) setState(() => _stores = stores);
-    } catch (_) {
-      // ไม่มีสิทธิ์/เครือข่ายล่ม — หน้าใช้งานต่อได้โดยไม่มีตัวกรองคลัง
-    }
   }
 
   Future<void> _showCreatePartDialog(
@@ -82,11 +57,7 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
     final minPriceController = TextEditingController();
     final shelfController = TextEditingController();
     final qtyController = TextEditingController();
-    // ค่าเริ่มต้น = คลังหลัก (main). ถ้าโหลดคลังไม่ได้ ปล่อย null แล้ว backend
-    // จะลงคลังหลักให้เองตอนบันทึก
-    String? selectedStoreId = _stores.any((s) => s['id'] == 'main')
-        ? 'main'
-        : (_stores.isNotEmpty ? _stores.first['id'] : null);
+    const selectedStoreId = 'main';
     final formKey = GlobalKey<FormState>();
 
     // รหัสสินค้า + บาร์โค้ดสร้างให้อัตโนมัติ (แก้ไขได้ก่อนบันทึก)
@@ -152,22 +123,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      // คลังสินค้า — ค่าเริ่มต้น = คลังหลัก (ถ้าไม่เลือก backend
-                      // จะลงคลังหลักให้)
-                      DropdownButtonFormField<String?>(
-                        initialValue: selectedStoreId,
-                        decoration: const InputDecoration(
-                          labelText: 'คลังสินค้า (ค่าเริ่มต้น = คลังหลัก)',
-                          isDense: true,
-                        ),
-                        items: [
-                          for (final s in _stores)
-                            DropdownMenuItem<String?>(
-                              value: s['id'],
-                              child: Text('${s['label']} (${s['branchName']})'),
-                            ),
-                        ],
-                        onChanged: (v) => setState(() => selectedStoreId = v),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('รับสินค้าเข้าที่: คลังหลัก'),
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -236,8 +194,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                           isDense: true,
                         ),
                         validator: (value) {
-                          if (value == null || value.trim().isEmpty)
+                          if (value == null || value.trim().isEmpty) {
                             return null;
+                          }
                           return _validateNonNegativePrice(value);
                         },
                       ),
@@ -301,13 +260,11 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                 'price': price,
                                 'cost': cost,
                                 'minPrice': minPrice,
-                                if (selectedStoreId != null) ...{
-                                  'storeId': selectedStoreId,
-                                  'shelf': shelfController.text.trim(),
-                                  'qty':
-                                      int.tryParse(qtyController.text.trim()) ??
-                                      0,
-                                },
+                                'storeId': selectedStoreId,
+                                'shelf': shelfController.text.trim(),
+                                'qty':
+                                    int.tryParse(qtyController.text.trim()) ??
+                                    0,
                               }),
                             );
 
@@ -732,6 +689,25 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton.icon(
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      builder: (_) => const Dialog(
+                        insetPadding: EdgeInsets.all(24),
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: SizedBox(
+                            width: 1200,
+                            height: 760,
+                            child: PurchaseOrdersPage(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.playlist_add),
+                    label: const Text('สร้างใบสั่งซื้อสินค้าเข้า'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
                     onPressed: () {
                       if (token.isEmpty) return;
                       context.read<PartsProvider>().fetchParts(token);
@@ -740,32 +716,7 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                     label: const Text('รีเฟรช'),
                   ),
                   const SizedBox(width: 16),
-                  // กรองตามคลังสินค้า (ทุกสาขา)
-                  const Text('คลัง:'),
-                  const SizedBox(width: 8),
-                  DropdownButton<String?>(
-                    value: partsProvider.storeId,
-                    hint: const Text('ทุกคลัง'),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('ทุกคลัง'),
-                      ),
-                      for (final s in _stores)
-                        DropdownMenuItem<String?>(
-                          value: s['id'],
-                          child: Text('${s['label']} (${s['branchName']})'),
-                        ),
-                    ],
-                    onChanged: partsProvider.isLoading
-                        ? null
-                        : (v) {
-                            if (token.isEmpty) return;
-                            final provider = context.read<PartsProvider>();
-                            provider.storeId = v;
-                            provider.load(token, offset: 0);
-                          },
-                  ),
+                  const Chip(label: Text('คลังหลัก')),
                   const Spacer(),
                   SizedBox(
                     width: 320,

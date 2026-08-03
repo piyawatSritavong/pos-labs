@@ -884,7 +884,51 @@ def main() -> int:
             note="The printer gate may return 503 before lookup; the Render dev stub reaches the safe 404 lookup.",
         )
 
+        # Inbound purchase orders expose costs and are admin-only. Exercise the
+        # read routes plus validation without adding production stock.
+        check("GET /purchase-orders", "GET", "/purchase-orders?limit=5", 200, token=admin_token)
+        check(
+            "GET /purchase-orders/:id",
+            "GET",
+            f"/purchase-orders/{FAKE_ID}",
+            404,
+            token=admin_token,
+            mode="validation",
+        )
+        check(
+            "POST /purchase-orders",
+            "POST",
+            "/purchase-orders",
+            400,
+            token=admin_token,
+            json_body={"requestId": f"validation-{RUN_ID}", "items": []},
+            mode="validation",
+            note="An empty item list validates the route without receiving stock.",
+        )
+
         # Irreversible operational documents are exercised through validation/not-found paths.
+        check(
+            "GET /transfers/pos-restock/catalog",
+            "GET",
+            "/transfers/pos-restock/catalog?limit=1",
+            200,
+            token=admin_token,
+        )
+        today_bangkok = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=7)).date().isoformat()
+        check(
+            "GET /transfers/vehicle-daily-summary",
+            "GET",
+            f"/transfers/vehicle-daily-summary?posId=POS001&date={today_bangkok}",
+            200,
+            token=admin_token,
+        )
+        check(
+            "GET /vehicle-inventory",
+            "GET",
+            f"/vehicle-inventory?posId=POS001&dateFrom={today_bangkok}&dateTo={today_bangkok}",
+            200,
+            token=admin_token,
+        )
         check("GET /transfers/:id", "GET", f"/transfers/{FAKE_ID}", 404, token=admin_token, mode="validation")
         check("POST /transfers", "POST", "/transfers", 400, token=admin_token, json_body={}, mode="validation")
         check(

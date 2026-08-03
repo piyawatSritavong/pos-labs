@@ -1,10 +1,11 @@
-// ignore: avoid_web_libraries_in_flutter, deprecated_member_use
-import 'dart:html' as html;
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
 class PosRestockRequestsPage extends StatefulWidget {
@@ -134,7 +135,41 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
     } catch (_) {
       // Best-effort audit only.
     }
-    html.window.print();
+    await _printRestockPdf(_selected!);
+  }
+
+  Future<void> _openDailySummary() async {
+    final request = _selected;
+    if (request == null) return;
+    final posId = request['targetPosId']?.toString() ?? '';
+    if (posId.isEmpty) {
+      setState(() => _error = 'เอกสารนี้ไม่มี POS ปลายทาง');
+      return;
+    }
+    final rawDate = request['completedAt'] ?? request['createdAt'];
+    final parsed =
+        DateTime.tryParse(rawDate?.toString() ?? '')?.toLocal() ??
+        DateTime.now();
+    final date =
+        '${parsed.year.toString().padLeft(4, '0')}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+    final token = context.read<AuthProvider>().token ?? '';
+    setState(() => _acting = true);
+    try {
+      final summary = await ApiOperationsService.getVehicleDailySummary(
+        token: token,
+        posId: posId,
+        date: date,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _DailyRestockSummary(summary: summary),
+      );
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _acting = false);
+    }
   }
 
   @override
@@ -282,6 +317,12 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
                 icon: const Icon(Icons.print_outlined, size: 16),
                 label: const Text('Print / Save PDF'),
               ),
+              if (status == 'completed')
+                OutlinedButton.icon(
+                  onPressed: _acting ? null : _openDailySummary,
+                  icon: const Icon(Icons.summarize_outlined, size: 16),
+                  label: const Text('สรุปใบเบิกทั้งวัน'),
+                ),
               if (canCancel)
                 OutlinedButton.icon(
                   onPressed: _acting ? null : _cancel,
@@ -341,8 +382,8 @@ class _RestockDocument extends StatelessWidget {
               _docField('วันที่สร้าง', _shortDate(request['createdAt'])),
               _docField('วันที่ Submit', _shortDate(request['submittedAt'])),
               _docField('สถานะเอกสาร', _statusLabel(request['status'])),
-              _docField('POS / รถ / สาขาปลายทาง', request['toStoreId']),
-              _docField('สาขาต้นทาง: โกดัง/HQ', request['fromStoreId']),
+              _docField('POS / รถปลายทาง', request['targetPosId']),
+              _docField('ต้นทาง', 'คลังหลัก'),
               _docField('ผู้สร้างใบเบิก', request['createdBy']),
             ],
           ),
@@ -353,9 +394,10 @@ class _RestockDocument extends StatelessWidget {
               0: FixedColumnWidth(44),
               1: FixedColumnWidth(90),
               2: FixedColumnWidth(120),
-              4: FixedColumnWidth(90),
+              4: FixedColumnWidth(70),
               5: FixedColumnWidth(70),
-              6: FixedColumnWidth(110),
+              6: FixedColumnWidth(100),
+              7: FixedColumnWidth(110),
             },
             children: [
               _tableRow(const [
@@ -365,7 +407,8 @@ class _RestockDocument extends StatelessWidget {
                 'ชื่อสินค้า',
                 'จำนวน',
                 'หน่วย',
-                'หมายเหตุ',
+                'ราคาขาย',
+                'รวม',
               ], header: true),
               ...items.toList().asMap().entries.map((entry) {
                 final item = entry.value;
@@ -378,10 +421,19 @@ class _RestockDocument extends StatelessWidget {
                       : item['partName']?.toString() ?? '',
                   item['requestedQty']?.toString() ?? '',
                   item['unit']?.toString() ?? '',
-                  '',
+                  _money(item['salePrice']),
+                  _money(item['lineTotal']),
                 ]);
               }),
             ],
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              'ยอดรวมราคาขาย ${_money(request['totalSaleValue'])}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
           ),
           const SizedBox(height: 34),
           Row(
@@ -399,6 +451,130 @@ class _RestockDocument extends StatelessWidget {
             child: Text('วันที่ ____ / ____ / ______'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DailyRestockSummary extends StatelessWidget {
+  const _DailyRestockSummary({required this.summary});
+  final Map<String, dynamic> summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final documents = (summary['documents'] as List? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final pos = summary['pos'] as Map<String, dynamic>? ?? {};
+    return Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1120, maxHeight: 850),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'สรุปใบเบิกสินค้าเข้ารถประจำวัน',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _printDailyRestockPdf(summary),
+                    icon: const Icon(Icons.print_outlined),
+                    label: const Text('พิมพ์ / บันทึก PDF'),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              Text(
+                'วันที่ ${summary['date'] ?? ''}   รถ ${pos['posName'] ?? pos['posId'] ?? ''} (${pos['posId'] ?? ''})',
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ListView(
+                  children: [
+                    for (final document in documents) ...[
+                      Text(
+                        'เลขที่ ${document['id'] ?? ''} • อนุมัติ ${_shortDate(document['completedAt'])}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      Table(
+                        border: TableBorder.all(color: AppColors.border),
+                        columnWidths: const {
+                          0: FixedColumnWidth(110),
+                          2: FixedColumnWidth(70),
+                          3: FixedColumnWidth(100),
+                          4: FixedColumnWidth(110),
+                        },
+                        children: [
+                          _tableRow(const [
+                            'รหัสสินค้า',
+                            'ชื่อสินค้า',
+                            'จำนวน',
+                            'ราคาขาย',
+                            'ยอดรวม',
+                          ], header: true),
+                          for (final item
+                              in (document['items'] as List? ?? [])
+                                  .whereType<Map<String, dynamic>>())
+                            _tableRow([
+                              item['partCode']?.toString() ?? '',
+                              (item['partNameTh'] ?? item['partName'] ?? '')
+                                  .toString(),
+                              item['requestedQty']?.toString() ?? '0',
+                              _money(item['salePrice']),
+                              _money(item['lineTotal']),
+                            ]),
+                        ],
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          'รวมใบนี้ ${_money(document['totalSaleValue'])}',
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        'ยอดรวมทั้งวัน ${_money(summary['grandTotalSaleValue'])}',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                    const Row(
+                      children: [
+                        Expanded(
+                          child: _SignatureBox(label: 'ลงชื่อพนักงานผู้รับ'),
+                        ),
+                        SizedBox(width: 48),
+                        Expanded(
+                          child: _SignatureBox(label: 'ลงชื่อ Admin / HQ'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -508,3 +684,189 @@ String _shortDate(dynamic value) {
   final text = value?.toString() ?? '';
   return text.length >= 10 ? text.substring(0, 10) : text;
 }
+
+String _money(dynamic value) =>
+    '฿${(double.tryParse(value?.toString() ?? '') ?? 0).toStringAsFixed(2)}';
+
+Future<pw.Font> _loadThaiPdfFont() async =>
+    pw.Font.ttf(await rootBundle.load('assets/fonts/Sarabun-Regular.ttf'));
+
+Future<void> _printRestockPdf(Map<String, dynamic> request) async {
+  final font = await _loadThaiPdfFont();
+  final document = pw.Document(
+    theme: pw.ThemeData.withFont(base: font, bold: font),
+  );
+  final items = (request['items'] as List? ?? [])
+      .whereType<Map<String, dynamic>>()
+      .toList();
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(32),
+      build: (_) => [
+        pw.Center(
+          child: pw.Text(
+            'ใบเบิกสินค้าเข้ารถ',
+            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+        pw.SizedBox(height: 18),
+        pw.Wrap(
+          spacing: 26,
+          runSpacing: 8,
+          children: [
+            pw.Text('เลขที่ใบเบิก: ${request['id'] ?? ''}'),
+            pw.Text(
+              'วันที่: ${_shortDate(request['completedAt'] ?? request['createdAt'])}',
+            ),
+            pw.Text('POS / รถ: ${request['targetPosId'] ?? ''}'),
+            pw.Text('ต้นทาง: คลังหลัก'),
+          ],
+        ),
+        pw.SizedBox(height: 16),
+        pw.TableHelper.fromTextArray(
+          headers: const [
+            '#',
+            'รหัสสินค้า',
+            'Barcode',
+            'ชื่อสินค้า',
+            'จำนวน',
+            'ราคาขาย',
+            'รวม',
+          ],
+          data: [
+            for (var index = 0; index < items.length; index++)
+              [
+                '${index + 1}',
+                items[index]['partCode'] ?? '',
+                items[index]['barCode'] ?? '',
+                items[index]['partNameTh'] ?? items[index]['partName'] ?? '',
+                items[index]['requestedQty'] ?? 0,
+                _money(items[index]['salePrice']),
+                _money(items[index]['lineTotal']),
+              ],
+          ],
+          headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+          cellStyle: const pw.TextStyle(fontSize: 9),
+          cellAlignment: pw.Alignment.centerLeft,
+        ),
+        pw.SizedBox(height: 12),
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'ยอดรวมราคาขาย ${_money(request['totalSaleValue'])}',
+            style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+        pw.SizedBox(height: 48),
+        _pdfSignatures(const [
+          'ลงชื่อผู้เบิก',
+          'ลงชื่อผู้ตรวจสอบ/HQ',
+          'ลงชื่อผู้อนุมัติ',
+        ]),
+      ],
+    ),
+  );
+  await Printing.layoutPdf(
+    name: 'vehicle-restock-${request['id'] ?? 'document'}.pdf',
+    onLayout: (_) => document.save(),
+  );
+}
+
+Future<void> _printDailyRestockPdf(Map<String, dynamic> summary) async {
+  final font = await _loadThaiPdfFont();
+  final document = pw.Document(
+    theme: pw.ThemeData.withFont(base: font, bold: font),
+  );
+  final documents = (summary['documents'] as List? ?? [])
+      .whereType<Map<String, dynamic>>()
+      .toList();
+  final pos = summary['pos'] as Map<String, dynamic>? ?? {};
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(32),
+      build: (_) => [
+        pw.Center(
+          child: pw.Text(
+            'สรุปใบเบิกสินค้าเข้ารถประจำวัน',
+            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+        pw.SizedBox(height: 8),
+        pw.Text(
+          'วันที่ ${summary['date'] ?? ''}   รถ ${pos['posName'] ?? pos['posId'] ?? ''} (${pos['posId'] ?? ''})',
+        ),
+        pw.SizedBox(height: 18),
+        for (final restock in documents) ...[
+          pw.Text(
+            'เลขที่ ${restock['id'] ?? ''} • อนุมัติ ${_shortDate(restock['completedAt'])}',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 6),
+          pw.TableHelper.fromTextArray(
+            headers: const [
+              'รหัสสินค้า',
+              'ชื่อสินค้า',
+              'จำนวน',
+              'ราคาขาย',
+              'ยอดรวม',
+            ],
+            data: [
+              for (final item
+                  in (restock['items'] as List? ?? [])
+                      .whereType<Map<String, dynamic>>())
+                [
+                  item['partCode'] ?? '',
+                  item['partNameTh'] ?? item['partName'] ?? '',
+                  item['requestedQty'] ?? 0,
+                  _money(item['salePrice']),
+                  _money(item['lineTotal']),
+                ],
+            ],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+            cellStyle: const pw.TextStyle(fontSize: 9),
+          ),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text('รวมใบนี้ ${_money(restock['totalSaleValue'])}'),
+          ),
+          pw.SizedBox(height: 16),
+        ],
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'ยอดรวมทั้งวัน ${_money(summary['grandTotalSaleValue'])}',
+            style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+        pw.SizedBox(height: 52),
+        _pdfSignatures(const ['ลงชื่อพนักงานผู้รับ', 'ลงชื่อ Admin / HQ']),
+      ],
+    ),
+  );
+  await Printing.layoutPdf(
+    name:
+        'vehicle-restock-${summary['date'] ?? 'daily'}-${pos['posId'] ?? ''}.pdf',
+    onLayout: (_) => document.save(),
+  );
+}
+
+pw.Widget _pdfSignatures(List<String> labels) => pw.Row(
+  children: [
+    for (var index = 0; index < labels.length; index++) ...[
+      if (index > 0) pw.SizedBox(width: 18),
+      pw.Expanded(
+        child: pw.Column(
+          children: [
+            pw.Container(height: 1, color: PdfColors.grey600),
+            pw.SizedBox(height: 6),
+            pw.Text(labels[index]),
+          ],
+        ),
+      ),
+    ],
+  ],
+);

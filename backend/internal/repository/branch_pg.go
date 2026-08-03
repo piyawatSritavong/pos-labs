@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 type branchRepositoryPG struct {
@@ -152,31 +151,6 @@ func (r *branchRepositoryPG) Create(ctx context.Context, branch *Branch) error {
 		branch.BranchID, branch.CompanyID, branch.BranchName, branch.BranchNameTH,
 		branch.BranchAddress, branch.BranchAddressTH, branch.Phone, branch.Email,
 	); err != nil {
-		return err
-	}
-
-	storeID := "store_" + branch.BranchID
-	label := strings.TrimSpace(branch.BranchName)
-	if label == "" {
-		label = branch.BranchID
-	}
-	label += " Warehouse"
-	labelTH := strings.TrimSpace(branch.BranchNameTH)
-	if labelTH == "" {
-		labelTH = branch.BranchID
-	}
-	labelTH = "คลัง" + labelTH
-
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
-		VALUES ($1, $2, $3, $4, true)
-	`, storeID, branch.BranchID, label, labelTH); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
-		VALUES ($1, $2, true)
-	`, branch.BranchID, storeID); err != nil {
 		return err
 	}
 

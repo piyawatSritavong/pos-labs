@@ -447,6 +447,13 @@ func (h *PartsHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
 		return
 	}
+	if requestedStore := strings.TrimSpace(req.StoreID); requestedStore != "" && requestedStore != "main" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_warehouse",
+			"message": "สินค้าใหม่ต้องรับเข้าคลังหลักเท่านั้น",
+		})
+		return
+	}
 	minPrice := req.Price * 0.90
 	if req.MinPrice != nil {
 		minPrice = *req.MinPrice
@@ -507,10 +514,7 @@ func (h *PartsHandler) Create(c *gin.Context) {
 	}
 	// Initial placement in a store. When the client doesn't specify one, the
 	// product goes into the main warehouse ('main' = คลังหลัก) by default.
-	storeID := strings.TrimSpace(req.StoreID)
-	if storeID == "" {
-		storeID = "main"
-	}
+	storeID := "main"
 	addrErr := h.addresses.Create(c.Request.Context(), &repository.Address{
 		Code:     "ADDR-" + code + "-" + storeID,
 		PartCode: code,

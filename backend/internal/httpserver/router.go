@@ -346,6 +346,19 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	{
 		storesRead.GET("", storeHandler.List)
 	}
+
+	purchaseOrderHandler := handlers.NewPurchaseOrderHandler(repository.NewPurchaseOrderRepository(db))
+	purchaseOrdersRead := r.Group("/purchase-orders")
+	purchaseOrdersRead.Use(authMw.RequirePermission("purchase_orders", "read"))
+	{
+		purchaseOrdersRead.GET("", purchaseOrderHandler.List)
+		purchaseOrdersRead.GET("/:id", purchaseOrderHandler.GetByID)
+	}
+	purchaseOrdersWrite := r.Group("/purchase-orders")
+	purchaseOrdersWrite.Use(authMw.RequirePermission("purchase_orders", "write"))
+	{
+		purchaseOrdersWrite.POST("", purchaseOrderHandler.Create)
+	}
 	// Users (CRUD)
 	userHandler := handlers.NewUserHandler(userRepo)
 	users := r.Group("/users")
@@ -402,16 +415,18 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	dailyCloseRepo := repository.NewDailyCloseRepository(db)
 	cashReconRepo := repository.NewCashReconciliationRepository(db)
 
-	transferHandler := handlers.NewInventoryTransferHandler(transferRepo, branchRepo, posRepo)
+	transferHandler := handlers.NewInventoryTransferHandler(transferRepo, branchRepo, posRepo, partRepo)
 	stockCountHandler := handlers.NewStockCountHandler(stockCountRepo, branchRepo)
 	dailyCloseHandler := handlers.NewDailyCloseHandler(dailyCloseRepo, branchRepo)
 	cashReconHandler := handlers.NewCashReconciliationHandler(cashReconRepo, dailyCloseRepo)
 	stockVarianceHandler := handlers.NewStockVarianceHandler(stockCountRepo)
+	vehicleInventoryHandler := handlers.NewVehicleInventoryHandler(repository.NewVehicleInventoryRepository(db), posRepo)
 
 	transfersRead := r.Group("/transfers")
 	transfersRead.Use(authMw.RequirePermission("transfers", "read"))
 	{
 		transfersRead.GET("", transferHandler.List)
+		transfersRead.GET("/pos-restock/catalog", transferHandler.RestockCatalog)
 		transfersRead.GET("/:id", transferHandler.GetByID)
 	}
 	transfersWrite := r.Group("/transfers")
@@ -427,11 +442,18 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	transfersApprove := r.Group("/transfers")
 	transfersApprove.Use(authMw.RequirePermission("transfers", "approve"))
 	{
+		transfersApprove.GET("/vehicle-daily-summary", transferHandler.VehicleDailySummary)
 		transfersApprove.PUT("/:id/approve", transferHandler.Approve)
 		transfersApprove.PUT("/:id/dispatch", transferHandler.Dispatch)
 		transfersApprove.PUT("/:id/acknowledge", transferHandler.Acknowledge)
 		transfersApprove.PUT("/:id/approve-restock", transferHandler.ApproveRestock)
 		transfersApprove.POST("/:id/print-log", transferHandler.PrintLog)
+	}
+
+	vehicleInventory := r.Group("/vehicle-inventory")
+	vehicleInventory.Use(authMw.RequirePermission("transfers", "approve"))
+	{
+		vehicleInventory.GET("", vehicleInventoryHandler.List)
 	}
 
 	// Stock Count

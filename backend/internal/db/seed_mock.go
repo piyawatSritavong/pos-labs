@@ -85,6 +85,13 @@ func seedMockStockCounts(db *sql.DB) error {
 // SeedMockData inserts development-only mock data for categories, parts, and addresses.
 // If any of these tables already have data, seeding is skipped entirely (all-or-nothing).
 func SeedMockData(db *sql.DB) error {
+	// The catalog seed can populate products before this development seed runs.
+	// POS2's operational topology must therefore be ensured independently of
+	// whether sample catalog rows already exist.
+	if err := ensurePOS2MockTopology(db); err != nil {
+		return err
+	}
+
 	// Check if any mock data already exists
 	var exists bool
 	err := db.QueryRow(`
@@ -126,8 +133,8 @@ func SeedMockData(db *sql.DB) error {
 	}
 
 	if _, err := tx.Exec(`
-		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default")
-		VALUES ('store_00001', '00002', 'POS2 Store', 'คลังสาขา pos2', true)
+		INSERT INTO "store_master"("id", "branch_id", "label", "label_th", "is_default", "location_type")
+		VALUES ('store_00001', '00002', 'POS2 Vehicle Stock', 'สต๊อกรถ POS2', true, 'vehicle')
 		ON CONFLICT ("id") DO NOTHING
 	`); err != nil {
 		return err
@@ -332,4 +339,93 @@ func SeedMockData(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+func ensurePOS2MockTopology(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		INSERT INTO "branch_setting"(
+			"branch_id", "company_id", "branch_name", "branch_name_th",
+			"branch_address", "branch_address_th", "phone", "email"
+		) VALUES (
+			'00002', '0000000000000', 'POS2 Branch', 'สาขา pos2',
+			'456 Second Street', '456 ถนนที่สอง', '02-234-5678', 'branch2@example.com'
+		) ON CONFLICT ("branch_id") DO NOTHING
+	`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO "store_master"(
+			"id", "branch_id", "label", "label_th", "is_default", "location_type"
+		) VALUES (
+			'store_00001', '00002', 'POS2 Vehicle Stock', 'สต๊อกรถ POS2', true, 'vehicle'
+		) ON CONFLICT ("id") DO UPDATE SET "location_type" = 'vehicle'
+	`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO "branch_store"("branch_id", "store_id", "is_default")
+		VALUES ('00002', 'store_00001', true)
+		ON CONFLICT ("branch_id", "store_id") DO UPDATE SET "is_default" = true
+	`); err != nil {
+		return err
+	}
+
+	posSecret := os.Getenv("POS_SECRET")
+	if posSecret == "" {
+		secretBytes := make([]byte, 32)
+		if _, err := rand.Read(secretBytes); err != nil {
+			return err
+		}
+		posSecret = hex.EncodeToString(secretBytes)
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO "pos_setting"(
+			"pos_id", "branch_id", "pos_name", "pos_secret", "is_active", "vehicle_store_id"
+		) VALUES ('POS002', '00002', 'POS 2', $1, true, 'store_00001')
+		ON CONFLICT ("pos_id") DO UPDATE SET
+			"branch_id" = EXCLUDED."branch_id",
+			"vehicle_store_id" = EXCLUDED."vehicle_store_id",
+			"is_active" = true
+	`, posSecret); err != nil {
+		return err
+	}
+
+	var pos2ID string
+	err = tx.QueryRow(`SELECT "id" FROM "user" WHERE "username" = 'pos2'`).Scan(&pos2ID)
+	if err == sql.ErrNoRows {
+		hash, hashErr := bcrypt.GenerateFromPassword([]byte("pos123456"), bcrypt.DefaultCost)
+		if hashErr != nil {
+			return hashErr
+		}
+		pos2ID = strings.ReplaceAll(uuid.New().String(), "-", "")
+		if _, err := tx.Exec(`
+			INSERT INTO "user"(
+				"id", "username", "role_id", "name", "password",
+				"is_active", "is_superuser", "default_pos_id"
+			) VALUES ($1, 'pos2', 'role.cashier', 'POS Cashier 2', $2, true, false, 'POS002')
+		`, pos2ID, string(hash)); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		UPDATE "user" SET "default_pos_id" = 'POS002' WHERE "id" = $1
+	`, pos2ID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO "user_branch"("user_id", "branch_id")
+		VALUES ($1, '00002') ON CONFLICT DO NOTHING
+	`, pos2ID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

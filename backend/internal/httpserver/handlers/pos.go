@@ -120,9 +120,9 @@ func (h *POSHandler) Create(c *gin.Context) {
 
 	if err := h.pos.Create(c.Request.Context(), pos); err != nil {
 		if repository.IsNotFoundError(err) {
-			c.JSON(http.StatusConflict, gin.H{
-				"error":   "branch_store_not_found",
-				"message": "สาขานี้ยังไม่มีคลังสินค้า",
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":   "branch_not_found",
+				"message": "ไม่พบสาขาที่เลือก",
 			})
 			return
 		}

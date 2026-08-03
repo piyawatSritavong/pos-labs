@@ -7,26 +7,28 @@ import (
 )
 
 type InventoryTransfer struct {
-	ID           string
-	FromBranchID string
-	ToBranchID   string
-	FromStoreID  string
-	ToStoreID    string
-	TransferMode string
-	CreatedBy    string
-	Status       string
-	Notes        string
-	CreatedAt    time.Time
-	SubmittedAt  *time.Time
-	SubmittedBy  string
-	ApprovedAt   *time.Time
-	ApprovedBy   string
-	DispatchedAt *time.Time
-	DispatchedBy string
-	ReceivedAt   *time.Time
-	ReceivedBy   string
-	CompletedAt  *time.Time
-	CompletedBy  string
+	ID             string
+	FromBranchID   string
+	ToBranchID     string
+	FromStoreID    string
+	ToStoreID      string
+	TransferMode   string
+	TargetPOSID    string
+	CreatedBy      string
+	Status         string
+	Notes          string
+	CreatedAt      time.Time
+	SubmittedAt    *time.Time
+	SubmittedBy    string
+	ApprovedAt     *time.Time
+	ApprovedBy     string
+	DispatchedAt   *time.Time
+	DispatchedBy   string
+	ReceivedAt     *time.Time
+	ReceivedBy     string
+	CompletedAt    *time.Time
+	CompletedBy    string
+	TotalSaleValue float64
 }
 
 type InventoryTransferItem struct {
@@ -35,6 +37,8 @@ type InventoryTransferItem struct {
 	RequestedQty  int
 	DispatchedQty *int
 	ReceivedQty   *int
+	SalePrice     float64
+	LineTotal     float64
 	// enriched fields (not stored)
 	PartName   string
 	PartNameTH string
@@ -67,5 +71,6 @@ type InventoryTransferRepository interface {
 	UpdateItemsDispatched(ctx context.Context, transferID string, items []InventoryTransferItem) error
 	UpdateItemsReceived(ctx context.Context, transferID string, items []InventoryTransferItem) error
 	CompletePosRestock(ctx context.Context, transferID, userID string, timestamp time.Time) error
+	ListCompletedRestocksByPOSDate(ctx context.Context, posID string, start, end time.Time) ([]InventoryTransfer, error)
 	LogAudit(ctx context.Context, transferID, action, actorID, notes string) error
 }

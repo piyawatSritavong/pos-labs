@@ -48,9 +48,9 @@ func (r *inventoryTransferRepositoryPG) Create(ctx context.Context, transfer *In
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO "inventory_transfer"(
 			"id", "from_branch_id", "to_branch_id", "from_store_id", "to_store_id",
-			"transfer_mode", "created_by",
+			"transfer_mode", "target_pos_id", "created_by",
 			"status", "notes", "created_at"
-		) VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, $8, $9, $10)
+		) VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, NULLIF($7, ''), $8, $9, $10, $11)
 	`,
 		transfer.ID,
 		transfer.FromBranchID,
@@ -58,6 +58,7 @@ func (r *inventoryTransferRepositoryPG) Create(ctx context.Context, transfer *In
 		transfer.FromStoreID,
 		transfer.ToStoreID,
 		transferModeOrStandard(transfer.TransferMode),
+		transfer.TargetPOSID,
 		transfer.CreatedBy,
 		transfer.Status,
 		transfer.Notes,
@@ -86,13 +87,13 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 		SELECT
 			"id", "from_branch_id", "to_branch_id",
 			COALESCE("from_store_id", ''), COALESCE("to_store_id", ''),
-			COALESCE("transfer_mode", 'standard'), "created_by",
+			COALESCE("transfer_mode", 'standard'), COALESCE("target_pos_id", ''), "created_by",
 			"status", "notes", "created_at",
 			"submitted_at", "submitted_by",
 			"approved_at", "approved_by",
 			"dispatched_at", "dispatched_by",
 			"received_at", "received_by",
-			"completed_at", "completed_by"
+			"completed_at", "completed_by", COALESCE("total_sale_value", 0)
 		FROM "inventory_transfer"
 		WHERE "id" = $1
 	`, id)
@@ -109,7 +110,8 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 			COALESCE(pm."bar_code", '') AS bar_code,
 			COALESCE(pm."name", '') AS part_name,
 			COALESCE(pm."name_th", '') AS part_name_th,
-			COALESCE(pm."unit_id", '') AS unit
+			COALESCE(pm."unit_id", '') AS unit,
+			COALESCE(iti."sale_price", 0), COALESCE(iti."line_total", 0)
 		FROM "inventory_transfer_item" iti
 		LEFT JOIN "part_master" pm ON pm."code" = iti."part_code"
 		WHERE iti."transfer_id" = $1
@@ -134,6 +136,8 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 			&item.PartName,
 			&item.PartNameTH,
 			&item.Unit,
+			&item.SalePrice,
+			&item.LineTotal,
 		); err != nil {
 			return nil, nil, err
 		}
@@ -166,13 +170,13 @@ func (r *inventoryTransferRepositoryPG) List(ctx context.Context, limit, offset 
 		SELECT
 			"id", "from_branch_id", "to_branch_id",
 			COALESCE("from_store_id", ''), COALESCE("to_store_id", ''),
-			COALESCE("transfer_mode", 'standard'), "created_by",
+			COALESCE("transfer_mode", 'standard'), COALESCE("target_pos_id", ''), "created_by",
 			"status", "notes", "created_at",
 			"submitted_at", "submitted_by",
 			"approved_at", "approved_by",
 			"dispatched_at", "dispatched_by",
 			"received_at", "received_by",
-			"completed_at", "completed_by"
+			"completed_at", "completed_by", COALESCE("total_sale_value", 0)
 		FROM "inventory_transfer"
 	`
 	args := make([]interface{}, 0)
@@ -369,7 +373,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 		SELECT
 			"id", "from_branch_id", "to_branch_id",
 			COALESCE("from_store_id", ''), COALESCE("to_store_id", ''),
-			COALESCE("transfer_mode", 'standard'), "created_by",
+			COALESCE("transfer_mode", 'standard'), COALESCE("target_pos_id", ''), "created_by",
 			"status", "notes", "created_at"
 		FROM "inventory_transfer"
 		WHERE "id" = $1
@@ -381,6 +385,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 		&transfer.FromStoreID,
 		&transfer.ToStoreID,
 		&transfer.TransferMode,
+		&transfer.TargetPOSID,
 		&transfer.CreatedBy,
 		&transfer.Status,
 		&transfer.Notes,
@@ -401,27 +406,55 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 	if strings.TrimSpace(transfer.FromStoreID) == "" || strings.TrimSpace(transfer.ToStoreID) == "" {
 		return fmt.Errorf("missing_store")
 	}
+	if transfer.FromStoreID != "main" {
+		return fmt.Errorf("invalid_source_warehouse")
+	}
+	var sourceType, destinationType string
+	if err := tx.QueryRowContext(ctx, `SELECT "location_type" FROM "store_master" WHERE "id" = $1`, transfer.FromStoreID).Scan(&sourceType); err != nil {
+		return err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT "location_type" FROM "store_master" WHERE "id" = $1`, transfer.ToStoreID).Scan(&destinationType); err != nil {
+		return err
+	}
+	if sourceType != "warehouse" || destinationType != "vehicle" {
+		return fmt.Errorf("invalid_stock_location_type")
+	}
+	var configuredVehicleStore string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE("vehicle_store_id", '') FROM "pos_setting" WHERE "pos_id" = $1
+	`, transfer.TargetPOSID).Scan(&configuredVehicleStore); err != nil {
+		return err
+	}
+	if configuredVehicleStore != transfer.ToStoreID {
+		return fmt.Errorf("target_pos_store_mismatch")
+	}
 
 	rows, err := tx.QueryContext(ctx, `
-		SELECT "part_code", "requested_qty"
-		FROM "inventory_transfer_item"
-		WHERE "transfer_id" = $1
-		ORDER BY "part_code"
+		SELECT i."part_code", i."requested_qty", p."price"
+		FROM "inventory_transfer_item" i
+		JOIN "part_master" p ON p."code" = i."part_code" AND p."is_active" = true
+		WHERE i."transfer_id" = $1
+		ORDER BY i."part_code"
 	`, transferID)
 	if err != nil {
 		return err
 	}
 
+	type sourceAddress struct {
+		code string
+		qty  int
+	}
 	type moveItem struct {
-		partCode       string
-		requestedQty   int
-		sourceAddrCode string
-		availableQty   int
+		partCode        string
+		requestedQty    int
+		salePrice       float64
+		sourceAddresses []sourceAddress
+		availableQty    int
 	}
 	moveItems := make([]moveItem, 0)
 	for rows.Next() {
 		var item moveItem
-		if err := rows.Scan(&item.partCode, &item.requestedQty); err != nil {
+		if err := rows.Scan(&item.partCode, &item.requestedQty, &item.salePrice); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -439,22 +472,30 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 
 	shortages := make([]InventoryShortage, 0)
 	for i := range moveItems {
-		err := tx.QueryRowContext(ctx, `
+		addressRows, err := tx.QueryContext(ctx, `
 			SELECT "code", COALESCE("qty", 0)
 			FROM "address_master"
 			WHERE "store_id" = $1 AND "part_code" = $2 AND "is_active" = true
 			ORDER BY "code"
-			LIMIT 1
 			FOR UPDATE
-		`, transfer.FromStoreID, moveItems[i].partCode).Scan(
-			&moveItems[i].sourceAddrCode,
-			&moveItems[i].availableQty,
-		)
+		`, transfer.FromStoreID, moveItems[i].partCode)
 		if err != nil {
-			if err != sql.ErrNoRows {
+			return err
+		}
+		for addressRows.Next() {
+			var address sourceAddress
+			if err := addressRows.Scan(&address.code, &address.qty); err != nil {
+				_ = addressRows.Close()
 				return err
 			}
-			moveItems[i].availableQty = 0
+			moveItems[i].sourceAddresses = append(moveItems[i].sourceAddresses, address)
+			moveItems[i].availableQty += address.qty
+		}
+		if err := addressRows.Close(); err != nil {
+			return err
+		}
+		if err := addressRows.Err(); err != nil {
+			return err
 		}
 		if moveItems[i].availableQty < moveItems[i].requestedQty {
 			shortages = append(shortages, InventoryShortage{
@@ -472,20 +513,31 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 	for _, item := range moveItems {
 		_, err = tx.ExecContext(ctx, `
 			UPDATE "inventory_transfer_item"
-			SET "dispatched_qty" = $1, "received_qty" = $1
-			WHERE "transfer_id" = $2 AND "part_code" = $3
-		`, item.requestedQty, transferID, item.partCode)
+			SET "dispatched_qty" = $1, "received_qty" = $1,
+			    "sale_price" = $2, "line_total" = $1::integer * $2::numeric
+			WHERE "transfer_id" = $3 AND "part_code" = $4
+		`, item.requestedQty, item.salePrice, transferID, item.partCode)
 		if err != nil {
 			return err
 		}
 
-		_, err = tx.ExecContext(ctx, `
-			UPDATE "address_master"
-			SET "qty" = "qty" - $1
-			WHERE "code" = $2 AND "is_active" = true
-		`, item.requestedQty, item.sourceAddrCode)
-		if err != nil {
-			return err
+		remaining := item.requestedQty
+		for _, address := range item.sourceAddresses {
+			if remaining == 0 {
+				break
+			}
+			deduct := address.qty
+			if deduct > remaining {
+				deduct = remaining
+			}
+			if _, err = tx.ExecContext(ctx, `
+				UPDATE "address_master"
+				SET "qty" = "qty" - $1
+				WHERE "code" = $2 AND "is_active" = true
+			`, deduct, address.code); err != nil {
+				return err
+			}
+			remaining -= deduct
 		}
 
 		var destAddrCode string
@@ -529,7 +581,11 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 		    "approved_at" = $1, "approved_by" = $2,
 		    "dispatched_at" = $1, "dispatched_by" = $2,
 		    "received_at" = $1, "received_by" = $2,
-		    "completed_at" = $1, "completed_by" = $2
+			    "completed_at" = $1, "completed_by" = $2,
+			    "total_sale_value" = (
+			      SELECT COALESCE(SUM("line_total"), 0)
+			      FROM "inventory_transfer_item" WHERE "transfer_id" = $3
+			    )
 		WHERE "id" = $3
 	`, timestamp, userID, transferID)
 	if err != nil {
@@ -552,6 +608,47 @@ func (r *inventoryTransferRepositoryPG) LogAudit(ctx context.Context, transferID
 		VALUES ($1, $2, NULLIF($3, ''), $4)
 	`, transferID, action, actorID, notes)
 	return err
+}
+
+func (r *inventoryTransferRepositoryPG) ListCompletedRestocksByPOSDate(
+	ctx context.Context,
+	posID string,
+	start time.Time,
+	end time.Time,
+) ([]InventoryTransfer, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			"id", "from_branch_id", "to_branch_id",
+			COALESCE("from_store_id", ''), COALESCE("to_store_id", ''),
+			COALESCE("transfer_mode", 'standard'), COALESCE("target_pos_id", ''), "created_by",
+			"status", "notes", "created_at",
+			"submitted_at", "submitted_by",
+			"approved_at", "approved_by",
+			"dispatched_at", "dispatched_by",
+			"received_at", "received_by",
+			"completed_at", "completed_by", COALESCE("total_sale_value", 0)
+		FROM "inventory_transfer"
+		WHERE "transfer_mode" = 'pos_restock'
+		  AND "status" = 'completed'
+		  AND "target_pos_id" = $1
+		  AND "completed_at" >= $2
+		  AND "completed_at" < $3
+		ORDER BY "completed_at", "id"
+	`, strings.TrimSpace(posID), start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]InventoryTransfer, 0)
+	for rows.Next() {
+		transfer, err := scanInventoryTransfer(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *transfer)
+	}
+	return result, rows.Err()
 }
 
 // adjustAddressQtyTx updates address_master qty for the default store of branchID within a transaction.
@@ -600,6 +697,7 @@ func scanInventoryTransfer(scanner inventoryTransferScanner) (*InventoryTransfer
 		&t.FromStoreID,
 		&t.ToStoreID,
 		&t.TransferMode,
+		&t.TargetPOSID,
 		&t.CreatedBy,
 		&t.Status,
 		&t.Notes,
@@ -614,6 +712,7 @@ func scanInventoryTransfer(scanner inventoryTransferScanner) (*InventoryTransfer
 		&receivedBy,
 		&completedAt,
 		&completedBy,
+		&t.TotalSaleValue,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

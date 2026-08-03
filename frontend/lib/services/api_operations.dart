@@ -103,6 +103,128 @@ class ApiOperationsService {
     return _parseObject(jsonDecode(response.body), '/transfers/pos-restock');
   }
 
+  // Main-warehouse catalog used by vehicle requisitions. This endpoint never
+  // returns cost or minimum selling price to POS staff.
+  static Future<List<Map<String, dynamic>>> searchRestockCatalog({
+    required String token,
+    String query = '',
+    int limit = 30,
+  }) async {
+    final uri = Uri.parse(
+      '$baseUrl/transfers/pos-restock/catalog',
+    ).replace(queryParameters: {'q': query, 'limit': '$limit'});
+    final response = await http.get(uri, headers: _headers(token));
+    if (response.statusCode != 200) {
+      throw Exception(
+        'GET /transfers/pos-restock/catalog failed: ${response.statusCode} ${response.body}',
+      );
+    }
+    return _parseList(
+      jsonDecode(response.body),
+      '/transfers/pos-restock/catalog',
+    );
+  }
+
+  static Future<Map<String, dynamic>> getVehicleDailySummary({
+    required String token,
+    required String posId,
+    required String date,
+  }) async {
+    final uri = Uri.parse(
+      '$baseUrl/transfers/vehicle-daily-summary',
+    ).replace(queryParameters: {'posId': posId, 'date': date});
+    final response = await http.get(uri, headers: _headers(token));
+    if (response.statusCode != 200) {
+      throw Exception(
+        'GET /transfers/vehicle-daily-summary failed: ${response.statusCode} ${response.body}',
+      );
+    }
+    return _parseObject(
+      jsonDecode(response.body),
+      '/transfers/vehicle-daily-summary',
+    );
+  }
+
+  // ======================================================================
+  // INBOUND PURCHASE ORDERS + VEHICLE INVENTORY
+  // ======================================================================
+
+  static Future<List<Map<String, dynamic>>> getPurchaseOrders({
+    required String token,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse(
+      '$baseUrl/purchase-orders',
+    ).replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
+    final response = await http.get(uri, headers: _headers(token));
+    if (response.statusCode != 200) {
+      throw Exception(
+        'GET /purchase-orders failed: ${response.statusCode} ${response.body}',
+      );
+    }
+    return _parseList(jsonDecode(response.body), '/purchase-orders');
+  }
+
+  static Future<Map<String, dynamic>> getPurchaseOrder({
+    required String token,
+    required String id,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/purchase-orders/$id'),
+      headers: _headers(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'GET /purchase-orders/$id failed: ${response.statusCode} ${response.body}',
+      );
+    }
+    return _parseObject(jsonDecode(response.body), '/purchase-orders/:id');
+  }
+
+  static Future<Map<String, dynamic>> createPurchaseOrder({
+    required String token,
+    required String requestId,
+    required String orderDate,
+    String notes = '',
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/purchase-orders'),
+      headers: _headers(token),
+      body: jsonEncode({
+        'requestId': requestId,
+        'orderDate': orderDate,
+        'notes': notes,
+        'items': items,
+      }),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(
+        'POST /purchase-orders failed: ${response.statusCode} ${response.body}',
+      );
+    }
+    return _parseObject(jsonDecode(response.body), '/purchase-orders');
+  }
+
+  static Future<Map<String, dynamic>> getVehicleInventory({
+    required String token,
+    required String posId,
+    required String dateFrom,
+    required String dateTo,
+  }) async {
+    final uri = Uri.parse('$baseUrl/vehicle-inventory').replace(
+      queryParameters: {'posId': posId, 'dateFrom': dateFrom, 'dateTo': dateTo},
+    );
+    final response = await http.get(uri, headers: _headers(token));
+    if (response.statusCode != 200) {
+      throw Exception(
+        'GET /vehicle-inventory failed: ${response.statusCode} ${response.body}',
+      );
+    }
+    return _parseObject(jsonDecode(response.body), '/vehicle-inventory');
+  }
+
   static Future<Map<String, dynamic>> updateTransferItems({
     required String token,
     required String id,

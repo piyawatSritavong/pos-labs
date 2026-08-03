@@ -18,6 +18,7 @@ type InventoryTransferHandler struct {
 	transfers repository.InventoryTransferRepository
 	branches  repository.BranchRepository
 	pos       repository.POSRepository
+	parts     repository.PartRepository
 }
 
 type restockItemRequest struct {
@@ -25,11 +26,12 @@ type restockItemRequest struct {
 	RequestedQty int    `json:"requestedQty" binding:"required,min=1"`
 }
 
-func NewInventoryTransferHandler(transfers repository.InventoryTransferRepository, branches repository.BranchRepository, pos repository.POSRepository) *InventoryTransferHandler {
+func NewInventoryTransferHandler(transfers repository.InventoryTransferRepository, branches repository.BranchRepository, pos repository.POSRepository, parts repository.PartRepository) *InventoryTransferHandler {
 	return &InventoryTransferHandler{
 		transfers: transfers,
 		branches:  branches,
 		pos:       pos,
+		parts:     parts,
 	}
 }
 
@@ -44,6 +46,8 @@ func buildTransferOutput(transfer *repository.InventoryTransfer, items []reposit
 			"partName":     item.PartName,
 			"partNameTh":   item.PartNameTH,
 			"unit":         item.Unit,
+			"salePrice":    item.SalePrice,
+			"lineTotal":    item.LineTotal,
 		}
 		if item.DispatchedQty != nil {
 			row["dispatchedQty"] = *item.DispatchedQty
@@ -59,22 +63,24 @@ func buildTransferOutput(transfer *repository.InventoryTransfer, items []reposit
 	}
 
 	out := gin.H{
-		"id":           transfer.ID,
-		"fromBranchId": transfer.FromBranchID,
-		"toBranchId":   transfer.ToBranchID,
-		"fromStoreId":  transfer.FromStoreID,
-		"toStoreId":    transfer.ToStoreID,
-		"transferMode": transfer.TransferMode,
-		"createdBy":    transfer.CreatedBy,
-		"status":       transfer.Status,
-		"notes":        transfer.Notes,
-		"createdAt":    transfer.CreatedAt.Format(time.RFC3339),
-		"submittedBy":  transfer.SubmittedBy,
-		"approvedBy":   transfer.ApprovedBy,
-		"dispatchedBy": transfer.DispatchedBy,
-		"receivedBy":   transfer.ReceivedBy,
-		"completedBy":  transfer.CompletedBy,
-		"items":        itemOut,
+		"id":             transfer.ID,
+		"fromBranchId":   transfer.FromBranchID,
+		"toBranchId":     transfer.ToBranchID,
+		"fromStoreId":    transfer.FromStoreID,
+		"toStoreId":      transfer.ToStoreID,
+		"transferMode":   transfer.TransferMode,
+		"targetPosId":    transfer.TargetPOSID,
+		"createdBy":      transfer.CreatedBy,
+		"status":         transfer.Status,
+		"notes":          transfer.Notes,
+		"createdAt":      transfer.CreatedAt.Format(time.RFC3339),
+		"submittedBy":    transfer.SubmittedBy,
+		"approvedBy":     transfer.ApprovedBy,
+		"dispatchedBy":   transfer.DispatchedBy,
+		"receivedBy":     transfer.ReceivedBy,
+		"completedBy":    transfer.CompletedBy,
+		"items":          itemOut,
+		"totalSaleValue": transfer.TotalSaleValue,
 	}
 
 	if transfer.SubmittedAt != nil {
@@ -164,6 +170,118 @@ func (h *InventoryTransferHandler) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": out, "total": len(out)})
+}
+
+// RestockCatalog exposes the active main-warehouse catalog to POS operators.
+// Cost and minimum price are intentionally omitted from this employee-facing
+// response.
+func (h *InventoryTransferHandler) RestockCatalog(c *gin.Context) {
+	query := strings.TrimSpace(c.Query("q"))
+	limit := 30
+	if raw := c.Query("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+	active := true
+	mainStore := "main"
+	parts, err := h.parts.SearchParts(
+		c.Request.Context(), query, nil, &active, nil, &mainStore, true, limit, 0,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_search_restock_catalog"})
+		return
+	}
+	codes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		codes = append(codes, part.Code)
+	}
+	addresses, err := h.parts.GetAddressesByPartCodes(c.Request.Context(), codes, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_main_stock"})
+		return
+	}
+	out := make([]gin.H, 0, len(parts))
+	for _, part := range parts {
+		available := 0
+		for _, address := range addresses[part.Code] {
+			if address.StoreID == "main" && address.Qty > 0 {
+				available += address.Qty
+			}
+		}
+		if available <= 0 {
+			continue
+		}
+		out = append(out, gin.H{
+			"code":         part.Code,
+			"barCode":      part.BarCode,
+			"name":         part.Name,
+			"nameTh":       part.NameTH,
+			"unit":         gin.H{"id": part.UnitID, "label": part.UnitLabel, "labelTh": part.UnitLabelTH},
+			"price":        part.Price,
+			"availableQty": available,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"parts": out, "total": len(out)})
+}
+
+func (h *InventoryTransferHandler) VehicleDailySummary(c *gin.Context) {
+	if !canReadAllOperationalData(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "global_scope_forbidden"})
+		return
+	}
+	posID := strings.TrimSpace(c.Query("posId"))
+	dateText := strings.TrimSpace(c.Query("date"))
+	if posID == "" || dateText == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_fields", "message": "posId and date are required"})
+		return
+	}
+	location, err := time.LoadLocation("Asia/Bangkok")
+	if err != nil {
+		location = time.FixedZone("Asia/Bangkok", 7*60*60)
+	}
+	day, err := time.ParseInLocation("2006-01-02", dateText, location)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_date"})
+		return
+	}
+	posSetting, err := h.pos.GetByID(c.Request.Context(), posID)
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "pos_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_get_pos"})
+		return
+	}
+	transfers, err := h.transfers.ListCompletedRestocksByPOSDate(
+		c.Request.Context(), posID, day.UTC(), day.AddDate(0, 0, 1).UTC(),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_build_daily_summary"})
+		return
+	}
+	documents := make([]gin.H, 0, len(transfers))
+	grandTotal := 0.0
+	for i := range transfers {
+		transfer, items, err := h.transfers.GetByID(c.Request.Context(), transfers[i].ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_daily_summary_item"})
+			return
+		}
+		document := buildTransferOutput(transfer, items)
+		documents = append(documents, document)
+		grandTotal += transfer.TotalSaleValue
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"date": dateText,
+		"pos": gin.H{
+			"posId": posSetting.POSID, "posName": posSetting.POSName, "branchId": posSetting.BranchID,
+		},
+		"documents":           documents,
+		"documentCount":       len(documents),
+		"grandTotalSaleValue": grandTotal,
+	})
 }
 
 func (h *InventoryTransferHandler) Create(c *gin.Context) {
@@ -262,11 +380,7 @@ func (h *InventoryTransferHandler) CreatePosRestock(c *gin.Context) {
 		return
 	}
 
-	sourceStoreID, err := h.defaultStoreID(c.Request.Context(), branchID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_source_store", "message": "Default warehouse store is required"})
-		return
-	}
+	sourceStoreID := "main"
 
 	pos, err := h.pos.GetByID(c.Request.Context(), posID)
 	if err != nil {
@@ -285,6 +399,10 @@ func (h *InventoryTransferHandler) CreatePosRestock(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_vehicle_store", "message": "POS vehicle store is required"})
 		return
 	}
+	if pos.VehicleStoreID == "main" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pos_has_no_vehicle_stock", "message": "Only vehicle POS can create a restock request"})
+		return
+	}
 
 	transferID, err := h.transfers.GenerateTransferID(c.Request.Context())
 	if err != nil {
@@ -300,6 +418,7 @@ func (h *InventoryTransferHandler) CreatePosRestock(c *gin.Context) {
 		FromStoreID:  sourceStoreID,
 		ToStoreID:    pos.VehicleStoreID,
 		TransferMode: "pos_restock",
+		TargetPOSID:  posID,
 		CreatedBy:    user.ID,
 		Status:       "draft",
 		Notes:        req.Notes,

@@ -144,6 +144,10 @@ func (h *AddressHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
 		return
 	}
+	if strings.TrimSpace(req.StoreID) != "main" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_warehouse", "message": "Inventory can only be managed in the main warehouse"})
+		return
+	}
 
 	address := &repository.Address{
 		Code:     req.Code,
@@ -195,6 +199,10 @@ func (h *AddressHandler) Update(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+	if strings.TrimSpace(req.StoreID) != "main" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_warehouse", "message": "Inventory can only be managed in the main warehouse"})
 		return
 	}
 

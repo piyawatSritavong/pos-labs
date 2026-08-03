@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_operations.dart';
-import 'package:frontend/services/api_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -313,6 +312,8 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
                   'barCode': item['barCode'] ?? '',
                   'nameTh': item['partNameTh'] ?? item['partName'] ?? code,
                   'unit': {'labelTh': item['unit'] ?? ''},
+                  'availableQty': item['requestedQty'] ?? 0,
+                  'price': item['salePrice'] ?? 0,
                 };
             return _RestockLine(part: part, qty: _toInt(item['requestedQty']));
           }),
@@ -341,7 +342,7 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
     final cached = _findCachedPart(query);
     if (cached != null) return cached;
     final token = context.read<AuthProvider>().token ?? '';
-    final results = await ApiService.searchParts(
+    final results = await ApiOperationsService.searchRestockCatalog(
       token: token,
       query: query,
       limit: 20,
@@ -373,7 +374,9 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
     setState(() {
       final existing = _lines.where((line) => line.code == code).toList();
       if (existing.isNotEmpty) {
-        existing.first.qty++;
+        if (existing.first.qty < existing.first.availableQty) {
+          existing.first.qty++;
+        }
       } else {
         _lines.add(_RestockLine(part: part, qty: 1));
       }
@@ -520,7 +523,7 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
                       return const Iterable<Map<String, dynamic>>.empty();
                     }
                     try {
-                      return await ApiService.searchParts(
+                      return await ApiOperationsService.searchRestockCatalog(
                         token: token,
                         query: q,
                         limit: 20,
@@ -576,7 +579,9 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
                           }
                         });
                       },
-                      onPlus: () => setState(() => line.qty++),
+                      onPlus: line.qty >= line.availableQty
+                          ? null
+                          : () => setState(() => line.qty++),
                       onDelete: () => setState(() => _lines.removeAt(index)),
                     );
                   }),
@@ -646,7 +651,7 @@ class _LineTile extends StatelessWidget {
 
   final _RestockLine line;
   final VoidCallback onMinus;
-  final VoidCallback onPlus;
+  final VoidCallback? onPlus;
   final VoidCallback onDelete;
 
   @override
@@ -672,6 +677,11 @@ class _LineTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '${line.code}${line.barcode.isNotEmpty ? ' / ${line.barcode}' : ''}',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'พร้อมเบิก ${line.availableQty} ${line.unit} • ราคาขาย ฿${line.price.toStringAsFixed(2)}',
                   style: const TextStyle(color: AppColors.muted, fontSize: 12),
                 ),
               ],
@@ -750,13 +760,22 @@ class _RestockLine {
   String get barcode => part['barCode']?.toString() ?? '';
   String get name =>
       (part['nameTh'] ?? part['name'] ?? part['partNameTh'] ?? code).toString();
+  int get availableQty => _toInt(part['availableQty']);
+  double get price => double.tryParse(part['price']?.toString() ?? '') ?? 0;
+  String get unit {
+    final raw = part['unit'];
+    if (raw is Map) return (raw['labelTh'] ?? raw['label'] ?? '').toString();
+    return raw?.toString() ?? 'ชิ้น';
+  }
 }
 
 String _partLabel(Map<String, dynamic> part) {
   final code = part['code']?.toString() ?? '';
   final barcode = part['barCode']?.toString() ?? '';
   final name = (part['nameTh'] ?? part['name'] ?? '').toString();
-  return [code, name, barcode].where((v) => v.isNotEmpty).join(' - ');
+  final available = _toInt(part['availableQty']);
+  final price = double.tryParse(part['price']?.toString() ?? '') ?? 0;
+  return '${[code, name, barcode].where((v) => v.isNotEmpty).join(' - ')} • พร้อมเบิก $available • ฿${price.toStringAsFixed(2)}';
 }
 
 String _shortDate(dynamic value) {
