@@ -26,13 +26,31 @@ func (h *HealthHandler) Ready(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Perform an actual query to verify database connectivity
-	var result int
-	err := h.db.QueryRowContext(ctx, "SELECT 1").Scan(&result)
+	// Verify connectivity and expose the canonical migration state so a deploy
+	// cannot be considered ready while its schema is dirty or behind.
+	var version int
+	var dirty bool
+	err := h.db.QueryRowContext(ctx, `
+		SELECT version, dirty FROM schema_migrations LIMIT 1
+	`).Scan(&version, &dirty)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy", "db": "down"})
 		return
 	}
+	if dirty {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status":           "unhealthy",
+			"db":               "up",
+			"migrationVersion": version,
+			"migrationDirty":   true,
+		})
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "db": "up"})
+	c.JSON(http.StatusOK, gin.H{
+		"status":           "ok",
+		"db":               "up",
+		"migrationVersion": version,
+		"migrationDirty":   false,
+	})
 }
