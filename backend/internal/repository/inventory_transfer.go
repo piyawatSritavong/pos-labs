@@ -67,6 +67,7 @@ type InventoryTransferRepository interface {
 	GetByID(ctx context.Context, id string) (*InventoryTransfer, []InventoryTransferItem, error)
 	List(ctx context.Context, limit, offset int, status, fromBranchID, toBranchID, transferMode, createdBy *string) ([]InventoryTransfer, error)
 	UpdateItems(ctx context.Context, transferID string, items []InventoryTransferItem) error
+	SubmitPosRestock(ctx context.Context, transferID, userID string, timestamp time.Time) error
 	UpdateStatus(ctx context.Context, id, status, userID string, timestamp time.Time) error
 	UpdateItemsDispatched(ctx context.Context, transferID string, items []InventoryTransferItem) error
 	UpdateItemsReceived(ctx context.Context, transferID string, items []InventoryTransferItem) error

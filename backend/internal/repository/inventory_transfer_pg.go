@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -111,7 +112,12 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 			COALESCE(pm."name", '') AS part_name,
 			COALESCE(pm."name_th", '') AS part_name_th,
 			COALESCE(pm."unit_id", '') AS unit,
-			COALESCE(iti."sale_price", 0), COALESCE(iti."line_total", 0)
+			COALESCE(iti."sale_price", pm."price", 0),
+			COALESCE(
+				iti."line_total",
+				iti."requested_qty" * COALESCE(iti."sale_price", pm."price", 0),
+				0
+			)
 		FROM "inventory_transfer_item" iti
 		LEFT JOIN "part_master" pm ON pm."code" = iti."part_code"
 		WHERE iti."transfer_id" = $1
@@ -244,6 +250,25 @@ func (r *inventoryTransferRepositoryPG) UpdateItems(ctx context.Context, transfe
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var mode, status string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE("transfer_mode", 'standard'), "status"
+		FROM "inventory_transfer"
+		WHERE "id" = $1
+		FOR UPDATE
+	`, transferID).Scan(&mode, &status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if mode != "pos_restock" {
+		return fmt.Errorf("invalid_transfer_mode")
+	}
+	if status != "draft" {
+		return fmt.Errorf("invalid_status")
+	}
+
 	_, err = tx.ExecContext(ctx, `
 		DELETE FROM "inventory_transfer_item"
 		WHERE "transfer_id" = $1
@@ -261,6 +286,115 @@ func (r *inventoryTransferRepositoryPG) UpdateItems(ctx context.Context, transfe
 		if err != nil {
 			return err
 		}
+	}
+
+	return tx.Commit()
+}
+
+// SubmitPosRestock snapshots the current selling price and moves a draft to
+// review atomically. HQ must see the exact value that will later be used when
+// the stock movement is approved.
+func (r *inventoryTransferRepositoryPG) SubmitPosRestock(ctx context.Context, transferID, userID string, timestamp time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var mode, status string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE("transfer_mode", 'standard'), "status"
+		FROM "inventory_transfer"
+		WHERE "id" = $1
+		FOR UPDATE
+	`, transferID).Scan(&mode, &status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if mode != "pos_restock" {
+		return fmt.Errorf("invalid_transfer_mode")
+	}
+	if status != "draft" {
+		return fmt.Errorf("invalid_status")
+	}
+
+	var itemCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM "inventory_transfer_item" WHERE "transfer_id" = $1
+	`, transferID).Scan(&itemCount); err != nil {
+		return err
+	}
+	if itemCount == 0 {
+		return fmt.Errorf("missing_items")
+	}
+
+	// Hold a share lock on each current product through the snapshot update so
+	// an overlapping product edit cannot change the price midway through submit.
+	partRows, err := tx.QueryContext(ctx, `
+		SELECT p."code"
+		FROM "inventory_transfer_item" i
+		JOIN "part_master" p
+		  ON p."code" = i."part_code" AND p."is_active" = true
+		WHERE i."transfer_id" = $1
+		ORDER BY p."code"
+		FOR SHARE OF p
+	`, transferID)
+	if err != nil {
+		return err
+	}
+	activePartCount := 0
+	for partRows.Next() {
+		var code string
+		if err := partRows.Scan(&code); err != nil {
+			_ = partRows.Close()
+			return err
+		}
+		activePartCount++
+	}
+	if err := partRows.Close(); err != nil {
+		return err
+	}
+	if err := partRows.Err(); err != nil {
+		return err
+	}
+	if activePartCount != itemCount {
+		return fmt.Errorf("missing_or_inactive_items")
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE "inventory_transfer_item" i
+		SET "sale_price" = p."price",
+		    "line_total" = i."requested_qty" * p."price"
+		FROM "part_master" p
+		WHERE i."transfer_id" = $1
+		  AND p."code" = i."part_code"
+		  AND p."is_active" = true
+	`, transferID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE "inventory_transfer"
+		SET "status" = 'review',
+		    "submitted_at" = $2,
+		    "submitted_by" = $3,
+		    "total_sale_value" = (
+		      SELECT COALESCE(SUM("line_total"), 0)
+		      FROM "inventory_transfer_item"
+		      WHERE "transfer_id" = $1
+		    )
+		WHERE "id" = $1
+	`, transferID, timestamp, userID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO "inventory_transfer_audit"("transfer_id", "action", "actor_id", "notes", "created_at")
+		VALUES ($1, 'submitted_for_review', $2, '', $3)
+	`, transferID, userID, timestamp); err != nil {
+		return err
 	}
 
 	return tx.Commit()
@@ -430,7 +564,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 	}
 
 	rows, err := tx.QueryContext(ctx, `
-		SELECT i."part_code", i."requested_qty", p."price"
+		SELECT i."part_code", i."requested_qty", COALESCE(i."sale_price", p."price")
 		FROM "inventory_transfer_item" i
 		JOIN "part_master" p ON p."code" = i."part_code" AND p."is_active" = true
 		WHERE i."transfer_id" = $1

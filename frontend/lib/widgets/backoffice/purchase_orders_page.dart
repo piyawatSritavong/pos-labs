@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_operations.dart';
+import 'package:frontend/services/api_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -156,7 +159,7 @@ class _CreatePurchaseOrderDialog extends StatefulWidget {
 class _CreatePurchaseOrderDialogState
     extends State<_CreatePurchaseOrderDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _notes = TextEditingController();
+  final _productSearch = TextEditingController();
   final List<_PurchaseLineControllers> _lines = [_PurchaseLineControllers()];
   late DateTime _date;
   late final String _requestId;
@@ -172,11 +175,29 @@ class _CreatePurchaseOrderDialogState
 
   @override
   void dispose() {
-    _notes.dispose();
+    _productSearch.dispose();
     for (final line in _lines) {
       line.dispose();
     }
     super.dispose();
+  }
+
+  void _selectProduct(Map<String, dynamic> product) {
+    final code = product['code']?.toString().trim() ?? '';
+    if (code.isEmpty) return;
+    final existing = _lines.where((line) => line.code.text.trim() == code);
+    setState(() {
+      if (existing.isNotEmpty) {
+        final line = existing.first;
+        line.qty.text = '${(int.tryParse(line.qty.text) ?? 0) + 1}';
+        return;
+      }
+      final blank = _lines.where((line) => line.isBlank);
+      final target = blank.isNotEmpty
+          ? blank.first
+          : (_lines..add(_PurchaseLineControllers())).last;
+      target.fillFromProduct(product);
+    });
   }
 
   Future<void> _save() async {
@@ -191,7 +212,7 @@ class _CreatePurchaseOrderDialogState
         token: token,
         requestId: _requestId,
         orderDate: _dateText(_date),
-        notes: _notes.text.trim(),
+        notes: '',
         items: _lines.map((line) => line.payload).toList(),
       );
       if (mounted) Navigator.of(context).pop(true);
@@ -254,12 +275,9 @@ class _CreatePurchaseOrderDialogState
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: TextFormField(
-                        controller: _notes,
-                        decoration: const InputDecoration(
-                          labelText: 'หมายเหตุ',
-                          border: OutlineInputBorder(),
-                        ),
+                      child: PurchaseOrderProductPicker(
+                        controller: _productSearch,
+                        onSelected: _selectProduct,
                       ),
                     ),
                   ],
@@ -485,6 +503,21 @@ class _PurchaseLineControllers {
   final cost = TextEditingController(text: '0');
   final price = TextEditingController(text: '0');
   final minPrice = TextEditingController(text: '0');
+  bool get isBlank =>
+      code.text.trim().isEmpty &&
+      name.text.trim().isEmpty &&
+      barcode.text.trim().isEmpty;
+
+  void fillFromProduct(Map<String, dynamic> product) {
+    code.text = product['code']?.toString() ?? '';
+    name.text = (product['nameTh'] ?? product['name'] ?? '').toString();
+    barcode.text = product['barCode']?.toString() ?? '';
+    qty.text = '1';
+    cost.text = _purchaseDecimalText(product['cost']);
+    price.text = _purchaseDecimalText(product['price']);
+    minPrice.text = _purchaseDecimalText(product['minPrice']);
+  }
+
   Map<String, dynamic> get payload => {
     'partCode': code.text.trim(),
     'partName': name.text.trim(),
@@ -502,6 +535,253 @@ class _PurchaseLineControllers {
     cost.dispose();
     price.dispose();
     minPrice.dispose();
+  }
+}
+
+String _purchaseDecimalText(dynamic value) {
+  final number = double.tryParse(value?.toString() ?? '') ?? 0;
+  return number.toStringAsFixed(2);
+}
+
+typedef PurchaseOrderProductLoader =
+    Future<({List<Map<String, dynamic>> parts, int total})> Function(
+      String query,
+      int limit,
+      int offset,
+    );
+
+/// Searchable catalog picker for existing products in an inbound purchase
+/// order. Archived products remain selectable so receiving stock can reactivate
+/// them through the existing purchase-order transaction.
+class PurchaseOrderProductPicker extends StatefulWidget {
+  const PurchaseOrderProductPicker({
+    super.key,
+    required this.controller,
+    required this.onSelected,
+    this.loadPage,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<Map<String, dynamic>> onSelected;
+  final PurchaseOrderProductLoader? loadPage;
+
+  @override
+  State<PurchaseOrderProductPicker> createState() =>
+      _PurchaseOrderProductPickerState();
+}
+
+class _PurchaseOrderProductPickerState
+    extends State<PurchaseOrderProductPicker> {
+  static const _pageSize = 50;
+  final MenuController _menuController = MenuController();
+  Timer? _debounce;
+  List<Map<String, dynamic>> _items = [];
+  String _loadedQuery = '';
+  int _total = 0;
+  bool _loading = false;
+  String? _loadError;
+  int _requestGeneration = 0;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({required bool reset, bool openMenu = false}) async {
+    final query = widget.controller.text.trim();
+    final generation = ++_requestGeneration;
+    final token = widget.loadPage == null
+        ? context.read<AuthProvider>().token ?? ''
+        : '';
+    if (widget.loadPage == null && token.isEmpty) return;
+    setState(() {
+      _loading = true;
+      _loadError = null;
+      if (reset) {
+        _items = [];
+        _total = 0;
+      }
+    });
+    try {
+      final offset = reset ? 0 : _items.length;
+      final result = widget.loadPage != null
+          ? await widget.loadPage!(query, _pageSize, offset)
+          : await ApiService.searchPartsPaged(
+              token: token,
+              query: query,
+              crossBranch: true,
+              limit: _pageSize,
+              offset: offset,
+            );
+      if (!mounted ||
+          generation != _requestGeneration ||
+          query != widget.controller.text.trim()) {
+        return;
+      }
+      setState(() {
+        _loadedQuery = query;
+        _items = reset ? result.parts : [..._items, ...result.parts];
+        _total = result.total;
+      });
+    } catch (error) {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _loadError = error.toString());
+      }
+    } finally {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _loading = false);
+        if (openMenu && !_menuController.isOpen) _menuController.open();
+      }
+    }
+  }
+
+  void _onChanged(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(
+      const Duration(milliseconds: 250),
+      () => _load(reset: true, openMenu: true),
+    );
+  }
+
+  Future<void> _toggleMenu() async {
+    if (_menuController.isOpen) {
+      _menuController.close();
+      return;
+    }
+    if (_loadedQuery != widget.controller.text.trim() || _items.isEmpty) {
+      await _load(reset: true);
+    }
+    if (mounted && !_menuController.isOpen) _menuController.open();
+  }
+
+  void _select(Map<String, dynamic> item) {
+    widget.onSelected(item);
+    widget.controller.clear();
+    _loadedQuery = '';
+    _menuController.close();
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _items.length >= _total) return;
+    await _load(reset: false);
+  }
+
+  bool _handleScroll(ScrollNotification notification) {
+    if (notification.metrics.extentAfter < 80 &&
+        !_loading &&
+        _items.length < _total) {
+      _loadMore();
+    }
+    return false;
+  }
+
+  String _label(Map<String, dynamic> item) {
+    final code = item['code']?.toString() ?? '';
+    final name = (item['nameTh'] ?? item['name'] ?? '').toString();
+    final barcode = item['barCode']?.toString() ?? '';
+    final inactive = item['isActive'] == false ? ' • ปิดใช้งาน' : '';
+    return '${[code, name, barcode].where((value) => value.isNotEmpty).join(' - ')}$inactive';
+  }
+
+  Widget _menuContent() {
+    if (_loading && _items.isEmpty) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (_loadError != null && _items.isEmpty) {
+      return Center(
+        child: TextButton(
+          onPressed: () => _load(reset: true, openMenu: true),
+          child: const Text('โหลดไม่สำเร็จ — กดเพื่อลองใหม่'),
+        ),
+      );
+    }
+    if (_items.isEmpty) return const Center(child: Text('ไม่พบสินค้า'));
+
+    final hasFooter = _loading || _items.length < _total || _loadError != null;
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScroll,
+      child: ListView.separated(
+        primary: false,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: _items.length + (hasFooter ? 1 : 0),
+        separatorBuilder: (_, _) => const Divider(height: 1),
+        itemBuilder: (context, index) {
+          if (index == _items.length) {
+            if (_loadError != null) {
+              return TextButton(
+                onPressed: _loadMore,
+                child: const Text('โหลดต่อไม่สำเร็จ — กดเพื่อลองใหม่'),
+              );
+            }
+            return const SizedBox(
+              height: 48,
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+          final item = _items[index];
+          return InkWell(
+            onTap: () => _select(item),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Text(
+                _label(item),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => MenuAnchor(
+        controller: _menuController,
+        crossAxisUnconstrained: false,
+        style: MenuStyle(
+          minimumSize: WidgetStatePropertyAll(Size(constraints.maxWidth, 0)),
+          maximumSize: WidgetStatePropertyAll(Size(constraints.maxWidth, 360)),
+        ),
+        menuChildren: [
+          SizedBox(
+            width: constraints.maxWidth,
+            height: 320,
+            child: _menuContent(),
+          ),
+        ],
+        builder: (context, controller, child) => TextField(
+          key: const Key('purchase-order-product-search'),
+          controller: widget.controller,
+          decoration: InputDecoration(
+            labelText: 'สแกน/ค้นหาสินค้า',
+            hintText: 'ชื่อสินค้า, รหัสสินค้า หรือ Barcode',
+            border: const OutlineInputBorder(),
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: IconButton(
+              key: const Key('purchase-order-product-dropdown'),
+              tooltip: 'ดูรายการสินค้า',
+              onPressed: _toggleMenu,
+              icon: Icon(
+                controller.isOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+              ),
+            ),
+          ),
+          onChanged: _onChanged,
+          onTap: () {
+            if (_items.isEmpty) _load(reset: true, openMenu: true);
+          },
+        ),
+      ),
+    );
   }
 }
 

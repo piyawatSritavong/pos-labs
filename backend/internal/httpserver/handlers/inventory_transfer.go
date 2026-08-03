@@ -37,7 +37,12 @@ func NewInventoryTransferHandler(transfers repository.InventoryTransferRepositor
 
 func buildTransferOutput(transfer *repository.InventoryTransfer, items []repository.InventoryTransferItem) gin.H {
 	itemOut := make([]gin.H, 0, len(items))
+	totalSaleValue := transfer.TotalSaleValue
+	if len(items) > 0 {
+		totalSaleValue = 0
+	}
 	for _, item := range items {
+		totalSaleValue += item.LineTotal
 		row := gin.H{
 			"transferId":   item.TransferID,
 			"partCode":     item.PartCode,
@@ -80,7 +85,7 @@ func buildTransferOutput(transfer *repository.InventoryTransfer, items []reposit
 		"receivedBy":     transfer.ReceivedBy,
 		"completedBy":    transfer.CompletedBy,
 		"items":          itemOut,
-		"totalSaleValue": transfer.TotalSaleValue,
+		"totalSaleValue": totalSaleValue,
 	}
 
 	if transfer.SubmittedAt != nil {
@@ -583,11 +588,10 @@ func (h *InventoryTransferHandler) Submit(c *gin.Context) {
 	}
 
 	now := time.Now().UTC()
-	if err := h.transfers.UpdateStatus(c.Request.Context(), id, "review", user.ID, now); err != nil {
+	if err := h.transfers.SubmitPosRestock(c.Request.Context(), id, user.ID, now); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_submit_transfer"})
 		return
 	}
-	_ = h.transfers.LogAudit(c.Request.Context(), id, "submitted_for_review", user.ID, "")
 
 	updatedTransfer, updatedItems, err := h.transfers.GetByID(c.Request.Context(), id)
 	if err != nil {

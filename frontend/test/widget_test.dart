@@ -92,6 +92,65 @@ void main() {
     );
   });
 
+  testWidgets(
+    'purchase order product picker opens and selects without typing',
+    (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      Map<String, dynamic>? selected;
+      final offsets = <int>[];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light().copyWith(
+            splashFactory: NoSplash.splashFactory,
+          ),
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              child: PurchaseOrderProductPicker(
+                controller: controller,
+                onSelected: (product) => selected = product,
+                loadPage: (query, limit, offset) async {
+                  offsets.add(offset);
+                  return (
+                    parts: const [
+                      {
+                        'code': 'P0801',
+                        'nameTh': 'สินค้ารับเข้า',
+                        'barCode': '885000000801',
+                        'cost': 80,
+                        'price': 100,
+                        'minPrice': 90,
+                        'isActive': false,
+                      },
+                    ],
+                    total: 1,
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('หมายเหตุ'), findsNothing);
+      await tester.tap(
+        find.byKey(const Key('purchase-order-product-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      expect(offsets, [0]);
+      expect(find.textContaining('P0801 - สินค้ารับเข้า'), findsOneWidget);
+      expect(find.textContaining('ปิดใช้งาน'), findsOneWidget);
+
+      await tester.tap(find.textContaining('P0801 - สินค้ารับเข้า'));
+      await tester.pumpAndSettle();
+      expect(selected?['code'], 'P0801');
+      expect(selected?['cost'], 80);
+      expect(controller.text, isEmpty);
+    },
+  );
+
   testWidgets('restock picker opens without typing and selects immediately', (
     tester,
   ) async {

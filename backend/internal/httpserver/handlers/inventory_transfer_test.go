@@ -52,6 +52,24 @@ func (r *stubInventoryTransferRepository) UpdateItems(ctx context.Context, trans
 	return nil
 }
 
+func (r *stubInventoryTransferRepository) SubmitPosRestock(ctx context.Context, id, userID string, timestamp time.Time) error {
+	if r.transfer != nil && r.transfer.ID == id {
+		r.transfer.Status = "review"
+		r.transfer.SubmittedAt = &timestamp
+		r.transfer.SubmittedBy = userID
+		r.transfer.TotalSaleValue = 0
+		for index := range r.items {
+			if r.items[index].SalePrice == 0 {
+				r.items[index].SalePrice = 100
+			}
+			r.items[index].LineTotal = float64(r.items[index].RequestedQty) * r.items[index].SalePrice
+			r.transfer.TotalSaleValue += r.items[index].LineTotal
+		}
+		r.audits = append(r.audits, "submitted_for_review")
+	}
+	return nil
+}
+
 func (r *stubInventoryTransferRepository) UpdateStatus(ctx context.Context, id, status, userID string, timestamp time.Time) error {
 	if r.transfer != nil && r.transfer.ID == id {
 		r.transfer.Status = status
@@ -445,5 +463,36 @@ func TestSubmitPosRestockMovesDraftToReview(t *testing.T) {
 	}
 	if repo.transfer.SubmittedBy != "user.pos1" || repo.transfer.SubmittedAt == nil {
 		t.Fatalf("expected submitted audit fields, got by=%q at=%v", repo.transfer.SubmittedBy, repo.transfer.SubmittedAt)
+	}
+	if repo.items[0].SalePrice != 100 || repo.items[0].LineTotal != 100 || repo.transfer.TotalSaleValue != 100 {
+		t.Fatalf("expected submit price snapshot, got item=%#v total=%v", repo.items[0], repo.transfer.TotalSaleValue)
+	}
+}
+
+func TestBuildTransferOutputUsesItemSnapshotTotals(t *testing.T) {
+	transfer := &repository.InventoryTransfer{
+		ID:             "TRTEST000002",
+		TransferMode:   "pos_restock",
+		Status:         "review",
+		TotalSaleValue: 0,
+	}
+	items := []repository.InventoryTransferItem{
+		{TransferID: transfer.ID, PartCode: "P0001", RequestedQty: 2, SalePrice: 650, LineTotal: 1300},
+		{TransferID: transfer.ID, PartCode: "P0002", RequestedQty: 1, SalePrice: 0, LineTotal: 0},
+	}
+
+	output := buildTransferOutput(transfer, items)
+	if output["totalSaleValue"] != float64(1300) {
+		t.Fatalf("expected item-derived total 1300, got %#v", output["totalSaleValue"])
+	}
+	rows, ok := output["items"].([]gin.H)
+	if !ok || len(rows) != 2 {
+		t.Fatalf("unexpected output rows: %#v", output["items"])
+	}
+	if rows[0]["salePrice"] != float64(650) || rows[0]["lineTotal"] != float64(1300) {
+		t.Fatalf("unexpected price snapshot output: %#v", rows[0])
+	}
+	if rows[1]["salePrice"] != float64(0) || rows[1]["lineTotal"] != float64(0) {
+		t.Fatalf("zero-price product must remain valid: %#v", rows[1])
 	}
 }
