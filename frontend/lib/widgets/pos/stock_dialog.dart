@@ -32,12 +32,18 @@ class _StockDialogState extends State<StockDialog> {
   void _broadcastState() {
     PosMirrorService.current?.notifyDialogState({
       'type': 'stock',
-      'items': _lowStock.map((p) => {
-        'partCode': p.code,
-        'partName': p.name,
-        'totalQty': p.totalQty,
-        'addresses': p.addresses.map((a) => {'label': a.label, 'qty': a.qty}).toList(),
-      }).toList(),
+      'items': _lowStock
+          .map(
+            (p) => {
+              'partCode': p.code,
+              'partName': p.name,
+              'totalQty': p.totalQty,
+              'addresses': p.addresses
+                  .map((a) => {'label': a.label, 'qty': a.qty})
+                  .toList(),
+            },
+          )
+          .toList(),
     });
   }
 
@@ -52,14 +58,15 @@ class _StockDialogState extends State<StockDialog> {
     for (final part in raw) {
       final total = _toDouble(part['totalStock'] ?? part['total_stock']);
       // Per-product threshold = reorder point (sum of ROP across the part's
-      // addresses), configured per item in คลังสินค้า. Fall back to min.
-      final rop = _toDouble(part['reorderPoint'] ?? part['minStock']);
+      // addresses), configured per item in คลังสินค้า.
+      final rop = _toDouble(part['reorderPoint']);
       if (rop <= 0) continue; // no threshold set → not tracked
       if (total <= rop) {
         result.add(
           _LowStockPart(
             code: part['code']?.toString() ?? '',
-            name: part['nameTh']?.toString() ??
+            name:
+                part['nameTh']?.toString() ??
                 part['name']?.toString() ??
                 'ไม่ทราบชื่อ',
             totalQty: total,
@@ -90,7 +97,11 @@ class _StockDialogState extends State<StockDialog> {
     });
 
     try {
-      final parts = await ApiPartsService.getParts(token: token, limit: 200, offset: 0);
+      final parts = await ApiPartsService.getParts(
+        token: token,
+        limit: 200,
+        offset: 0,
+      );
       final filtered = _buildLowStock(parts);
       setState(() {
         _lowStock = filtered;
@@ -132,11 +143,13 @@ class _StockDialogState extends State<StockDialog> {
                   ),
                   const SizedBox(width: 12),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.accent.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(999),
+                      borderRadius: BorderRadius.circular(AppSizes.radiusSmall),
                     ),
                     child: const Text(
                       'ต่ำกว่าจุดสั่งซื้อ (ROP)',
@@ -168,79 +181,80 @@ class _StockDialogState extends State<StockDialog> {
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : _error != null
-                          ? _ErrorBanner(message: _error!, onRetry: _loadLowStock)
-                          : _lowStock.isEmpty
-                              ? const _EmptyStock()
-                              : ListView.separated(
-                                  itemCount: _lowStock.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(height: 12),
-                                  itemBuilder: (context, index) {
-                                    final part = _lowStock[index];
-                                    return Container(
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.bg,
-                                        borderRadius: BorderRadius.circular(
-                                            AppSizes.radius),
-                                        border:
-                                            Border.all(color: AppColors.border),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Text(
-                                                part.name,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 16,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                '#${part.code}',
-                                                style: const TextStyle(
-                                                  color: AppColors.muted,
-                                                ),
-                                              ),
-                                              const Spacer(),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 4),
-                                                decoration: BoxDecoration(
-                                                  color: AppColors.danger
-                                                      .withValues(alpha: 0.15),
-                                                  borderRadius:
-                                                      BorderRadius.circular(999),
-                                                ),
-                                                child: Text(
-                                                  '${part.totalQty.toStringAsFixed(0)} ชิ้น',
-                                                  style: const TextStyle(
-                                                    color: AppColors.danger,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'จุดสั่งซื้อ (ROP): ${part.reorderPoint.toStringAsFixed(0)} ชิ้น',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.muted,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
+                      ? _ErrorBanner(message: _error!, onRetry: _loadLowStock)
+                      : _lowStock.isEmpty
+                      ? const _EmptyStock()
+                      : ListView.separated(
+                          itemCount: _lowStock.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final part = _lowStock[index];
+                            return Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppColors.bg,
+                                borderRadius: BorderRadius.circular(
+                                  AppSizes.radius,
                                 ),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        part.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        '#${part.code}',
+                                        style: const TextStyle(
+                                          color: AppColors.muted,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.danger.withValues(
+                                            alpha: 0.15,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '${part.totalQty.toStringAsFixed(0)} ชิ้น',
+                                          style: const TextStyle(
+                                            color: AppColors.danger,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'จุดสั่งซื้อ (ROP): ${part.reorderPoint.toStringAsFixed(0)} ชิ้น',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.muted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
                 ),
               ),
             ],
@@ -283,8 +297,7 @@ class _EmptyStock extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: const [
-          Icon(Icons.check_circle_outline,
-              size: 56, color: AppColors.primary),
+          Icon(Icons.check_circle_outline, size: 56, color: AppColors.primary),
           SizedBox(height: 12),
           Text('สต็อกเพียงพอทุกสินค้าแล้ว'),
         ],
@@ -313,10 +326,7 @@ class _ErrorBanner extends StatelessWidget {
             style: const TextStyle(color: AppColors.danger),
           ),
           const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: onRetry,
-            child: const Text('ลองใหม่'),
-          ),
+          OutlinedButton(onPressed: onRetry, child: const Text('ลองใหม่')),
         ],
       ),
     );

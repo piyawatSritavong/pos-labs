@@ -452,7 +452,9 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppSizes.radiusLarge),
+        ),
       ),
       builder: (sheetCtx) {
         return SafeArea(
@@ -982,7 +984,7 @@ class HeaderBar extends StatelessWidget {
         return Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(AppSizes.radius),
             onTap: onSearchTap,
             child: Container(
               padding: EdgeInsets.symmetric(
@@ -991,7 +993,7 @@ class HeaderBar extends StatelessWidget {
               ),
               decoration: BoxDecoration(
                 color: context.colorBg,
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: BorderRadius.circular(AppSizes.radius),
                 border: Border.all(color: context.colorBorder),
               ),
               child: Row(
@@ -1461,7 +1463,7 @@ class _BarcodeQuickAction extends StatelessWidget {
                 foregroundColor: context.colorText,
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(AppSizes.radius),
                 ),
               ),
               onPressed: useCameraScanner

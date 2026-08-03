@@ -540,7 +540,7 @@ def main() -> int:
             token=admin_token,
             json_body={
                 "code": temp_address, "partCode": temp_part, "storeId": "main", "shelf": "S2",
-                "qty": 0, "min": 0, "max": 10, "rop": 1, "remarks": "temporary fixture",
+                "qty": 0, "rop": 1, "remarks": "temporary fixture",
             },
         )
         if status == 201:
@@ -554,7 +554,7 @@ def main() -> int:
             token=admin_token,
             json_body={
                 "partCode": temp_part, "storeId": "main", "shelf": "S3",
-                "qty": 0, "min": 0, "max": 12, "rop": 2, "remarks": "updated fixture",
+                "qty": 0, "rop": 2, "remarks": "updated fixture",
             },
         )
         check("DELETE /addresses/:code", "DELETE", f"/addresses/{temp_address}", 200, token=admin_token)

@@ -416,7 +416,7 @@ class _StockVariancePageState extends State<StockVariancePage> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: (color ?? AppColors.primary).withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(AppSizes.radiusSmall),
       ),
       child: Text(
         '$label: $value',

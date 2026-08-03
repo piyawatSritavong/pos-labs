@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_operations.dart';
@@ -490,15 +492,10 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
                 Row(
                   children: [
                     Expanded(
-                      child: TextField(
+                      child: RestockCatalogPicker(
                         controller: _scanController,
-                        decoration: const InputDecoration(
-                          labelText: 'สแกน/ค้นหาสินค้า',
-                          hintText: 'รหัสสินค้า, barcode, ชื่อสินค้า',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.qr_code_scanner),
-                        ),
-                        onSubmitted: (_) => _addFromInput(),
+                        onSubmitted: _addFromInput,
+                        onSelected: _addPart,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -507,43 +504,6 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
                       child: const Text('เพิ่ม'),
                     ),
                   ],
-                ),
-                const SizedBox(height: 12),
-                Autocomplete<Map<String, dynamic>>(
-                  displayStringForOption: _partLabel,
-                  // Server-side search (no full-catalog preload). Min 2 chars to
-                  // avoid noisy queries; Autocomplete uses the latest result.
-                  optionsBuilder: (value) async {
-                    final q = value.text.trim();
-                    if (q.length < 2) {
-                      return const Iterable<Map<String, dynamic>>.empty();
-                    }
-                    final token = context.read<AuthProvider>().token ?? '';
-                    if (token.isEmpty) {
-                      return const Iterable<Map<String, dynamic>>.empty();
-                    }
-                    try {
-                      return await ApiOperationsService.searchRestockCatalog(
-                        token: token,
-                        query: q,
-                        limit: 20,
-                      );
-                    } catch (_) {
-                      return const Iterable<Map<String, dynamic>>.empty();
-                    }
-                  },
-                  onSelected: _addPart,
-                  fieldViewBuilder: (context, controller, focusNode, _) {
-                    return TextField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      decoration: const InputDecoration(
-                        labelText: 'ค้นหาจากรายการสินค้า',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.search),
-                      ),
-                    );
-                  },
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -637,6 +597,243 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
           ),
         ),
       ],
+    );
+  }
+}
+
+typedef RestockCatalogLoader =
+    Future<RestockCatalogPage> Function(String query, int limit, int offset);
+
+/// Unified product lookup used by vehicle restock requests. The optional
+/// loader keeps the widget independently testable while production uses the
+/// authenticated API service.
+class RestockCatalogPicker extends StatefulWidget {
+  const RestockCatalogPicker({
+    super.key,
+    required this.controller,
+    required this.onSubmitted,
+    required this.onSelected,
+    this.loadPage,
+  });
+
+  final TextEditingController controller;
+  final VoidCallback onSubmitted;
+  final ValueChanged<Map<String, dynamic>> onSelected;
+  final RestockCatalogLoader? loadPage;
+
+  @override
+  State<RestockCatalogPicker> createState() => _RestockCatalogPickerState();
+}
+
+class _RestockCatalogPickerState extends State<RestockCatalogPicker> {
+  static const _pageSize = 50;
+
+  final MenuController _menuController = MenuController();
+  Timer? _debounce;
+  List<Map<String, dynamic>> _items = [];
+  String _loadedQuery = '';
+  int _total = 0;
+  bool _loading = false;
+  String? _loadError;
+  int _requestGeneration = 0;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({required bool reset, bool openMenu = false}) async {
+    final query = widget.controller.text.trim();
+    final generation = ++_requestGeneration;
+    final token = widget.loadPage == null
+        ? context.read<AuthProvider>().token ?? ''
+        : '';
+    if (widget.loadPage == null && token.isEmpty) return;
+    setState(() {
+      _loading = true;
+      _loadError = null;
+      if (reset) {
+        _items = [];
+        _total = 0;
+      }
+    });
+    try {
+      final offset = reset ? 0 : _items.length;
+      final page = widget.loadPage != null
+          ? await widget.loadPage!(query, _pageSize, offset)
+          : await ApiOperationsService.getRestockCatalogPage(
+              token: token,
+              query: query,
+              limit: _pageSize,
+              offset: offset,
+            );
+      if (!mounted ||
+          generation != _requestGeneration ||
+          query != widget.controller.text.trim()) {
+        return;
+      }
+      setState(() {
+        _loadedQuery = query;
+        _items = reset ? page.items : [..._items, ...page.items];
+        _total = page.total;
+      });
+    } catch (e) {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _loadError = e.toString());
+      }
+    } finally {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _loading = false);
+        if (openMenu && !_menuController.isOpen) {
+          _menuController.open();
+        }
+      }
+    }
+  }
+
+  void _onChanged(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(
+      const Duration(milliseconds: 250),
+      () => _load(reset: true, openMenu: true),
+    );
+  }
+
+  Future<void> _toggleMenu() async {
+    if (_menuController.isOpen) {
+      _menuController.close();
+      return;
+    }
+    if (_loadedQuery != widget.controller.text.trim() || _items.isEmpty) {
+      await _load(reset: true);
+    }
+    if (mounted && !_menuController.isOpen) _menuController.open();
+  }
+
+  void _select(Map<String, dynamic> item) {
+    widget.onSelected(item);
+    widget.controller.clear();
+    _loadedQuery = '';
+    _menuController.close();
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _items.length >= _total) return;
+    await _load(reset: false);
+  }
+
+  bool _handleMenuScroll(ScrollNotification notification) {
+    if (notification.metrics.extentAfter < 80 &&
+        !_loading &&
+        _items.length < _total) {
+      _loadMore();
+    }
+    return false;
+  }
+
+  Widget _menuContent() {
+    if (_loading && _items.isEmpty) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (_loadError != null && _items.isEmpty) {
+      return Center(
+        child: TextButton(
+          onPressed: () => _load(reset: true, openMenu: true),
+          child: const Text('โหลดไม่สำเร็จ — กดเพื่อลองใหม่'),
+        ),
+      );
+    }
+    if (_items.isEmpty) {
+      return const Center(child: Text('ไม่พบสินค้าที่พร้อมเบิก'));
+    }
+
+    final hasFooter = _loading || _items.length < _total || _loadError != null;
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleMenuScroll,
+      child: ListView.separated(
+        primary: false,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: _items.length + (hasFooter ? 1 : 0),
+        separatorBuilder: (_, _) => const Divider(height: 1),
+        itemBuilder: (context, index) {
+          if (index == _items.length) {
+            if (_loadError != null) {
+              return TextButton(
+                onPressed: _loadMore,
+                child: const Text('โหลดต่อไม่สำเร็จ — กดเพื่อลองใหม่'),
+              );
+            }
+            return const SizedBox(
+              height: 48,
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+          final item = _items[index];
+          return InkWell(
+            onTap: () => _select(item),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Text(
+                _partLabel(item),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => MenuAnchor(
+        controller: _menuController,
+        crossAxisUnconstrained: false,
+        style: MenuStyle(
+          minimumSize: WidgetStatePropertyAll(Size(constraints.maxWidth, 0)),
+          maximumSize: WidgetStatePropertyAll(Size(constraints.maxWidth, 360)),
+        ),
+        menuChildren: [
+          SizedBox(
+            width: constraints.maxWidth,
+            height: 320,
+            child: _menuContent(),
+          ),
+        ],
+        builder: (context, controller, child) => TextField(
+          key: const Key('restock-unified-search'),
+          controller: widget.controller,
+          decoration: InputDecoration(
+            labelText: 'สแกน/ค้นหาสินค้า',
+            hintText: 'ชื่อสินค้า, รหัสสินค้า หรือ Barcode',
+            border: const OutlineInputBorder(),
+            prefixIcon: const Icon(Icons.qr_code_scanner),
+            suffixIcon: IconButton(
+              key: const Key('restock-catalog-dropdown'),
+              tooltip: 'ดูรายการสินค้าที่พร้อมเบิก',
+              onPressed: _toggleMenu,
+              icon: Icon(
+                controller.isOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+              ),
+            ),
+          ),
+          textInputAction: TextInputAction.search,
+          onChanged: _onChanged,
+          onTap: () {
+            if (_items.isEmpty) _load(reset: true, openMenu: true);
+          },
+          onSubmitted: (_) => widget.onSubmitted(),
+        ),
+      ),
     );
   }
 }

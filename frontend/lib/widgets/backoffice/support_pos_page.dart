@@ -615,7 +615,7 @@ class _POSMirrorView extends StatelessWidget {
                         ),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.78),
-                          borderRadius: BorderRadius.circular(999),
+                          borderRadius: BorderRadius.circular(AppSizes.radius),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -1151,7 +1151,7 @@ class _POSMirrorView extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
           color: AppColors.bg,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppSizes.radius),
           border: Border.all(color: AppColors.border),
         ),
         child: Row(

@@ -159,6 +159,118 @@ func (r stubPOSRepository) ToggleActive(ctx context.Context, id string) error {
 	return nil
 }
 
+type stubRestockPartRepository struct {
+	parts        []repository.PartDetail
+	addresses    map[string][]repository.PartAddress
+	query        string
+	storeID      string
+	saleableOnly bool
+	limit        int
+	offset       int
+}
+
+func (r *stubRestockPartRepository) SearchParts(_ context.Context, query string, _ *string, _ *bool, _, storeID *string, saleableOnly bool, limit, offset int) ([]repository.PartDetail, error) {
+	r.query = query
+	r.saleableOnly = saleableOnly
+	r.limit = limit
+	r.offset = offset
+	if storeID != nil {
+		r.storeID = *storeID
+	}
+	end := offset + limit
+	if end > len(r.parts) {
+		end = len(r.parts)
+	}
+	if offset >= len(r.parts) {
+		return nil, nil
+	}
+	return r.parts[offset:end], nil
+}
+
+func (r *stubRestockPartRepository) CountParts(context.Context, string, *string, *bool, *string, *string, bool) (int, error) {
+	return len(r.parts), nil
+}
+
+func (r *stubRestockPartRepository) GetAddressesByPartCodes(_ context.Context, codes []string, _ *string) (map[string][]repository.PartAddress, error) {
+	out := make(map[string][]repository.PartAddress, len(codes))
+	for _, code := range codes {
+		out[code] = r.addresses[code]
+	}
+	return out, nil
+}
+
+func (*stubRestockPartRepository) GetPartDetail(context.Context, string, *string) (*repository.PartDetail, []repository.PartAddress, error) {
+	return nil, nil, repository.ErrNotFound
+}
+func (*stubRestockPartRepository) ListParts(context.Context, int, int, *string) ([]repository.PartSummary, error) {
+	return nil, nil
+}
+func (*stubRestockPartRepository) GetPartByBarcode(context.Context, string, string) (*repository.PartDetail, []repository.PartAddress, error) {
+	return nil, nil, repository.ErrNotFound
+}
+func (*stubRestockPartRepository) CheckPartExistsInBranch(context.Context, string, string) (bool, error) {
+	return false, nil
+}
+func (*stubRestockPartRepository) CreatePart(context.Context, repository.PartInput) error {
+	return nil
+}
+func (*stubRestockPartRepository) UpdatePart(context.Context, string, repository.PartInput) error {
+	return nil
+}
+func (*stubRestockPartRepository) DeletePart(context.Context, string) (string, error) {
+	return "deleted", nil
+}
+func (*stubRestockPartRepository) GenerateNextPartCode(context.Context) (string, error) {
+	return "P0001", nil
+}
+
+func TestRestockCatalogSupportsPaginationWithoutCostFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	parts := &stubRestockPartRepository{
+		parts: []repository.PartDetail{
+			{Code: "P0001", Name: "Cable A", NameTH: "สายไฟ A", BarCode: "111", Price: 10, Cost: 7, MinPrice: 9},
+			{Code: "P0002", Name: "Cable B", NameTH: "สายไฟ B", BarCode: "222", Price: 20, Cost: 14, MinPrice: 18},
+		},
+		addresses: map[string][]repository.PartAddress{
+			"P0002": {{PartCode: "P0002", StoreID: "main", Qty: 3}},
+		},
+	}
+	handler := NewInventoryTransferHandler(nil, nil, nil, parts)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/transfers/pos-restock/catalog?q=สาย&limit=1&offset=1", nil)
+
+	handler.RestockCatalog(c)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if parts.query != "สาย" || parts.storeID != "main" || !parts.saleableOnly || parts.limit != 1 || parts.offset != 1 {
+		t.Fatalf("unexpected repository filters: %#v", parts)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["total"] != float64(2) || response["limit"] != float64(1) || response["offset"] != float64(1) {
+		t.Fatalf("unexpected pagination response: %s", recorder.Body.String())
+	}
+	items, _ := response["parts"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected one item: %s", recorder.Body.String())
+	}
+	item := items[0].(map[string]any)
+	if item["code"] != "P0002" || item["availableQty"] != float64(3) {
+		t.Fatalf("unexpected item: %#v", item)
+	}
+	if _, exists := item["cost"]; exists {
+		t.Fatal("employee catalog must not expose cost")
+	}
+	if _, exists := item["minPrice"]; exists {
+		t.Fatal("employee catalog must not expose minimum price")
+	}
+}
+
 func TestInventoryTransferCreateAllowsSameBranch(t *testing.T) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

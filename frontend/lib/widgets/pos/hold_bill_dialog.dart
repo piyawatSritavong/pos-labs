@@ -555,7 +555,7 @@ class _SummaryChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(AppSizes.radiusSmall),
         border: Border.all(
           color: isAccent ? AppColors.accent : AppColors.border,
         ),

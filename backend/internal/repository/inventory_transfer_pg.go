@@ -557,8 +557,8 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 			_, err = tx.ExecContext(ctx, `
 				INSERT INTO "address_master"(
 					"code", "part_code", "store_id", "shelf",
-					"qty", "min", "max", "rop", "remarks"
-				) VALUES ($1, $2, $3, 'รถ', $4, 0, 0, 0, 'สร้างจากใบเบิกสินค้าเข้ารถ')
+					"qty", "rop", "remarks"
+				) VALUES ($1, $2, $3, 'รถ', $4, 0, 'สร้างจากใบเบิกสินค้าเข้ารถ')
 			`, destAddrCode, item.partCode, transfer.ToStoreID, item.requestedQty)
 			if err != nil {
 				return err

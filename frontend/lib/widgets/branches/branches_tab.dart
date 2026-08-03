@@ -350,7 +350,7 @@ class _BranchCard extends StatelessWidget {
                     color: isActive
                         ? Colors.green.withValues(alpha: 0.1)
                         : Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(AppSizes.radiusSmall),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,

@@ -178,15 +178,21 @@ func (h *InventoryTransferHandler) List(c *gin.Context) {
 func (h *InventoryTransferHandler) RestockCatalog(c *gin.Context) {
 	query := strings.TrimSpace(c.Query("q"))
 	limit := 30
+	offset := 0
 	if raw := c.Query("limit"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 100 {
 			limit = parsed
 		}
 	}
+	if raw := c.Query("offset"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
 	active := true
 	mainStore := "main"
 	parts, err := h.parts.SearchParts(
-		c.Request.Context(), query, nil, &active, nil, &mainStore, true, limit, 0,
+		c.Request.Context(), query, nil, &active, nil, &mainStore, true, limit, offset,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_search_restock_catalog"})
@@ -222,7 +228,18 @@ func (h *InventoryTransferHandler) RestockCatalog(c *gin.Context) {
 			"availableQty": available,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"parts": out, "total": len(out)})
+	total, err := h.parts.CountParts(
+		c.Request.Context(), query, nil, &active, nil, &mainStore, true,
+	)
+	if err != nil {
+		total = offset + len(out)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"parts":  out,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 func (h *InventoryTransferHandler) VehicleDailySummary(c *gin.Context) {

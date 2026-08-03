@@ -260,7 +260,7 @@ func (r *reportRepositoryPG) GetAllAddresses(ctx context.Context) ([]Address, er
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT 
 			a."code", a."part_code", a."store_id", COALESCE(s."branch_id", ''),
-			a."shelf", a."qty", a."min", a."max", a."rop", a."remarks",
+			a."shelf", a."qty", a."rop", a."remarks",
 			COALESCE(p."cost", 0), COALESCE(p."price", 0), COALESCE(p."min_price", 0)
 		FROM "address_master" a
 		LEFT JOIN "part_master" p ON p."code" = a."part_code"
@@ -279,7 +279,7 @@ func (r *reportRepositoryPG) GetAllAddresses(ctx context.Context) ([]Address, er
 	for rows.Next() {
 		var a Address
 		var shelf, remarks sql.NullString
-		var qty, min, max, rop sql.NullInt64
+		var qty, rop sql.NullInt64
 
 		err := rows.Scan(
 			&a.Code,
@@ -288,8 +288,6 @@ func (r *reportRepositoryPG) GetAllAddresses(ctx context.Context) ([]Address, er
 			&a.BranchID,
 			&shelf,
 			&qty,
-			&min,
-			&max,
 			&rop,
 			&remarks,
 			&a.Cost,
@@ -305,12 +303,6 @@ func (r *reportRepositoryPG) GetAllAddresses(ctx context.Context) ([]Address, er
 		}
 		if qty.Valid {
 			a.Qty = int(qty.Int64)
-		}
-		if min.Valid {
-			a.Min = int(min.Int64)
-		}
-		if max.Valid {
-			a.Max = int(max.Int64)
 		}
 		if rop.Valid {
 			a.Rop = int(rop.Int64)

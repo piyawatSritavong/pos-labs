@@ -510,7 +510,7 @@ class _ProductCard extends StatelessWidget {
                   vertical: 8,
                 ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(AppSizes.radius),
                 ),
               ),
               onPressed: () {

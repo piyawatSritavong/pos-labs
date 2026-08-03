@@ -134,39 +134,39 @@ ON CONFLICT ("code") DO NOTHING;
 -- Example addresses (20 items)
 INSERT INTO "address_master"(
     "code", "part_code", "store_id", "shelf",
-    "qty", "min", "max", "rop", "remarks"
+    "qty", "rop", "remarks"
 )
 VALUES 
-    ('ADDR0001', 'P0001', 'main', 'A-01', 100, 10, 200, 20, 'Mock stock location'),
-    ('ADDR0002', 'P0002', 'main', 'A-02', 110, 10, 210, 20, 'Mock stock location'),
-    ('ADDR0003', 'P0003', 'main', 'A-03', 120, 12, 220, 24, 'Mock stock location'),
-    ('ADDR0004', 'P0004', 'main', 'A-04', 130, 13, 230, 26, 'Mock stock location'),
-    ('ADDR0005', 'P0005', 'main', 'A-05', 140, 14, 240, 28, 'Mock stock location'),
-    ('ADDR0006', 'P0006', 'main', 'A-06', 150, 15, 250, 30, 'Mock stock location'),
-    ('ADDR0007', 'P0007', 'main', 'A-07', 160, 16, 260, 32, 'Mock stock location'),
-    ('ADDR0008', 'P0008', 'main', 'A-08', 170, 17, 270, 34, 'Mock stock location'),
-    ('ADDR0009', 'P0009', 'main', 'A-09', 180, 18, 280, 36, 'Mock stock location'),
-    ('ADDR0010', 'P0010', 'main', 'A-10', 190, 19, 290, 38, 'Mock stock location'),
-    ('ADDR0011', 'P0011', 'main', 'A-11', 200, 20, 300, 40, 'Mock stock location'),
-    ('ADDR0012', 'P0012', 'main', 'A-12', 210, 21, 310, 42, 'Mock stock location'),
-    ('ADDR0013', 'P0013', 'main', 'A-13', 220, 22, 320, 44, 'Mock stock location'),
-    ('ADDR0014', 'P0014', 'main', 'A-14', 230, 23, 330, 46, 'Mock stock location'),
-    ('ADDR0015', 'P0015', 'main', 'A-15', 240, 24, 340, 48, 'Mock stock location'),
-    ('ADDR0016', 'P0016', 'main', 'A-16', 250, 25, 350, 50, 'Mock stock location'),
-    ('ADDR0017', 'P0017', 'main', 'A-17', 260, 26, 360, 52, 'Mock stock location'),
-    ('ADDR0018', 'P0018', 'main', 'A-18', 270, 27, 370, 54, 'Mock stock location'),
-    ('ADDR0019', 'P0019', 'main', 'A-19', 280, 28, 380, 56, 'Mock stock location'),
-    ('ADDR0020', 'P0020', 'main', 'A-20', 290, 29, 390, 58, 'Mock stock location')
+    ('ADDR0001', 'P0001', 'main', 'A-01', 100, 20, 'Mock stock location'),
+    ('ADDR0002', 'P0002', 'main', 'A-02', 110, 20, 'Mock stock location'),
+    ('ADDR0003', 'P0003', 'main', 'A-03', 120, 24, 'Mock stock location'),
+    ('ADDR0004', 'P0004', 'main', 'A-04', 130, 26, 'Mock stock location'),
+    ('ADDR0005', 'P0005', 'main', 'A-05', 140, 28, 'Mock stock location'),
+    ('ADDR0006', 'P0006', 'main', 'A-06', 150, 30, 'Mock stock location'),
+    ('ADDR0007', 'P0007', 'main', 'A-07', 160, 32, 'Mock stock location'),
+    ('ADDR0008', 'P0008', 'main', 'A-08', 170, 34, 'Mock stock location'),
+    ('ADDR0009', 'P0009', 'main', 'A-09', 180, 36, 'Mock stock location'),
+    ('ADDR0010', 'P0010', 'main', 'A-10', 190, 38, 'Mock stock location'),
+    ('ADDR0011', 'P0011', 'main', 'A-11', 200, 40, 'Mock stock location'),
+    ('ADDR0012', 'P0012', 'main', 'A-12', 210, 42, 'Mock stock location'),
+    ('ADDR0013', 'P0013', 'main', 'A-13', 220, 44, 'Mock stock location'),
+    ('ADDR0014', 'P0014', 'main', 'A-14', 230, 46, 'Mock stock location'),
+    ('ADDR0015', 'P0015', 'main', 'A-15', 240, 48, 'Mock stock location'),
+    ('ADDR0016', 'P0016', 'main', 'A-16', 250, 50, 'Mock stock location'),
+    ('ADDR0017', 'P0017', 'main', 'A-17', 260, 52, 'Mock stock location'),
+    ('ADDR0018', 'P0018', 'main', 'A-18', 270, 54, 'Mock stock location'),
+    ('ADDR0019', 'P0019', 'main', 'A-19', 280, 56, 'Mock stock location'),
+    ('ADDR0020', 'P0020', 'main', 'A-20', 290, 58, 'Mock stock location')
 ON CONFLICT ("code") DO NOTHING;
 
 -- Add more addresses as needed. Each product can have multiple addresses
 -- (same product in different stores or locations):
 -- INSERT INTO "address_master"(
 --     "code", "part_code", "store_id", "shelf",
---     "qty", "min", "max", "rop", "remarks"
+--     "qty", "rop", "remarks"
 -- )
 -- VALUES 
---     ('ADDR0003', 'P0001', 'main', 'A-03', 50, 5, 100, 10, 'Secondary location')
+--     ('ADDR0003', 'P0001', 'main', 'A-03', 50, 10, 'Secondary location')
 -- ON CONFLICT ("code") DO NOTHING;
 
 -- ============================================================================

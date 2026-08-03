@@ -75,8 +75,8 @@ UPDATE "user" SET default_pos_id='POS002' WHERE username='pos2';
 
 -- 6) Stock the second-branch store (store_00001) with every product it lacks,
 --    so pos2 has a fully functional catalog like the main branch.
-INSERT INTO "address_master"(code, part_code, store_id, shelf, qty, min, max, rop, remarks)
-SELECT 'S2-'||p.code, p.code, 'store_00001', 'S2-01', 100, 10, 200, 20, 'second-branch auto-stock'
+INSERT INTO "address_master"(code, part_code, store_id, shelf, qty, rop, remarks)
+SELECT 'S2-'||p.code, p.code, 'store_00001', 'S2-01', 100, 20, 'second-branch auto-stock'
 FROM part_master p
 WHERE NOT EXISTS (
   SELECT 1 FROM address_master a WHERE a.part_code=p.code AND a.store_id='store_00001'

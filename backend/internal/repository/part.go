@@ -43,10 +43,9 @@ type PartSummary struct {
 	MinPrice        float64
 	IsActive        bool
 	TotalStock      int
-	// ReorderPoint / MinStock are summed across the part's addresses. Used for
+	// ReorderPoint is summed across the part's addresses. Used for
 	// the per-product low-stock alert (low when TotalStock <= ReorderPoint).
 	ReorderPoint int
-	MinStock     int
 }
 type PartAddress struct {
 	Code         string
@@ -56,8 +55,6 @@ type PartAddress struct {
 	StoreLabelTH string
 	Shelf        string
 	Qty          int
-	Min          int
-	Max          int
 	Rop          int
 	Remarks      string
 	IsDefault    bool

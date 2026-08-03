@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
+import 'package:frontend/services/api_operations.dart';
+import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/utils/pos_error_message.dart';
 import 'package:frontend/utils/store_summary.dart';
 import 'package:frontend/widgets/backoffice/addresses_page.dart';
 import 'package:frontend/widgets/backoffice/purchase_orders_page.dart';
+import 'package:frontend/widgets/pos/requisition_dialog.dart';
 import 'package:provider/provider.dart';
 
 void main() {
@@ -66,6 +69,8 @@ void main() {
     expect(find.text('ทุกคลัง'), findsOneWidget);
     expect(find.text('ไม่พบข้อมูลคลังสินค้า'), findsOneWidget);
     expect(find.text('เพิ่มคลังใหม่'), findsNothing);
+    expect(find.textContaining('Min'), findsNothing);
+    expect(find.textContaining('Max'), findsNothing);
   });
 
   testWidgets('purchase order page exposes the bulk inbound action', (
@@ -85,5 +90,135 @@ void main() {
       find.text('บันทึกแล้วสินค้าและจำนวนจะเข้าคลังหลักทันที'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('restock picker opens without typing and selects immediately', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    Map<String, dynamic>? selected;
+    var submitted = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light().copyWith(splashFactory: NoSplash.splashFactory),
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 560,
+              child: RestockCatalogPicker(
+                controller: controller,
+                onSubmitted: () => submitted++,
+                onSelected: (part) => selected = part,
+                loadPage: (query, limit, offset) async => RestockCatalogPage(
+                  items: const [
+                    {
+                      'code': 'P0001',
+                      'barCode': '885000000001',
+                      'nameTh': 'สินค้าทดสอบ',
+                      'availableQty': 8,
+                      'price': 100,
+                    },
+                  ],
+                  total: 1,
+                  limit: limit,
+                  offset: offset,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('ค้นหาจากรายการสินค้า'), findsNothing);
+    await tester.tap(find.byKey(const Key('restock-catalog-dropdown')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('P0001 - สินค้าทดสอบ'), findsOneWidget);
+
+    await tester.tap(find.textContaining('P0001 - สินค้าทดสอบ'));
+    await tester.pumpAndSettle();
+    expect(selected?['code'], 'P0001');
+    expect(controller.text, isEmpty);
+
+    await tester.enterText(
+      find.byKey(const Key('restock-unified-search')),
+      'P0001',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    expect(submitted, 1);
+  });
+
+  testWidgets('restock picker loads the next 50 items near scroll end', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    final offsets = <int>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light().copyWith(splashFactory: NoSplash.splashFactory),
+        home: Scaffold(
+          body: SizedBox(
+            width: 560,
+            child: RestockCatalogPicker(
+              controller: controller,
+              onSubmitted: () {},
+              onSelected: (_) {},
+              loadPage: (query, limit, offset) async {
+                offsets.add(offset);
+                final end = (offset + limit).clamp(0, 51);
+                return RestockCatalogPage(
+                  items: [
+                    for (var i = offset; i < end; i++)
+                      {
+                        'code': 'P${(i + 1).toString().padLeft(4, '0')}',
+                        'nameTh': 'สินค้า ${i + 1}',
+                        'availableQty': 1,
+                        'price': 10,
+                      },
+                  ],
+                  total: 51,
+                  limit: limit,
+                  offset: offset,
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('restock-catalog-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -4000));
+    await tester.pumpAndSettle();
+
+    expect(offsets, containsAllInOrder([0, 50]));
+    expect(find.textContaining('P0051 - สินค้า 51'), findsOneWidget);
+  });
+
+  test('theme uses 12px controls/cards and 16px dialogs', () {
+    for (final theme in [AppTheme.light(), AppTheme.dark()]) {
+      final input =
+          theme.inputDecorationTheme.enabledBorder as OutlineInputBorder;
+      final card = theme.cardTheme.shape as RoundedRectangleBorder;
+      final dialog = theme.dialogTheme.shape as RoundedRectangleBorder;
+      final button =
+          theme.elevatedButtonTheme.style!.shape!.resolve({})
+              as RoundedRectangleBorder;
+
+      expect(input.borderRadius.topLeft.x, AppSizes.radius);
+      expect((card.borderRadius as BorderRadius).topLeft.x, AppSizes.radius);
+      expect((button.borderRadius as BorderRadius).topLeft.x, AppSizes.radius);
+      expect(
+        (dialog.borderRadius as BorderRadius).topLeft.x,
+        AppSizes.radiusLarge,
+      );
+    }
   });
 }

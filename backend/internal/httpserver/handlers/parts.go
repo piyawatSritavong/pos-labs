@@ -95,7 +95,6 @@ func (h *PartsHandler) List(c *gin.Context) {
 			},
 			"totalStock":   p.TotalStock,
 			"reorderPoint": p.ReorderPoint,
-			"minStock":     p.MinStock,
 		}
 		if addressesByCode != nil {
 			addrs := make([]gin.H, 0, len(addressesByCode[p.Code]))
@@ -207,8 +206,6 @@ func (h *PartsHandler) Get(c *gin.Context) {
 			},
 			"shelf":     a.Shelf,
 			"qty":       a.Qty,
-			"min":       a.Min,
-			"max":       a.Max,
 			"rop":       a.Rop,
 			"remarks":   a.Remarks,
 			"isDefault": a.IsDefault,
@@ -375,8 +372,6 @@ func (h *PartsHandler) Search(c *gin.Context) {
 				},
 				"shelf":     a.Shelf,
 				"qty":       a.Qty,
-				"min":       a.Min,
-				"max":       a.Max,
 				"rop":       a.Rop,
 				"remarks":   a.Remarks,
 				"isDefault": a.IsDefault,

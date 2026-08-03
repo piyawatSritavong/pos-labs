@@ -665,7 +665,7 @@ class _CashPaymentOverlay extends StatelessWidget {
             child: Card(
               elevation: 12,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(AppSizes.radiusLarge),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(32),
@@ -899,7 +899,7 @@ class _ReceiptConfirmationOverlay extends StatelessWidget {
             child: Card(
               elevation: 12,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(AppSizes.radiusLarge),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(32),

@@ -624,7 +624,7 @@ Watch the output:
 
 ### Case B — Tables full but UI fails (parts: 1566, addresses: 1566, but UI shows 500)
 
-The data was loaded by an older version of `seed-real-data.sql` that left `NULL` values in columns the Go code can't Scan as `string`/`int` (`bar_code`, `details`, `cost`, `shelf`, `max`, `remarks`).
+The data was loaded by an older version of `seed-real-data.sql` that left `NULL` values in columns the Go code can't Scan as `string`/`int` (`bar_code`, `details`, `cost`, `shelf`, `remarks`).
 
 The new `seed-real-data.sql` automatically repairs this on top of `INSERT` via `UPDATE … WHERE x IS NULL` statements. Re-running fixes it:
 

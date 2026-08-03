@@ -442,7 +442,7 @@ class _DialogProductCard extends StatelessWidget {
                 side: const BorderSide(color: AppColors.primary),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(AppSizes.radius),
                 ),
               ),
               onPressed: onAdd,

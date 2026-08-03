@@ -62,13 +62,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 					FROM "address_master" a3
 					JOIN "branch_store" bs3 ON bs3.store_id = a3.store_id
 					WHERE a3.part_code = p.code AND a3.is_active = true AND bs3.branch_id = $3
-				), 0) AS total_rop,
-				COALESCE((
-					SELECT SUM(a4.min)
-					FROM "address_master" a4
-					JOIN "branch_store" bs4 ON bs4.store_id = a4.store_id
-					WHERE a4.part_code = p.code AND a4.is_active = true AND bs4.branch_id = $3
-				), 0) AS total_min
+				), 0) AS total_rop
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
@@ -100,8 +94,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 				p.min_price,
 				COALESCE(p.is_active, false),
 				COALESCE(SUM(a.qty), 0) AS total_stock,
-				COALESCE(SUM(a.rop), 0) AS total_rop,
-				COALESCE(SUM(a.min), 0) AS total_min
+				COALESCE(SUM(a.rop), 0) AS total_rop
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
@@ -141,7 +134,6 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			&s.IsActive,
 			&s.TotalStock,
 			&s.ReorderPoint,
-			&s.MinStock,
 		); err != nil {
 			return nil, err
 		}
@@ -269,8 +261,6 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 				s.label_th,
 				a.shelf,
 				a.qty,
-				a.min,
-				a.max,
 				a.rop,
 				COALESCE(a.remarks, ''),
 				COALESCE(bs.is_default, false) as is_default
@@ -290,8 +280,6 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 				s.label_th,
 				a.shelf,
 				a.qty,
-				a.min,
-				a.max,
 				a.rop,
 				COALESCE(a.remarks, ''),
 				false as is_default
@@ -317,8 +305,6 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			&a.StoreLabelTH,
 			&a.Shelf,
 			&a.Qty,
-			&a.Min,
-			&a.Max,
 			&a.Rop,
 			&a.Remarks,
 			&a.IsDefault,
@@ -466,8 +452,6 @@ func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []
 				s.label_th,
 				a.shelf,
 				a.qty,
-				a.min,
-				a.max,
 				a.rop,
 				COALESCE(a.remarks, ''),
 				COALESCE(bs.is_default, false) as is_default
@@ -487,8 +471,6 @@ func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []
 				s.label_th,
 				a.shelf,
 				a.qty,
-				a.min,
-				a.max,
 				a.rop,
 				COALESCE(a.remarks, ''),
 				false as is_default
@@ -513,8 +495,6 @@ func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []
 			&a.StoreLabelTH,
 			&a.Shelf,
 			&a.Qty,
-			&a.Min,
-			&a.Max,
 			&a.Rop,
 			&a.Remarks,
 			&a.IsDefault,
@@ -617,8 +597,6 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 			s.label_th,
 			a.shelf,
 			a.qty,
-			a.min,
-			a.max,
 			a.rop,
 			COALESCE(a.remarks, ''),
 			COALESCE(bs.is_default, false) as is_default
@@ -644,8 +622,6 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 			&a.StoreLabelTH,
 			&a.Shelf,
 			&a.Qty,
-			&a.Min,
-			&a.Max,
 			&a.Rop,
 			&a.Remarks,
 			&a.IsDefault,

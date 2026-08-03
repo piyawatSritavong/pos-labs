@@ -343,16 +343,14 @@ class _AddressesManagementSectionState
     );
   }
 
-  // Edit the low-stock thresholds (Min / ROP / Max) for one address. ROP is the
-  // reorder point the POS "สต็อกใกล้หมด" alert uses (per product). Current
+  // Edit the stock and its single low-stock threshold. ROP is the reorder
+  // point the POS "สต็อกใกล้หมด" alert uses (per product). Current
   // qty/shelf/remarks are re-sent so a partial update never wipes them.
   Future<void> _editThreshold(Map<String, dynamic> a) async {
     final code = (a['code'] ?? '').toString();
     if (code.isEmpty) return;
     final qtyC = TextEditingController(text: (a['qty'] ?? '').toString());
-    final minC = TextEditingController(text: (a['min'] ?? '').toString());
     final ropC = TextEditingController(text: (a['rop'] ?? '').toString());
-    final maxC = TextEditingController(text: (a['max'] ?? '').toString());
     final costC = TextEditingController(text: (a['cost'] ?? '0').toString());
     final priceC = TextEditingController(text: (a['price'] ?? '0').toString());
     final minPriceC = TextEditingController(
@@ -378,30 +376,10 @@ class _AddressesManagementSectionState
               ),
               const SizedBox(height: 10),
               TextField(
-                controller: minC,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Min (ขั้นต่ำ)',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
                 controller: ropC,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: 'ROP (จุดสั่งซื้อ — ใช้แจ้งเตือนสต๊อกใกล้หมด)',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: maxC,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Max (สูงสุด)',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -504,9 +482,7 @@ class _AddressesManagementSectionState
         shelf: (a['shelf'] ?? '').toString(),
         qty: toInt(qtyC.text),
         remarks: (a['remarks'] ?? '').toString(),
-        min: toInt(minC.text),
         rop: toInt(ropC.text),
-        max: toInt(maxC.text),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -540,8 +516,7 @@ class _AddressesManagementSectionState
               DataColumn(label: Text('ต้นทุน')),
               DataColumn(label: Text('ราคาขายจริง')),
               DataColumn(label: Text('ราคาลดได้')),
-              DataColumn(label: Text('ขั้นต่ำ / จุดสั่งซื้อ')),
-              DataColumn(label: Text('สูงสุด')),
+              DataColumn(label: Text('จุดสั่งซื้อ (ROP)')),
               DataColumn(label: Text('แก้ไข')),
             ],
             rows: items.map((a) {
@@ -556,9 +531,7 @@ class _AddressesManagementSectionState
                 return parsed == null ? '-' : '฿${parsed.toStringAsFixed(2)}';
               }
 
-              final min = (a['min'] ?? '').toString();
               final rop = (a['rop'] ?? '').toString();
-              final max = (a['max'] ?? '').toString();
 
               return DataRow(
                 cells: [
@@ -570,12 +543,7 @@ class _AddressesManagementSectionState
                   DataCell(Text(money(a['cost']))),
                   DataCell(Text(money(a['price']))),
                   DataCell(Text(money(a['minPrice'] ?? a['min_price']))),
-                  DataCell(
-                    Text(
-                      '${min.isEmpty ? '-' : min} / ${rop.isEmpty ? '-' : rop}',
-                    ),
-                  ),
-                  DataCell(Text(max.isEmpty ? '-' : max)),
+                  DataCell(Text(rop.isEmpty ? '-' : rop)),
                   DataCell(
                     IconButton(
                       icon: const Icon(Icons.edit_outlined),

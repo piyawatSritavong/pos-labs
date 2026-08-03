@@ -2167,8 +2167,6 @@ class ApiService {
     required String storeId,
     String? shelf,
     int? qty,
-    int? min,
-    int? max,
     int? rop,
     String? remarks,
   }) async {
@@ -2179,8 +2177,6 @@ class ApiService {
       'storeId': storeId,
       'shelf': shelf,
       'qty': qty,
-      'min': min,
-      'max': max,
       'rop': rop,
       'remarks': remarks,
     }..removeWhere((key, value) => value == null);
@@ -2210,8 +2206,6 @@ class ApiService {
     required String storeId,
     String? shelf,
     int? qty,
-    int? min,
-    int? max,
     int? rop,
     String? remarks,
   }) async {
@@ -2221,8 +2215,6 @@ class ApiService {
       'storeId': storeId,
       'shelf': shelf,
       'qty': qty,
-      'min': min,
-      'max': max,
       'rop': rop,
       'remarks': remarks,
     }..removeWhere((key, value) => value == null);

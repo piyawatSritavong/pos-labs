@@ -2,6 +2,22 @@ import 'dart:convert';
 import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
 
+class RestockCatalogPage {
+  const RestockCatalogPage({
+    required this.items,
+    required this.total,
+    required this.limit,
+    required this.offset,
+  });
+
+  final List<Map<String, dynamic>> items;
+  final int total;
+  final int limit;
+  final int offset;
+
+  bool get hasMore => offset + items.length < total;
+}
+
 class ApiOperationsService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
 
@@ -109,19 +125,49 @@ class ApiOperationsService {
     required String token,
     String query = '',
     int limit = 30,
+    int offset = 0,
   }) async {
-    final uri = Uri.parse(
-      '$baseUrl/transfers/pos-restock/catalog',
-    ).replace(queryParameters: {'q': query, 'limit': '$limit'});
+    final page = await getRestockCatalogPage(
+      token: token,
+      query: query,
+      limit: limit,
+      offset: offset,
+    );
+    return page.items;
+  }
+
+  static Future<RestockCatalogPage> getRestockCatalogPage({
+    required String token,
+    String query = '',
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$baseUrl/transfers/pos-restock/catalog').replace(
+      queryParameters: {'q': query, 'limit': '$limit', 'offset': '$offset'},
+    );
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
       throw Exception(
         'GET /transfers/pos-restock/catalog failed: ${response.statusCode} ${response.body}',
       );
     }
-    return _parseList(
-      jsonDecode(response.body),
-      '/transfers/pos-restock/catalog',
+    final decoded = jsonDecode(response.body);
+    final items = _parseList(decoded, '/transfers/pos-restock/catalog');
+    final envelope = decoded is Map<String, dynamic>
+        ? decoded
+        : const <String, dynamic>{};
+    int readInt(String key, int fallback) {
+      final value = envelope[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? fallback;
+    }
+
+    return RestockCatalogPage(
+      items: items,
+      total: readInt('total', offset + items.length),
+      limit: readInt('limit', limit),
+      offset: readInt('offset', offset),
     );
   }
 

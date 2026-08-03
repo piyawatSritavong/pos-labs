@@ -33,18 +33,20 @@ class AppColorsDark {
 /// Context extension — resolves to dark or light token based on current theme.
 extension AppColorsExt on BuildContext {
   bool get _dark => Theme.of(this).brightness == Brightness.dark;
-  Color get colorBg      => _dark ? AppColorsDark.bg      : AppColors.bg;
+  Color get colorBg => _dark ? AppColorsDark.bg : AppColors.bg;
   Color get colorSurface => _dark ? AppColorsDark.surface : AppColors.surface;
-  Color get colorBorder  => _dark ? AppColorsDark.border  : AppColors.border;
+  Color get colorBorder => _dark ? AppColorsDark.border : AppColors.border;
   Color get colorPrimary => _dark ? AppColorsDark.primary : AppColors.primary;
-  Color get colorMuted   => _dark ? AppColorsDark.muted   : AppColors.muted;
-  Color get colorText    => _dark ? AppColorsDark.text    : AppColors.text;
-  Color get colorDanger  => _dark ? AppColorsDark.danger  : AppColors.danger;
-  Color get colorAccent  => _dark ? AppColorsDark.accent  : AppColors.accent;
+  Color get colorMuted => _dark ? AppColorsDark.muted : AppColors.muted;
+  Color get colorText => _dark ? AppColorsDark.text : AppColors.text;
+  Color get colorDanger => _dark ? AppColorsDark.danger : AppColors.danger;
+  Color get colorAccent => _dark ? AppColorsDark.accent : AppColors.accent;
 }
 
 class AppSizes {
-  static const radius = 16.0;
+  static const radiusSmall = 10.0;
+  static const radius = 12.0;
+  static const radiusLarge = 16.0;
   static const gap = 12.0;
   static const borderWidth = 1.2;
 }
@@ -101,18 +103,20 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surface,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppSizes.radius),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppSizes.radius),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppSizes.radius),
           borderSide: const BorderSide(color: AppColors.primary, width: 2),
         ),
         hintStyle: const TextStyle(color: AppColors.muted),
@@ -123,10 +127,9 @@ class AppTheme {
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(AppSizes.radius),
           ),
-          textStyle:
-              const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -134,10 +137,45 @@ class AppTheme {
           foregroundColor: AppColors.text,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(AppSizes.radius),
           ),
           side: const BorderSide(color: AppColors.border),
           textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSizes.radius),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSizes.radius),
+          ),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSizes.radiusLarge),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSizes.radius),
+        ),
+      ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSizes.radius),
+            ),
+          ),
         ),
       ),
       snackBarTheme: const SnackBarThemeData(
@@ -189,20 +227,21 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColorsDark.surface,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppSizes.radius),
           borderSide: const BorderSide(color: AppColorsDark.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppSizes.radius),
           borderSide: const BorderSide(color: AppColorsDark.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(999),
-          borderSide:
-              const BorderSide(color: AppColorsDark.primary, width: 2),
+          borderRadius: BorderRadius.circular(AppSizes.radius),
+          borderSide: const BorderSide(color: AppColorsDark.primary, width: 2),
         ),
         hintStyle: const TextStyle(color: AppColorsDark.muted),
       ),
@@ -212,10 +251,9 @@ class AppTheme {
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(AppSizes.radius),
           ),
-          textStyle:
-              const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -223,10 +261,24 @@ class AppTheme {
           foregroundColor: AppColorsDark.text,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(AppSizes.radius),
           ),
           side: const BorderSide(color: AppColorsDark.border),
           textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSizes.radius),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSizes.radius),
+          ),
         ),
       ),
       snackBarTheme: const SnackBarThemeData(
@@ -234,11 +286,26 @@ class AppTheme {
         backgroundColor: AppColorsDark.surface,
         contentTextStyle: TextStyle(color: AppColorsDark.text),
       ),
-      popupMenuTheme: const PopupMenuThemeData(
+      popupMenuTheme: PopupMenuThemeData(
         color: AppColorsDark.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSizes.radius),
+        ),
       ),
-      dialogTheme: const DialogThemeData(
+      dialogTheme: DialogThemeData(
         backgroundColor: AppColorsDark.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSizes.radiusLarge),
+        ),
+      ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSizes.radius),
+            ),
+          ),
+        ),
       ),
     );
   }

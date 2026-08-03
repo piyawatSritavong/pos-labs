@@ -440,7 +440,6 @@ def build_up_sql(products):
     out.append("UPDATE \"part_master\"    SET \"receipt_name\" = '' WHERE \"receipt_name\" IS NULL;")
     out.append("UPDATE \"address_master\" SET \"shelf\"    = '' WHERE \"shelf\"    IS NULL;")
     out.append(f"UPDATE \"address_master\" SET \"qty\"      = {DEFAULT_STARTING_QTY} WHERE \"qty\" IS NULL;")
-    out.append("UPDATE \"address_master\" SET \"max\"      = 0  WHERE \"max\"      IS NULL;")
     out.append("UPDATE \"address_master\" SET \"remarks\"  = '' WHERE \"remarks\"  IS NULL;")
     # Backfill empty bar_code with the part code itself (Code128 friendly).
     # Mirrors backend migration 0012_generate_missing_barcodes.up.sql so older
@@ -527,7 +526,7 @@ def build_up_sql(products):
     out.append("")
 
     # NOTE: empty strings ('') and zeros (0) used instead of NULL because the Go
-    # repository code (PartSummary.BarCode / Address.Shelf / Max / Remarks) Scans
+    # repository code (PartSummary.BarCode / Address.Shelf / Remarks) Scans
     # into plain string/int — NULL columns would cause sql.Scan to fail.
     out.append(f"-- 5) {len(products)} parts from xlsx Sheet สินค้า")
     out.append("-- receipt_name is uppercase ASCII for reliable LPT1 / Generic Text receipt printing.")
@@ -557,15 +556,15 @@ def build_up_sql(products):
     out.append("")
 
     out.append(f"-- 6) {len(products)} addresses (one per part, store_id='main')")
-    out.append("INSERT INTO \"address_master\" (\"code\", \"part_code\", \"store_id\", \"shelf\", \"qty\", \"min\", \"max\", \"rop\", \"remarks\") VALUES")
+    out.append("INSERT INTO \"address_master\" (\"code\", \"part_code\", \"store_id\", \"shelf\", \"qty\", \"rop\", \"remarks\") VALUES")
     addr_lines = []
     for i, p in enumerate(products, start=1):
         code = f"ADDR{i:04d}"
         part_code = f"P{i:04d}"
         min_v = p["min_qty"]
-        # shelf='', max=0, remarks='' instead of NULL — see note above
+        # shelf='' and remarks='' instead of NULL — see note above
         addr_lines.append(
-            f"    ({sql_quote(code)}, {sql_quote(part_code)}, {sql_quote(DEFAULT_STORE_ID)}, '', {DEFAULT_STARTING_QTY}, {min_v}, 0, {min_v}, '')"
+            f"    ({sql_quote(code)}, {sql_quote(part_code)}, {sql_quote(DEFAULT_STORE_ID)}, '', {DEFAULT_STARTING_QTY}, {min_v}, '')"
         )
     out.append(",\n".join(addr_lines))
     out.append("ON CONFLICT (\"code\") DO NOTHING;")

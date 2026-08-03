@@ -156,8 +156,8 @@ func (r *purchaseOrderRepositoryPG) Create(
 			addressCode = "ADDR-" + item.PartCode + "-main"
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO "address_master"(
-					"code", "part_code", "store_id", "shelf", "qty", "min", "max", "rop", "remarks", "is_active"
-				) VALUES ($1, $2, 'main', '', $3, 0, 0, 0, 'รับเข้าจากใบสั่งซื้อสินค้า', true)
+					"code", "part_code", "store_id", "shelf", "qty", "rop", "remarks", "is_active"
+				) VALUES ($1, $2, 'main', '', $3, 0, 'รับเข้าจากใบสั่งซื้อสินค้า', true)
 			`, addressCode, item.PartCode, item.Qty); err != nil {
 				return nil, nil, false, err
 			}

@@ -11,8 +11,6 @@ type Address struct {
 	BranchID string
 	Shelf    string
 	Qty      int
-	Min      int
-	Max      int
 	Rop      int
 	Remarks  string
 	// Populated by the List query via LEFT JOIN. Empty string when not joined
