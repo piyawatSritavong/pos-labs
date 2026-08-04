@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/branches_provider.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:provider/provider.dart';
 
 class CreateBranchDialog extends StatefulWidget {
@@ -48,11 +49,10 @@ class _CreateBranchDialogState extends State<CreateBranchDialog> {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ไม่พบ token กรุณาเข้าสู่ระบบใหม่'),
-            backgroundColor: Colors.red,
-          ),
+        await AppDialogService.showError(
+          context,
+          error: Exception('missing_token'),
+          fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
         );
       }
       return;
@@ -72,17 +72,16 @@ class _CreateBranchDialogState extends State<CreateBranchDialog> {
 
       if (mounted) {
         Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('สร้างสาขาสำเร็จ')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('สร้างสาขาสำเร็จ')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('เกิดข้อผิดพลาด: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'สร้างสาขาไม่สำเร็จ',
         );
       }
     } finally {

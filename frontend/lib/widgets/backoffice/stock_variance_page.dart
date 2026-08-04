@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/services/api_operations.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
@@ -17,7 +18,6 @@ class _StockVariancePageState extends State<StockVariancePage> {
   Map<String, dynamic>? _report;
   bool _loadingCounts = false;
   bool _loadingReport = false;
-  String? _error;
   DateTime _selectedDate = DateTime.now();
 
   @override
@@ -31,7 +31,6 @@ class _StockVariancePageState extends State<StockVariancePage> {
     if (token == null) return;
     setState(() {
       _loadingCounts = true;
-      _error = null;
     });
     try {
       final all = await ApiOperationsService.getStockCounts(
@@ -42,7 +41,13 @@ class _StockVariancePageState extends State<StockVariancePage> {
       if (mounted) setState(() => _submittedCounts = all);
     } catch (e) {
       if (mounted) {
-        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+        final retry = await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'โหลดรอบนับสต๊อกไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry && mounted) await _fetchCounts();
       }
     } finally {
       if (mounted) setState(() => _loadingCounts = false);
@@ -54,7 +59,6 @@ class _StockVariancePageState extends State<StockVariancePage> {
     if (token == null) return;
     setState(() {
       _loadingReport = true;
-      _error = null;
       _report = null;
     });
     try {
@@ -65,7 +69,13 @@ class _StockVariancePageState extends State<StockVariancePage> {
       if (mounted) setState(() => _report = report);
     } catch (e) {
       if (mounted) {
-        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+        final retry = await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'โหลดรายงานผลต่างสต๊อกไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry && mounted) await _fetchReport(countId);
       }
     } finally {
       if (mounted) setState(() => _loadingReport = false);
@@ -76,8 +86,7 @@ class _StockVariancePageState extends State<StockVariancePage> {
     final dateStr =
         '${_selectedDate.year.toString().padLeft(4, '0')}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
     return _submittedCounts.where((c) {
-      final raw =
-          (c['createdAt'] ?? c['created_at'] ?? '').toString();
+      final raw = (c['createdAt'] ?? c['created_at'] ?? '').toString();
       return raw.startsWith(dateStr);
     }).toList();
   }
@@ -104,13 +113,6 @@ class _StockVariancePageState extends State<StockVariancePage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildTopBar(),
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: Text(_error!,
-                style: const TextStyle(
-                    color: AppColors.danger, fontSize: 13)),
-          ),
         Expanded(child: _buildSplitLayout()),
       ],
     );
@@ -127,8 +129,10 @@ class _StockVariancePageState extends State<StockVariancePage> {
       ),
       child: Row(
         children: [
-          const Text('ตรวจสอบสต๊อก',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const Text(
+            'ตรวจสอบสต๊อก',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
           const SizedBox(width: 16),
           OutlinedButton.icon(
             onPressed: _pickDate,
@@ -138,9 +142,10 @@ class _StockVariancePageState extends State<StockVariancePage> {
           const Spacer(),
           if (_loadingCounts)
             const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2))
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
           else
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -157,10 +162,7 @@ class _StockVariancePageState extends State<StockVariancePage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Left panel: list of reports for selected date
-        SizedBox(
-          width: 280,
-          child: _buildReportList(),
-        ),
+        SizedBox(width: 280, child: _buildReportList()),
         const VerticalDivider(width: 1),
         // Right panel: detail
         Expanded(child: _buildDetail()),
@@ -181,13 +183,11 @@ class _StockVariancePageState extends State<StockVariancePage> {
           ),
           child: Text(
             'รอบนับ (${counts.length} รอบ)',
-            style: const TextStyle(
-                fontWeight: FontWeight.w600, fontSize: 13),
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           ),
         ),
         if (_loadingCounts)
-          const Expanded(
-              child: Center(child: CircularProgressIndicator()))
+          const Expanded(child: Center(child: CircularProgressIndicator()))
         else if (counts.isEmpty)
           const Expanded(
             child: Center(
@@ -206,13 +206,11 @@ class _StockVariancePageState extends State<StockVariancePage> {
               itemBuilder: (context, i) {
                 final c = counts[i];
                 final id = c['id']?.toString() ?? '';
-                final branch =
-                    (c['branchId'] ?? c['branch_id'] ?? '').toString();
-                final raw =
-                    (c['createdAt'] ?? c['created_at'] ?? '').toString();
-                final timeStr = raw.length >= 16
-                    ? raw.substring(11, 16)
-                    : '';
+                final branch = (c['branchId'] ?? c['branch_id'] ?? '')
+                    .toString();
+                final raw = (c['createdAt'] ?? c['created_at'] ?? '')
+                    .toString();
+                final timeStr = raw.length >= 16 ? raw.substring(11, 16) : '';
                 final isSelected = _selectedCountId == id;
                 return InkWell(
                   onTap: () {
@@ -221,7 +219,9 @@ class _StockVariancePageState extends State<StockVariancePage> {
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
                     color: isSelected
                         ? AppColors.primary.withValues(alpha: 0.08)
                         : null,
@@ -244,7 +244,9 @@ class _StockVariancePageState extends State<StockVariancePage> {
                           Text(
                             'เวลา: $timeStr น.',
                             style: const TextStyle(
-                                color: AppColors.muted, fontSize: 11),
+                              color: AppColors.muted,
+                              fontSize: 11,
+                            ),
                           ),
                       ],
                     ),
@@ -260,8 +262,10 @@ class _StockVariancePageState extends State<StockVariancePage> {
   Widget _buildDetail() {
     if (_selectedCountId == null) {
       return const Center(
-        child: Text('เลือกรอบนับสต๊อกเพื่อดูรายงาน',
-            style: TextStyle(color: AppColors.muted)),
+        child: Text(
+          'เลือกรอบนับสต๊อกเพื่อดูรายงาน',
+          style: TextStyle(color: AppColors.muted),
+        ),
       );
     }
     if (_loadingReport) {
@@ -269,10 +273,11 @@ class _StockVariancePageState extends State<StockVariancePage> {
     }
     if (_report == null) {
       return const Center(
-          child: Text('ไม่พบข้อมูล',
-              style: TextStyle(color: AppColors.muted)));
+        child: Text('ไม่พบข้อมูล', style: TextStyle(color: AppColors.muted)),
+      );
     }
-    final items = (_report!['items'] as List?)
+    final items =
+        (_report!['items'] as List?)
             ?.whereType<Map<String, dynamic>>()
             .toList() ??
         [];
@@ -296,23 +301,28 @@ class _StockVariancePageState extends State<StockVariancePage> {
             spacing: 12,
             runSpacing: 8,
             children: [
-              _chip('สาขา',
-                  '${_report!['branchId'] ?? _report!['branch_id'] ?? '-'}'),
-              _chip('Store',
-                  '${_report!['storeId'] ?? _report!['store_id'] ?? '-'}'),
+              _chip(
+                'สาขา',
+                '${_report!['branchId'] ?? _report!['branch_id'] ?? '-'}',
+              ),
+              _chip(
+                'Store',
+                '${_report!['storeId'] ?? _report!['store_id'] ?? '-'}',
+              ),
               _chip('รายการทั้งหมด', '${items.length}'),
-              _chip('มีส่วนต่าง', '$withVariance',
-                  color: withVariance > 0
-                      ? AppColors.danger
-                      : Colors.green),
+              _chip(
+                'มีส่วนต่าง',
+                '$withVariance',
+                color: withVariance > 0 ? AppColors.danger : Colors.green,
+              ),
               _chip(
                 'ผลต่างรวม',
                 totalVariance >= 0 ? '+$totalVariance' : '$totalVariance',
                 color: totalVariance < 0
                     ? AppColors.danger
                     : totalVariance > 0
-                        ? Colors.orange
-                        : Colors.green,
+                    ? Colors.orange
+                    : Colors.green,
               ),
             ],
           ),
@@ -320,18 +330,14 @@ class _StockVariancePageState extends State<StockVariancePage> {
         // Table header
         Container(
           color: AppColors.surface,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: const Row(
             children: [
               _HeaderCell('รหัสสินค้า', flex: 2),
               _HeaderCell('ชื่อสินค้า', flex: 4),
-              _HeaderCell('ยอดระบบ',
-                  flex: 2, align: TextAlign.right),
-              _HeaderCell('นับจริง',
-                  flex: 2, align: TextAlign.right),
-              _HeaderCell('ส่วนต่าง',
-                  flex: 2, align: TextAlign.right),
+              _HeaderCell('ยอดระบบ', flex: 2, align: TextAlign.right),
+              _HeaderCell('นับจริง', flex: 2, align: TextAlign.right),
+              _HeaderCell('ส่วนต่าง', flex: 2, align: TextAlign.right),
             ],
           ),
         ),
@@ -340,64 +346,66 @@ class _StockVariancePageState extends State<StockVariancePage> {
         Expanded(
           child: items.isEmpty
               ? const Center(
-                  child: Text('ไม่มีรายการ',
-                      style: TextStyle(color: AppColors.muted)))
+                  child: Text(
+                    'ไม่มีรายการ',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
+                )
               : ListView.separated(
                   itemCount: items.length,
                   separatorBuilder: (_, _) =>
                       const Divider(height: 1, color: AppColors.border),
                   itemBuilder: (context, i) {
                     final item = items[i];
-                    final variance =
-                        (item['variance'] as num?)?.toInt() ?? 0;
+                    final variance = (item['variance'] as num?)?.toInt() ?? 0;
                     Color? rowColor;
                     if (variance < 0) {
-                      rowColor =
-                          AppColors.danger.withValues(alpha: 0.07);
+                      rowColor = AppColors.danger.withValues(alpha: 0.07);
                     } else if (variance > 0) {
-                      rowColor =
-                          Colors.green.withValues(alpha: 0.07);
+                      rowColor = Colors.green.withValues(alpha: 0.07);
                     }
                     return Container(
                       color: rowColor,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
                       child: Row(
                         children: [
                           _DataCell(
-                              item['partCode'] ??
-                                  item['part_code'] ??
-                                  '',
-                              flex: 2),
+                            item['partCode'] ?? item['part_code'] ?? '',
+                            flex: 2,
+                          ),
                           _DataCell(
-                              item['partName'] ??
-                                  item['part_name'] ??
-                                  '',
-                              flex: 4),
+                            item['partName'] ?? item['part_name'] ?? '',
+                            flex: 4,
+                          ),
                           _DataCell(
-                              '${item['systemQty'] ?? item['system_qty'] ?? 0}',
-                              flex: 2,
-                              align: TextAlign.right),
+                            '${item['systemQty'] ?? item['system_qty'] ?? 0}',
+                            flex: 2,
+                            align: TextAlign.right,
+                          ),
                           _DataCell(
-                              '${item['countedQty'] ?? item['counted_qty'] ?? 0}',
-                              flex: 2,
-                              align: TextAlign.right),
+                            '${item['countedQty'] ?? item['counted_qty'] ?? 0}',
+                            flex: 2,
+                            align: TextAlign.right,
+                          ),
                           Expanded(
                             flex: 2,
                             child: Text(
                               variance == 0
                                   ? '0'
                                   : variance > 0
-                                      ? '+$variance'
-                                      : '$variance',
+                                  ? '+$variance'
+                                  : '$variance',
                               textAlign: TextAlign.right,
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: variance < 0
                                     ? AppColors.danger
                                     : variance > 0
-                                        ? Colors.green
-                                        : AppColors.muted,
+                                    ? Colors.green
+                                    : AppColors.muted,
                               ),
                             ),
                           ),
@@ -431,8 +439,11 @@ class _StockVariancePageState extends State<StockVariancePage> {
 }
 
 class _HeaderCell extends StatelessWidget {
-  const _HeaderCell(this.text,
-      {required this.flex, this.align = TextAlign.left});
+  const _HeaderCell(
+    this.text, {
+    required this.flex,
+    this.align = TextAlign.left,
+  });
   final String text;
   final int flex;
   final TextAlign align;
@@ -445,17 +456,17 @@ class _HeaderCell extends StatelessWidget {
         text,
         textAlign: align,
         style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-            color: AppColors.muted),
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+          color: AppColors.muted,
+        ),
       ),
     );
   }
 }
 
 class _DataCell extends StatelessWidget {
-  const _DataCell(this.text,
-      {required this.flex, this.align = TextAlign.left});
+  const _DataCell(this.text, {required this.flex, this.align = TextAlign.left});
   final String text;
   final int flex;
   final TextAlign align;
@@ -464,9 +475,7 @@ class _DataCell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       flex: flex,
-      child: Text(text,
-          textAlign: align,
-          style: const TextStyle(fontSize: 13)),
+      child: Text(text, textAlign: align, style: const TextStyle(fontSize: 13)),
     );
   }
 }

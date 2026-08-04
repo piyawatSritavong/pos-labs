@@ -60,8 +60,6 @@ func (h *AddressHandler) List(c *gin.Context) {
 			"storeName": a.StoreName, // joined from store_master.label_th / label
 			"shelf":     a.Shelf,
 			"qty":       a.Qty,
-			"min":       a.Min,
-			"max":       a.Max,
 			"rop":       a.Rop,
 			"remarks":   a.Remarks,
 		})
@@ -96,8 +94,6 @@ func (h *AddressHandler) Get(c *gin.Context) {
 		"storeId":  address.StoreID,
 		"shelf":    address.Shelf,
 		"qty":      address.Qty,
-		"min":      address.Min,
-		"max":      address.Max,
 		"rop":      address.Rop,
 		"remarks":  address.Remarks,
 	})
@@ -110,8 +106,6 @@ func (h *AddressHandler) Create(c *gin.Context) {
 		StoreID  string `json:"storeId" binding:"required"`
 		Shelf    string `json:"shelf"`
 		Qty      int    `json:"qty"`
-		Min      int    `json:"min"`
-		Max      int    `json:"max"`
 		Rop      int    `json:"rop"`
 		Remarks  string `json:"remarks"`
 	}
@@ -127,8 +121,6 @@ func (h *AddressHandler) Create(c *gin.Context) {
 		StoreID:  req.StoreID,
 		Shelf:    req.Shelf,
 		Qty:      req.Qty,
-		Min:      req.Min,
-		Max:      req.Max,
 		Rop:      req.Rop,
 		Remarks:  req.Remarks,
 	}
@@ -144,8 +136,6 @@ func (h *AddressHandler) Create(c *gin.Context) {
 		"storeId":  address.StoreID,
 		"shelf":    address.Shelf,
 		"qty":      address.Qty,
-		"min":      address.Min,
-		"max":      address.Max,
 		"rop":      address.Rop,
 		"remarks":  address.Remarks,
 	})
@@ -163,8 +153,6 @@ func (h *AddressHandler) Update(c *gin.Context) {
 		StoreID  string `json:"storeId" binding:"required"`
 		Shelf    string `json:"shelf"`
 		Qty      int    `json:"qty"`
-		Min      int    `json:"min"`
-		Max      int    `json:"max"`
 		Rop      int    `json:"rop"`
 		Remarks  string `json:"remarks"`
 	}
@@ -180,8 +168,6 @@ func (h *AddressHandler) Update(c *gin.Context) {
 		StoreID:  req.StoreID,
 		Shelf:    req.Shelf,
 		Qty:      req.Qty,
-		Min:      req.Min,
-		Max:      req.Max,
 		Rop:      req.Rop,
 		Remarks:  req.Remarks,
 	}
@@ -201,8 +187,6 @@ func (h *AddressHandler) Update(c *gin.Context) {
 		"storeId":  address.StoreID,
 		"shelf":    address.Shelf,
 		"qty":      address.Qty,
-		"min":      address.Min,
-		"max":      address.Max,
 		"rop":      address.Rop,
 		"remarks":  address.Remarks,
 	})

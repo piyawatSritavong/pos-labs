@@ -3,8 +3,10 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"backend/internal/repository"
@@ -14,12 +16,11 @@ import (
 )
 
 type AuthHandler struct {
-	users           repository.UserRepository
-	sessions        repository.SessionRepository
-	userBranches    repository.UserBranchRepository
-	branches        repository.BranchRepository
-	pos             repository.POSRepository
-	sessionDuration time.Duration
+	users        repository.UserRepository
+	sessions     repository.SessionRepository
+	userBranches repository.UserBranchRepository
+	branches     repository.BranchRepository
+	pos          repository.POSRepository
 }
 
 func NewAuthHandler(
@@ -28,15 +29,13 @@ func NewAuthHandler(
 	userBranches repository.UserBranchRepository,
 	branches repository.BranchRepository,
 	pos repository.POSRepository,
-	sessionDuration time.Duration,
 ) *AuthHandler {
 	return &AuthHandler{
-		users:           users,
-		sessions:        sessions,
-		userBranches:    userBranches,
-		branches:        branches,
-		pos:             pos,
-		sessionDuration: sessionDuration,
+		users:        users,
+		sessions:     sessions,
+		userBranches: userBranches,
+		branches:     branches,
+		pos:          pos,
 	}
 }
 
@@ -74,12 +73,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-
-	// Delete any existing session for this user (only 1 session per user)
-	existingSessions, _ := h.sessions.GetByUserID(ctx, user.ID)
-	for _, sess := range existingSessions {
-		_ = h.sessions.DeleteByID(ctx, sess.ID)
-	}
 
 	var branchID, posID string
 
@@ -187,8 +180,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	ip := c.ClientIP()
 	ua := c.GetHeader("User-Agent")
 	now := time.Now().UTC()
-	expires := now.Add(h.sessionDuration)
-
 	session := &repository.Session{
 		ID:        sid,
 		UserID:    user.ID,
@@ -197,21 +188,30 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		IP:        ip,
 		UserAgent: ua,
 		CreatedAt: now,
-		ExpiresAt: expires,
+		ExpiresAt: nil,
 		LastSeen:  now,
 	}
 
-	if err := h.sessions.Create(c.Request.Context(), session); err != nil {
+	state, err := h.sessions.CreateForLogin(c.Request.Context(), session, now.Add(-60*time.Second))
+	if errors.Is(err, repository.ErrPendingSessionExists) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "login_already_pending",
+			"message": "มีคำขอเข้าสู่ระบบของบัญชีนี้รอการยืนยันอยู่แล้ว",
+		})
+		return
+	}
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "session_persist_failed"})
 		return
 	}
 
 	// Return only session token and display info; do not expose internal IDs
 	c.JSON(http.StatusOK, gin.H{
-		"token":   sid,
-		"name":    user.Name,
-		"roleId":  user.RoleID,
-		"expires": expires.Format(time.RFC3339),
+		"token":        sid,
+		"name":         user.Name,
+		"roleId":       user.RoleID,
+		"expires":      nil,
+		"sessionState": state,
 	})
 }
 
@@ -237,19 +237,74 @@ func (h *AuthHandler) VerifyPassword(c *gin.Context) {
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
-	token := c.GetHeader("Authorization")
+	token := bearerToken(c)
 	if token == "" {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		return
 	}
-	// Expect "Bearer <token>"
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
-	}
-	if token != "" {
-		_ = h.sessions.DeleteByID(c.Request.Context(), token)
-	}
+	_ = h.sessions.Logout(c.Request.Context(), token, time.Now().UTC())
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func bearerToken(c *gin.Context) string {
+	header := strings.TrimSpace(c.GetHeader("Authorization"))
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return ""
+	}
+	return strings.TrimSpace(parts[1])
+}
+
+// SessionState is intentionally available to pending/terminal sessions so a
+// waiting browser can learn the incumbent's decision without business access.
+func (h *AuthHandler) SessionState(c *gin.Context) {
+	token := bearerToken(c)
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing_token"})
+		return
+	}
+	now := time.Now().UTC()
+	state, err := h.sessions.GetSessionState(c.Request.Context(), token, now.Add(-60*time.Second), now)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_or_expired_session"})
+		return
+	}
+	response := gin.H{
+		"state":  state.Session.Status,
+		"reason": state.Session.Reason,
+	}
+	if state.PendingLogin != nil {
+		response["pendingLogin"] = gin.H{
+			"createdAt": state.PendingLogin.CreatedAt.Format(time.RFC3339),
+			"ip":        state.PendingLogin.IP,
+			"userAgent": state.PendingLogin.UserAgent,
+		}
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+func (h *AuthHandler) ResolveSessionConflict(c *gin.Context) {
+	token := bearerToken(c)
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing_token"})
+		return
+	}
+	var req struct {
+		Decision string `json:"decision" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || (req.Decision != "stay" && req.Decision != "leave") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_decision"})
+		return
+	}
+	if err := h.sessions.ResolveConflict(c.Request.Context(), token, req.Decision, time.Now().UTC()); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "pending_session_not_found"})
+			return
+		}
+		c.JSON(http.StatusConflict, gin.H{"error": "unable_to_resolve_session"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "decision": req.Decision})
 }
 
 func (h *AuthHandler) Me(c *gin.Context) {

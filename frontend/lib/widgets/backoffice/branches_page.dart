@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 
 class BranchesManagementSection extends StatefulWidget {
@@ -15,7 +16,6 @@ class BranchesManagementSection extends StatefulWidget {
 
 class _BranchesManagementSectionState extends State<BranchesManagementSection> {
   bool _isLoading = false;
-  String? _error;
   List<Map<String, dynamic>> _branches = [];
 
   final TextEditingController _searchController = TextEditingController();
@@ -39,15 +39,11 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
     if (token == null || token.isEmpty) {
-      setState(() {
-        _error = 'ไม่พบ token กรุณาเข้าสู่ระบบใหม่';
-      });
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _error = null;
     });
 
     try {
@@ -77,9 +73,13 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-      });
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดข้อมูลสาขาไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) await _fetchBranches();
     } finally {
       if (!mounted) return;
       setState(() {
@@ -167,11 +167,13 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
                         final v = value?.trim() ?? '';
                         if (v.isEmpty) return 'กรุณากรอก Branch ID';
                         if (!isEdit &&
-                            _branches.any((b) =>
-                                (b['branchId'] ?? b['id'] ?? '')
-                                    .toString()
-                                    .trim() ==
-                                v)) {
+                            _branches.any(
+                              (b) =>
+                                  (b['branchId'] ?? b['id'] ?? '')
+                                      .toString()
+                                      .trim() ==
+                                  v,
+                            )) {
                           return 'Branch ID นี้มีอยู่แล้ว';
                         }
                         return null;
@@ -292,8 +294,10 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
                   if (!mounted) return;
                   Navigator.of(context).pop(true);
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
+                  await AppDialogService.showError(
+                    context,
+                    error: e,
+                    fallback: 'บันทึกข้อมูลสาขาไม่สำเร็จ',
                   );
                 }
               },
@@ -313,8 +317,10 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
     if (token == null || token.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ไม่พบ token กรุณาเข้าสู่ระบบใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -352,9 +358,11 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
       await _fetchBranches();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await AppDialogService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text('ลบสาขาไม่สำเร็จ: $e')));
+        error: e,
+        fallback: 'ลบสาขาไม่สำเร็จ',
+      );
     }
   }
 
@@ -417,13 +425,6 @@ class _BranchesManagementSectionState extends State<BranchesManagementSection> {
                     padding: const EdgeInsets.all(16.0),
                     child: _isLoading
                         ? const Center(child: CircularProgressIndicator())
-                        : _error != null
-                        ? Center(
-                            child: Text(
-                              _error!,
-                              style: const TextStyle(color: Colors.red),
-                            ),
-                          )
                         : _branches.isEmpty
                         ? const Center(child: Text('ยังไม่มีข้อมูลสาขา'))
                         : SingleChildScrollView(

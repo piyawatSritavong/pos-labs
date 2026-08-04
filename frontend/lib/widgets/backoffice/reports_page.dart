@@ -4,6 +4,7 @@ import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -100,16 +101,21 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
         includeItems: _includeBillItems,
       );
       final label = from == to ? from : '${from}_to_$to';
-      final filename =
-          _includeBillItems ? 'bills_${label}_items.csv' : 'bills_$label.csv';
+      final filename = _includeBillItems
+          ? 'bills_${label}_items.csv'
+          : 'bills_$label.csv';
       _downloadCsv(bytes, filename);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('ดาวน์โหลด $filename แล้ว')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ดาวน์โหลด $filename แล้ว')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Export bills ไม่สำเร็จ: $e')));
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'ส่งออกรายงานบิลไม่สำเร็จ',
+      );
     } finally {
       if (mounted) setState(() => _isExportingBills = false);
     }
@@ -122,15 +128,18 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
     setState(() => _isExportingParts = true);
     try {
       final bytes = await ApiService.exportPartsReportCsv(token: token);
-      _downloadCsv(
-          bytes, 'parts_${DateTime.now().millisecondsSinceEpoch}.csv');
+      _downloadCsv(bytes, 'parts_${DateTime.now().millisecondsSinceEpoch}.csv');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ดาวน์โหลด parts report แล้ว')));
+        const SnackBar(content: Text('ดาวน์โหลด parts report แล้ว')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Export parts ไม่สำเร็จ: $e')));
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'ส่งออกรายงานสินค้าไม่สำเร็จ',
+      );
     } finally {
       if (mounted) setState(() => _isExportingParts = false);
     }
@@ -144,14 +153,20 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
     try {
       final bytes = await ApiService.exportInventoryReportCsv(token: token);
       _downloadCsv(
-          bytes, 'inventory_${DateTime.now().millisecondsSinceEpoch}.csv');
+        bytes,
+        'inventory_${DateTime.now().millisecondsSinceEpoch}.csv',
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ดาวน์โหลด inventory report แล้ว')));
+        const SnackBar(content: Text('ดาวน์โหลด inventory report แล้ว')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export inventory ไม่สำเร็จ: $e')));
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'ส่งออกรายงานคลังสินค้าไม่สำเร็จ',
+      );
     } finally {
       if (mounted) setState(() => _isExportingInventory = false);
     }
@@ -182,9 +197,7 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
                 tabs: const [
                   Tab(icon: Icon(Icons.receipt_long_outlined), text: 'Bills'),
                   Tab(icon: Icon(Icons.inventory_2_outlined), text: 'Parts'),
-                  Tab(
-                      icon: Icon(Icons.warehouse_outlined),
-                      text: 'Inventory'),
+                  Tab(icon: Icon(Icons.warehouse_outlined), text: 'Inventory'),
                 ],
                 labelColor: AppColors.primary,
                 unselectedLabelColor: AppColors.muted,
@@ -249,10 +262,15 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
       child: _TabCard(
         icon: Icons.receipt_long_outlined,
         title: 'Bills Report',
-        description: 'รายงานบิลขาย / ใบเสร็จรับเงิน ตามช่วงวันที่ (หลายวัน/หลายเดือน)',
+        description:
+            'รายงานบิลขาย / ใบเสร็จรับเงิน ตามช่วงวันที่ (หลายวัน/หลายเดือน)',
         fields: const [
-          'billId', 'branchId', 'status', 'totalAmount',
-          'paymentMethod', 'createdAt',
+          'billId',
+          'branchId',
+          'status',
+          'totalAmount',
+          'paymentMethod',
+          'createdAt',
           '(+ รายการสินค้าในบิล ถ้าเปิดตัวเลือก)',
         ],
         actions: Column(
@@ -277,8 +295,11 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2,
-                            color: Colors.white))
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
                     : const Icon(Icons.download),
                 label: const Text('ดาวน์โหลด Bills CSV'),
               ),
@@ -294,10 +315,15 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
       child: _TabCard(
         icon: Icons.inventory_2_outlined,
         title: 'Parts / Products Report',
-        description: 'รายการสินค้าทั้งหมดในระบบ (master data) พร้อมราคาและหมวดหมู่',
+        description:
+            'รายการสินค้าทั้งหมดในระบบ (master data) พร้อมราคาและหมวดหมู่',
         fields: const [
-          'partCode', 'nameTh', 'nameEn', 'category',
-          'unitPrice', 'isActive',
+          'partCode',
+          'nameTh',
+          'nameEn',
+          'category',
+          'unitPrice',
+          'isActive',
         ],
         actions: SizedBox(
           width: double.infinity,
@@ -308,7 +334,10 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(Icons.download),
             label: const Text('ดาวน์โหลด Parts CSV'),
           ),
@@ -324,7 +353,10 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
         title: 'Inventory Report',
         description: 'ยอดสินค้าคงคลังแยกตามสาขาและที่เก็บ ณ ปัจจุบัน',
         fields: const [
-          'partCode', 'partName', 'branchId', 'addressCode',
+          'partCode',
+          'partName',
+          'branchId',
+          'addressCode',
           'quantity',
         ],
         actions: SizedBox(
@@ -336,7 +368,10 @@ class _ReportsExportSectionState extends State<ReportsExportSection>
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(Icons.download),
             label: const Text('ดาวน์โหลด Inventory CSV'),
           ),
@@ -365,8 +400,7 @@ class _TabCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 1,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -376,37 +410,47 @@ class _TabCard extends StatelessWidget {
               children: [
                 Icon(icon, color: AppColors.primary, size: 28),
                 const SizedBox(width: 10),
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(description,
-                style: const TextStyle(color: AppColors.muted)),
+            Text(description, style: const TextStyle(color: AppColors.muted)),
             const SizedBox(height: 16),
-            const Text('ข้อมูลที่ export:',
-                style: TextStyle(
-                    fontWeight: FontWeight.w600, fontSize: 13)),
+            const Text(
+              'ข้อมูลที่ export:',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
               runSpacing: 6,
               children: fields
-                  .map((f) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color:
-                              AppColors.primary.withValues(alpha: 0.07),
-                          borderRadius: BorderRadius.circular(6),
+                  .map(
+                    (f) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        f,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.primary,
+                          fontFamily: 'monospace',
                         ),
-                        child: Text(f,
-                            style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.primary,
-                                fontFamily: 'monospace')),
-                      ))
+                      ),
+                    ),
+                  )
                   .toList(),
             ),
             const SizedBox(height: 24),

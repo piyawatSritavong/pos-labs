@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -104,9 +105,14 @@ class _BarcodeCameraScannerSheetState extends State<BarcodeCameraScannerSheet> {
       } catch (e) {
         if (!mounted) return;
         setState(() {
-          _errorMessage = 'เพิ่มสินค้าไม่สำเร็จ: $e';
+          _errorMessage = 'เพิ่มสินค้าไม่สำเร็จ';
           _statusMessage = 'สแกนต่อได้ หรือพิมพ์บาร์โค้ดแทน';
         });
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'เพิ่มสินค้าไม่สำเร็จ',
+        );
       }
     }
     _isProcessing = false;
@@ -119,9 +125,7 @@ class _BarcodeCameraScannerSheetState extends State<BarcodeCameraScannerSheet> {
         'ไม่ได้รับอนุญาตให้ใช้กล้อง กรุณาอนุญาตกล้องใน browser แล้วลองใหม่',
       MobileScannerErrorCode.unsupported =>
         'browser หรืออุปกรณ์นี้ไม่รองรับการสแกนผ่านกล้อง',
-      _ =>
-        error.errorDetails?.message ??
-            'เปิดกล้องไม่ได้ กรุณาลองใหม่หรือพิมพ์บาร์โค้ดแทน',
+      _ => 'เปิดกล้องไม่ได้ กรุณาลองใหม่หรือพิมพ์บาร์โค้ดแทน',
     };
   }
 

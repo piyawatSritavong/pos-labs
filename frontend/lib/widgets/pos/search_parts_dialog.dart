@@ -4,6 +4,7 @@ import 'package:frontend/models/product.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_parts.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -54,8 +55,10 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
     final token = auth.token;
     if (token == null) {
       if (showError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+        await AppDialogService.showError(
+          context,
+          error: Exception('missing_token'),
+          fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
         );
       }
       return;
@@ -80,9 +83,11 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       }
     } catch (e) {
       if (showError && mounted && requestId == _searchRequestId) {
-        ScaffoldMessenger.of(
+        await AppDialogService.showError(
           context,
-        ).showSnackBar(SnackBar(content: Text('โหลดสินค้าไม่สำเร็จ: $e')));
+          error: e,
+          fallback: 'โหลดสินค้าไม่สำเร็จ',
+        );
       }
     } finally {
       if (mounted && requestId == _searchRequestId) {
@@ -101,8 +106,10 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final token = auth.token;
     if (token == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -128,9 +135,11 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       }
     } catch (e) {
       if (mounted && requestId == _searchRequestId) {
-        ScaffoldMessenger.of(
+        await AppDialogService.showError(
           context,
-        ).showSnackBar(SnackBar(content: Text('ค้นหาไม่สำเร็จ: $e')));
+          error: e,
+          fallback: 'ค้นหาสินค้าไม่สำเร็จ',
+        );
       }
     } finally {
       if (mounted && requestId == _searchRequestId) {
@@ -387,8 +396,10 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         return;
       }
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('เพิ่มสินค้าไม่สำเร็จ: $e')),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'เพิ่มสินค้าเข้าบิลไม่สำเร็จ',
       );
     }
   }

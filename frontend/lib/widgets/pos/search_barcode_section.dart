@@ -3,6 +3,7 @@ import 'package:frontend/models/product.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_parts.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -219,8 +220,10 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
     final bill = context.read<BillProvider>();
     final token = auth.token;
     if (token == null) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       _isAutoAdding = false;
       return false;
@@ -275,8 +278,10 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
         return false;
       }
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('เพิ่มสินค้าไม่สำเร็จ: $e')),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'เพิ่มสินค้าเข้าบิลไม่สำเร็จ',
       );
       return false;
     } finally {

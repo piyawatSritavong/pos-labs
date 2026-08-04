@@ -162,7 +162,7 @@ func (h *PosMirrorHandler) HandleWS(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	session, err := h.sessions.GetValidByID(ctx, token, c.ClientIP(), time.Now().UTC())
+	session, err := h.sessions.GetValidByID(ctx, token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
 		return

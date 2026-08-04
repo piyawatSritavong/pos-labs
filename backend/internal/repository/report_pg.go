@@ -258,7 +258,7 @@ func (r *reportRepositoryPG) GetAllParts(ctx context.Context) ([]PartMaster, err
 func (r *reportRepositoryPG) GetAllAddresses(ctx context.Context) ([]Address, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT 
-			"code", "part_code", "store_id", "shelf", "qty", "min", "max", "rop", "remarks"
+			"code", "part_code", "store_id", "shelf", "qty", "rop", "remarks"
 		FROM "address_master"
 		ORDER BY "code" ASC
 	`)
@@ -271,7 +271,7 @@ func (r *reportRepositoryPG) GetAllAddresses(ctx context.Context) ([]Address, er
 	for rows.Next() {
 		var a Address
 		var shelf, remarks sql.NullString
-		var qty, min, max, rop sql.NullInt64
+		var qty, rop sql.NullInt64
 
 		err := rows.Scan(
 			&a.Code,
@@ -279,8 +279,6 @@ func (r *reportRepositoryPG) GetAllAddresses(ctx context.Context) ([]Address, er
 			&a.StoreID,
 			&shelf,
 			&qty,
-			&min,
-			&max,
 			&rop,
 			&remarks,
 		)
@@ -293,12 +291,6 @@ func (r *reportRepositoryPG) GetAllAddresses(ctx context.Context) ([]Address, er
 		}
 		if qty.Valid {
 			a.Qty = int(qty.Int64)
-		}
-		if min.Valid {
-			a.Min = int(min.Int64)
-		}
-		if max.Valid {
-			a.Max = int(max.Int64)
 		}
 		if rop.Valid {
 			a.Rop = int(rop.Int64)

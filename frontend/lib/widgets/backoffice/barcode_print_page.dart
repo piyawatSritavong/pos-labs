@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/widgets/backoffice/barcode_sheet_page.dart';
 import 'package:provider/provider.dart';
@@ -39,7 +40,6 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
   int _pageSize = 50;
 
   bool _isLoading = true;
-  String? _error;
   List<Map<String, dynamic>> _parts = []; // current page
   String _query = '';
   int _offset = 0;
@@ -72,16 +72,17 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
     if (token == null) {
-      setState(() {
-        _isLoading = false;
-        _error = 'ยังไม่ได้ login';
-      });
+      setState(() => _isLoading = false);
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
+      );
       return;
     }
     if (resetOffset) _offset = 0;
     setState(() {
       _isLoading = true;
-      _error = null;
     });
     try {
       final result = await ApiService.searchPartsPaged(
@@ -103,10 +104,14 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดข้อมูลสินค้าสำหรับพิมพ์ Barcode ไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) await _loadParts();
     }
   }
 
@@ -130,7 +135,8 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
     await _loadParts();
   }
 
-  int get _pageCount => _total <= 0 ? 1 : ((_total + _pageSize - 1) ~/ _pageSize);
+  int get _pageCount =>
+      _total <= 0 ? 1 : ((_total + _pageSize - 1) ~/ _pageSize);
   int get _currentPage => (_offset ~/ _pageSize) + 1;
 
   Future<void> _goToPage(int page) async {
@@ -158,8 +164,7 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
     return barRaw.isEmpty ? code : barRaw;
   }
 
-  int get _totalCopies =>
-      _selectedQty.values.fold<int>(0, (sum, q) => sum + q);
+  int get _totalCopies => _selectedQty.values.fold<int>(0, (sum, q) => sum + q);
 
   // Estimated printed rows: all copies are packed _perRow per row, so the row
   // count is the total rounded up (only the final row is padded with blanks).
@@ -225,24 +230,28 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
       final barcode = (meta['barcode']?.isNotEmpty == true)
           ? meta['barcode']!
           : code;
-      picks.add(BarcodePickItem(
-        partCode: code,
-        name: meta['name'] ?? '',
-        barcode: barcode,
-        qty: qty,
-      ));
+      picks.add(
+        BarcodePickItem(
+          partCode: code,
+          name: meta['name'] ?? '',
+          barcode: barcode,
+          qty: qty,
+        ),
+      );
     }
     if (picks.isEmpty) return;
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => BarcodeSheetPage(items: picks),
-    ));
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => BarcodeSheetPage(items: picks)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final pageChecked = _parts.isNotEmpty &&
+    final pageChecked =
+        _parts.isNotEmpty &&
         _parts.every((p) => _selectedQty.containsKey(p['code']?.toString()));
-    final pagePartial = !pageChecked &&
+    final pagePartial =
+        !pageChecked &&
         _parts.any((p) => _selectedQty.containsKey(p['code']?.toString()));
 
     return Padding(
@@ -319,111 +328,94 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
               clipBehavior: Clip.antiAlias,
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : _error != null
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(_error!,
-                                  style: const TextStyle(color: Colors.red)),
-                              const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                onPressed: () => _loadParts(),
-                                icon: const Icon(Icons.refresh),
-                                label: const Text('โหลดใหม่'),
-                              ),
+                  : _parts.isEmpty
+                  ? const Center(child: Text('ไม่พบสินค้า'))
+                  : Scrollbar(
+                      child: SingleChildScrollView(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            headingRowHeight: 44,
+                            dataRowMinHeight: 44,
+                            dataRowMaxHeight: 56,
+                            columns: const [
+                              DataColumn(label: SizedBox(width: 30)),
+                              DataColumn(label: Text('รหัส')),
+                              DataColumn(label: Text('ชื่อสินค้า')),
+                              DataColumn(label: Text('Barcode')),
+                              DataColumn(label: Text('จำนวนพิมพ์')),
                             ],
-                          ),
-                        )
-                      : _parts.isEmpty
-                          ? const Center(child: Text('ไม่พบสินค้า'))
-                          : Scrollbar(
-                              child: SingleChildScrollView(
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: DataTable(
-                                    headingRowHeight: 44,
-                                    dataRowMinHeight: 44,
-                                    dataRowMaxHeight: 56,
-                                    columns: const [
-                                      DataColumn(label: SizedBox(width: 30)),
-                                      DataColumn(label: Text('รหัส')),
-                                      DataColumn(label: Text('ชื่อสินค้า')),
-                                      DataColumn(label: Text('Barcode')),
-                                      DataColumn(
-                                          label: Text('จำนวนพิมพ์')),
-                                    ],
-                                    rows: _parts.map((p) {
-                                      final code = (p['code'] ?? '').toString();
-                                      final name = _nameOf(p);
-                                      final bar = _barcodeOf(p);
-                                      final selected =
-                                          _selectedQty.containsKey(code);
-                                      final qty = _selectedQty[code] ?? 1;
-                                      return DataRow(
-                                        selected: selected,
-                                        cells: [
-                                          DataCell(Checkbox(
-                                            value: selected,
-                                            onChanged: (v) => _toggleRow(p, v),
-                                          )),
-                                          DataCell(Text(code)),
-                                          DataCell(Text(name)),
-                                          DataCell(Text(bar)),
-                                          // Quantity stepper — ±1 (any count;
-                                          // partial last row is padded blank).
-                                          DataCell(
-                                            Opacity(
-                                              opacity: selected ? 1 : 0.4,
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  IconButton(
-                                                    icon: const Icon(Icons
-                                                        .remove_circle_outline),
-                                                    iconSize: 20,
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    tooltip: 'ลด 1',
-                                                    onPressed: selected
-                                                        ? () =>
-                                                            _bumpQty(code, -1)
-                                                        : null,
-                                                  ),
-                                                  SizedBox(
-                                                    width: 40,
-                                                    child: Text(
-                                                      '$qty',
-                                                      textAlign:
-                                                          TextAlign.center,
-                                                      style: const TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w600),
-                                                    ),
-                                                  ),
-                                                  IconButton(
-                                                    icon: const Icon(Icons
-                                                        .add_circle_outline),
-                                                    iconSize: 20,
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    tooltip: 'เพิ่ม 1',
-                                                    onPressed: selected
-                                                        ? () =>
-                                                            _bumpQty(code, 1)
-                                                        : null,
-                                                  ),
-                                                ],
+                            rows: _parts.map((p) {
+                              final code = (p['code'] ?? '').toString();
+                              final name = _nameOf(p);
+                              final bar = _barcodeOf(p);
+                              final selected = _selectedQty.containsKey(code);
+                              final qty = _selectedQty[code] ?? 1;
+                              return DataRow(
+                                selected: selected,
+                                cells: [
+                                  DataCell(
+                                    Checkbox(
+                                      value: selected,
+                                      onChanged: (v) => _toggleRow(p, v),
+                                    ),
+                                  ),
+                                  DataCell(Text(code)),
+                                  DataCell(Text(name)),
+                                  DataCell(Text(bar)),
+                                  // Quantity stepper — ±1 (any count;
+                                  // partial last row is padded blank).
+                                  DataCell(
+                                    Opacity(
+                                      opacity: selected ? 1 : 0.4,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.remove_circle_outline,
+                                            ),
+                                            iconSize: 20,
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            tooltip: 'ลด 1',
+                                            onPressed: selected
+                                                ? () => _bumpQty(code, -1)
+                                                : null,
+                                          ),
+                                          SizedBox(
+                                            width: 40,
+                                            child: Text(
+                                              '$qty',
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
                                               ),
                                             ),
                                           ),
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.add_circle_outline,
+                                            ),
+                                            iconSize: 20,
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            tooltip: 'เพิ่ม 1',
+                                            onPressed: selected
+                                                ? () => _bumpQty(code, 1)
+                                                : null,
+                                          ),
                                         ],
-                                      );
-                                    }).toList(),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                            ),
+                                ],
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                    ),
             ),
           ),
           const SizedBox(height: 12),

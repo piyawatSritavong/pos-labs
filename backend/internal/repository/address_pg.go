@@ -18,13 +18,13 @@ func NewAddressRepository(db *sql.DB) AddressRepository {
 
 func (r *addressRepositoryPG) GetByCode(ctx context.Context, code string) (*Address, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT "code", "part_code", "store_id", "shelf", "qty", "min", "max", "rop", "remarks"
+		SELECT "code", "part_code", "store_id", "shelf", "qty", "rop", "remarks"
 		FROM "address_master"
 		WHERE "code" = $1
 	`, code)
 
 	var a Address
-	err := row.Scan(&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty, &a.Min, &a.Max, &a.Rop, &a.Remarks)
+	err := row.Scan(&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty, &a.Rop, &a.Remarks)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -67,7 +67,7 @@ func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, lim
 	query := `
 		SELECT
 			a."code", a."part_code", a."store_id", a."shelf", a."qty",
-			a."min", a."max", a."rop", a."remarks",
+			a."rop", a."remarks",
 			COALESCE(NULLIF(p."name_th", ''), p."name", '') AS part_name,
 			COALESCE(NULLIF(s."label_th", ''), s."label", a."store_id") AS store_name
 		FROM "address_master" a
@@ -88,7 +88,7 @@ func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, lim
 		var a Address
 		if err := rows.Scan(
 			&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty,
-			&a.Min, &a.Max, &a.Rop, &a.Remarks,
+			&a.Rop, &a.Remarks,
 			&a.PartName, &a.StoreName,
 		); err != nil {
 			return nil, err
@@ -149,7 +149,7 @@ func (r *addressRepositoryPG) List(ctx context.Context, limit, offset int) ([]Ad
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			a."code", a."part_code", a."store_id", a."shelf", a."qty",
-			a."min", a."max", a."rop", a."remarks",
+			a."rop", a."remarks",
 			COALESCE(NULLIF(p."name_th", ''), p."name", '') AS part_name,
 			COALESCE(NULLIF(s."label_th", ''), s."label", a."store_id") AS store_name
 		FROM "address_master" a
@@ -168,7 +168,7 @@ func (r *addressRepositoryPG) List(ctx context.Context, limit, offset int) ([]Ad
 		var a Address
 		if err := rows.Scan(
 			&a.Code, &a.PartCode, &a.StoreID, &a.Shelf, &a.Qty,
-			&a.Min, &a.Max, &a.Rop, &a.Remarks,
+			&a.Rop, &a.Remarks,
 			&a.PartName, &a.StoreName,
 		); err != nil {
 			return nil, err
@@ -185,18 +185,18 @@ func (r *addressRepositoryPG) List(ctx context.Context, limit, offset int) ([]Ad
 
 func (r *addressRepositoryPG) Create(ctx context.Context, address *Address) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO "address_master"("code", "part_code", "store_id", "shelf", "qty", "min", "max", "rop", "remarks")
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, address.Code, address.PartCode, address.StoreID, address.Shelf, address.Qty, address.Min, address.Max, address.Rop, address.Remarks)
+		INSERT INTO "address_master"("code", "part_code", "store_id", "shelf", "qty", "rop", "remarks")
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, address.Code, address.PartCode, address.StoreID, address.Shelf, address.Qty, address.Rop, address.Remarks)
 	return err
 }
 
 func (r *addressRepositoryPG) Update(ctx context.Context, address *Address) error {
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE "address_master"
-		SET "part_code" = $1, "store_id" = $2, "shelf" = $3, "qty" = $4, "min" = $5, "max" = $6, "rop" = $7, "remarks" = $8
-		WHERE "code" = $9
-	`, address.PartCode, address.StoreID, address.Shelf, address.Qty, address.Min, address.Max, address.Rop, address.Remarks, address.Code)
+		SET "part_code" = $1, "store_id" = $2, "shelf" = $3, "qty" = $4, "rop" = $5, "remarks" = $6
+		WHERE "code" = $7
+	`, address.PartCode, address.StoreID, address.Shelf, address.Qty, address.Rop, address.Remarks, address.Code)
 	if err != nil {
 		return err
 	}

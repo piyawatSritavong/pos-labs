@@ -266,7 +266,7 @@ func (h *ReportsHandler) InventoryReport(c *gin.Context) {
 
 	filename := fmt.Sprintf("inventory_%s.csv", time.Now().Format("2006-01-02_150405"))
 	headers := []string{
-		"code", "part_code", "store_id", "shelf", "qty", "min", "max", "rop", "remarks",
+		"code", "part_code", "store_id", "shelf", "qty", "rop", "remarks",
 	}
 
 	var rows [][]string
@@ -277,8 +277,6 @@ func (h *ReportsHandler) InventoryReport(c *gin.Context) {
 			a.StoreID,
 			a.Shelf,
 			toString(a.Qty),
-			toString(a.Min),
-			toString(a.Max),
 			toString(a.Rop),
 			a.Remarks,
 		}

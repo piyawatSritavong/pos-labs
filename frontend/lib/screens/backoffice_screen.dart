@@ -25,6 +25,7 @@ import 'package:frontend/screens/home_screen.dart';
 import 'package:frontend/screens/login_screen.dart';
 
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 
 // 1) Company settings (/company)
 class CompanyProvider extends ChangeNotifier {
@@ -39,7 +40,7 @@ class CompanyProvider extends ChangeNotifier {
     try {
       company = await ApiService.getCompany(token: token);
     } catch (e) {
-      error = e.toString();
+      error = AppDialogService.safeMessage(e);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -65,7 +66,7 @@ class CompanyProvider extends ChangeNotifier {
         taxType: payload['taxType'] ?? 'xvat',
       );
     } catch (e) {
-      error = e.toString();
+      error = AppDialogService.safeMessage(e);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -86,7 +87,7 @@ class BranchesProvider extends ChangeNotifier {
     try {
       branches = await ApiService.getBranches(token: token);
     } catch (e) {
-      error = e.toString();
+      error = AppDialogService.safeMessage(e);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -107,7 +108,17 @@ class PosDevicesProvider extends ChangeNotifier {
     try {
       devices = await ApiService.getPosDevices(token: token);
     } catch (e) {
-      error = e.toString();
+      error = AppDialogService.safeMessage(e);
+      final currentContext = appNavigatorKey.currentContext;
+      if (currentContext != null) {
+        final retry = await AppDialogService.showError(
+          currentContext,
+          error: e,
+          fallback: 'โหลดข้อมูล POS ไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry) await fetchDevices(token);
+      }
     } finally {
       isLoading = false;
       notifyListeners();
@@ -155,7 +166,17 @@ class PartsProvider extends ChangeNotifier {
       total = result.total;
       hasMore = offset + parts.length < total;
     } catch (e) {
-      error = e.toString();
+      error = AppDialogService.safeMessage(e);
+      final currentContext = appNavigatorKey.currentContext;
+      if (currentContext != null) {
+        final retry = await AppDialogService.showError(
+          currentContext,
+          error: e,
+          fallback: 'โหลดข้อมูลสินค้าไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry) await load(token, offset: this.offset);
+      }
     } finally {
       isLoading = false;
       notifyListeners();
@@ -233,7 +254,7 @@ class AddressesProvider extends ChangeNotifier {
       addresses = results;
       hasMore = results.length == pageSize;
     } catch (e) {
-      error = e.toString();
+      error = AppDialogService.safeMessage(e);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -271,7 +292,7 @@ class PromotionsProvider extends ChangeNotifier {
         offset: 0,
       );
     } catch (e) {
-      error = e.toString();
+      error = AppDialogService.safeMessage(e);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -314,7 +335,7 @@ class BillsProvider extends ChangeNotifier {
         scope: scope,
       );
     } catch (e) {
-      error = e.toString();
+      error = AppDialogService.safeMessage(e);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -335,7 +356,7 @@ class AssetsProvider extends ChangeNotifier {
     try {
       qrImage = await ApiService.getQrImage(token: token);
     } catch (e) {
-      error = e.toString();
+      error = AppDialogService.safeMessage(e);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -507,7 +528,9 @@ class _BackofficeShellState extends State<_BackofficeShell> {
     UserBranchesSection(),
     CompanySettingsSection(),
     BranchesManagementSection(),
-    HomeScreen(embedded: true), // index 4 — admin POS sell page (was POS Management)
+    HomeScreen(
+      embedded: true,
+    ), // index 4 — admin POS sell page (was POS Management)
     PartsManagementSection(),
     AddressesManagementSection(),
     PromotionsManagementSection(),
@@ -644,8 +667,7 @@ class _BackofficeShellState extends State<_BackofficeShell> {
                   child: IconButton(
                     icon: const Icon(Icons.menu),
                     tooltip: 'แสดงเมนู',
-                    onPressed: () =>
-                        setState(() => _sidebarCollapsed = false),
+                    onPressed: () => setState(() => _sidebarCollapsed = false),
                   ),
                 ),
               ),

@@ -40,10 +40,9 @@ type PartSummary struct {
 	Price           float64
 	IsActive        bool
 	TotalStock      int
-	// ReorderPoint / MinStock are summed across the part's addresses. Used for
+	// ReorderPoint is summed across the part's addresses. Used for
 	// the per-product low-stock alert (low when TotalStock <= ReorderPoint).
 	ReorderPoint int
-	MinStock     int
 }
 type PartAddress struct {
 	Code         string
@@ -53,8 +52,6 @@ type PartAddress struct {
 	StoreLabelTH string
 	Shelf        string
 	Qty          int
-	Min          int
-	Max          int
 	Rop          int
 	Remarks      string
 	IsDefault    bool
@@ -72,7 +69,8 @@ type PartRepository interface {
 	// GetAddressesByPartCodes loads addresses for many parts in a single query
 	// (avoids N+1 when building search/list responses). Result is keyed by part code.
 	GetAddressesByPartCodes(ctx context.Context, codes []string, branchID *string) (map[string][]PartAddress, error)
-	CreatePart(ctx context.Context, p PartInput) error
+	GetNextPartCode(ctx context.Context) (string, error)
+	CreatePart(ctx context.Context, p PartInput) (PartInput, error)
 	UpdatePart(ctx context.Context, code string, p PartInput) error
 	DeletePart(ctx context.Context, code string) error
 }
@@ -94,6 +92,7 @@ type PartInput struct {
 }
 
 var ErrNotFound = errors.New("not found")
+var ErrBarcodeExists = errors.New("barcode already exists")
 
 func IsNotFoundError(err error) bool {
 	return errors.Is(err, ErrNotFound)

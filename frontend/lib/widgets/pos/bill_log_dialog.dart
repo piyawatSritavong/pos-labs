@@ -3,6 +3,7 @@ import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_bills.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
@@ -26,8 +27,10 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
     }
     final token = context.read<AuthProvider>().token;
     if (token == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -53,11 +56,10 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.red.shade700,
-          content: Text('พิมพ์บิล $billId ไม่สำเร็จ: $e'),
-        ),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'พิมพ์บิล $billId ไม่สำเร็จ',
       );
     } finally {
       if (mounted) {
@@ -172,9 +174,13 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
     final token = auth.token;
     if (token == null) {
       setState(() {
-        _error = 'token หาย กรุณา login ใหม่';
         _todayBills = [];
       });
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
+      );
       return;
     }
 
@@ -213,7 +219,14 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
       setState(() => _todayBills = filtered);
       _broadcastState();
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (!mounted) return;
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดประวัติบิลไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) await _loadBills();
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

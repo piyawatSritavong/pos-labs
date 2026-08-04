@@ -106,7 +106,7 @@ class _CustomerScreenState extends State<CustomerScreen> {
           }
         },
         onError: (error) {
-          _connectionError = error.toString();
+          _connectionError = 'เชื่อมต่อจอแสดงผลไม่สำเร็จ';
           _scheduleReconnect();
         },
       );
@@ -125,13 +125,13 @@ class _CustomerScreenState extends State<CustomerScreen> {
           } catch (_) {}
         },
         onError: (error) {
-          _connectionError = error.toString();
+          _connectionError = 'เชื่อมต่อจอแสดงผลไม่สำเร็จ';
           _scheduleReconnect();
         },
         onDone: _scheduleReconnect,
       );
     } catch (e) {
-      _connectionError = e.toString();
+      _connectionError = 'เชื่อมต่อจอแสดงผลไม่สำเร็จ';
       _scheduleReconnect();
     }
   }

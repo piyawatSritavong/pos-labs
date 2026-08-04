@@ -4,6 +4,7 @@ import 'package:frontend/providers/users_provider.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/widgets/users/create_user_dialog.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 
 class UsersTab extends StatefulWidget {
   const UsersTab({super.key, this.data});
@@ -49,12 +50,14 @@ class _UsersTabState extends State<UsersTab> {
     super.dispose();
   }
 
-  List<Map<String, dynamic>> _getUsersFromProvider(UsersProvider usersProvider) {
+  List<Map<String, dynamic>> _getUsersFromProvider(
+    UsersProvider usersProvider,
+  ) {
     // ใช้ UsersProvider เป็นหลัก เพื่อให้ UI อัพเดทเมื่อมีการเพิ่ม/ลบ
     if (usersProvider.users.isNotEmpty) {
       return usersProvider.users;
     }
-    
+
     // Fallback to widget.data if provider is empty
     if (widget.data != null && widget.data!.isNotEmpty) {
       return widget.data!;
@@ -108,17 +111,16 @@ class _UsersTabState extends State<UsersTab> {
           isActive: result['isActive'],
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('อัพเดทผู้ใช้สำเร็จ')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('อัพเดทผู้ใช้สำเร็จ')));
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('เกิดข้อผิดพลาด: ${e.toString()}'),
-              backgroundColor: Colors.red,
-            ),
+          await AppDialogService.showError(
+            context,
+            error: e,
+            fallback: 'อัปเดตผู้ใช้ไม่สำเร็จ',
           );
         }
       }
@@ -157,17 +159,16 @@ class _UsersTabState extends State<UsersTab> {
           userId: user['id']?.toString() ?? '',
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('ลบผู้ใช้สำเร็จ')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('ลบผู้ใช้สำเร็จ')));
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('เกิดข้อผิดพลาด: ${e.toString()}'),
-              backgroundColor: Colors.red,
-            ),
+          await AppDialogService.showError(
+            context,
+            error: e,
+            fallback: 'ลบผู้ใช้ไม่สำเร็จ',
           );
         }
       }
@@ -197,10 +198,7 @@ class _UsersTabState extends State<UsersTab> {
                 children: [
                   const Text(
                     'ข้อมูลพนักงาน',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                   TextButton.icon(
                     onPressed: _handleAddUser,
@@ -242,12 +240,13 @@ class _UsersTabState extends State<UsersTab> {
                 : GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 1.35,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                          childAspectRatio: 1.35,
+                        ),
                     itemCount: filteredUsers.length,
                     itemBuilder: (context, index) {
                       final user = filteredUsers[index];
@@ -280,7 +279,8 @@ class _UserCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final userName = user['name']?.toString() ?? 'ไม่ทราบชื่อ';
     final username = user['username']?.toString() ?? '';
-    final roleId = user['roleId']?.toString() ?? user['role_id']?.toString() ?? '-';
+    final roleId =
+        user['roleId']?.toString() ?? user['role_id']?.toString() ?? '-';
     final isActive = user['isActive'] != false;
     final isSuperuser = user['isSuperuser'] == true;
 
@@ -308,9 +308,7 @@ class _UserCard extends StatelessWidget {
     return Card(
       elevation: 2,
       color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -325,10 +323,7 @@ class _UserCard extends StatelessWidget {
                   height: 48,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [
-                        roleColor,
-                        roleColor.withValues(alpha: 0.7),
-                      ],
+                      colors: [roleColor, roleColor.withValues(alpha: 0.7)],
                     ),
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -344,7 +339,10 @@ class _UserCard extends StatelessWidget {
                   child: Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.muted.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(4),
@@ -361,7 +359,10 @@ class _UserCard extends StatelessWidget {
                       if (isSuperuser) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.purple.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(4),
@@ -381,7 +382,10 @@ class _UserCard extends StatelessWidget {
                 ),
                 // Active Badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: isActive
                         ? Colors.green.withValues(alpha: 0.1)
@@ -458,7 +462,10 @@ class _UserCard extends StatelessWidget {
                   label: const Text('แก้ไข'),
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.blue,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -468,7 +475,10 @@ class _UserCard extends StatelessWidget {
                   label: const Text('ลบ'),
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ],
@@ -506,7 +516,8 @@ class _EditUserDialogState extends State<_EditUserDialog> {
       text: widget.user['username']?.toString() ?? '',
     );
     _passwordController = TextEditingController();
-    _selectedRole = widget.user['roleId']?.toString() ??
+    _selectedRole =
+        widget.user['roleId']?.toString() ??
         widget.user['role_id']?.toString() ??
         'role.cashier';
     _isActive = widget.user['isActive'] != false;

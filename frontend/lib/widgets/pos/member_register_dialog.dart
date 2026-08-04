@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
-import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
 
@@ -21,7 +21,6 @@ class _MemberRegisterDialogState extends State<MemberRegisterDialog> {
   Timer? _broadcastTimer;
 
   bool _isLoading = false;
-  String? _error;
   bool _success = false;
 
   @override
@@ -56,7 +55,7 @@ class _MemberRegisterDialogState extends State<MemberRegisterDialog> {
       'name': _nameController.text.trim(),
       'phone': _phoneController.text.trim(),
       'email': _emailController.text.trim(),
-      'stage': _success ? 'success' : (_error != null ? 'error' : 'filling'),
+      'stage': _success ? 'success' : 'filling',
     });
   }
 
@@ -67,7 +66,6 @@ class _MemberRegisterDialogState extends State<MemberRegisterDialog> {
 
     setState(() {
       _isLoading = true;
-      _error = null;
     });
 
     try {
@@ -87,10 +85,12 @@ class _MemberRegisterDialogState extends State<MemberRegisterDialog> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ลงทะเบียนสมาชิกไม่สำเร็จ',
+        );
       }
     }
   }
@@ -154,20 +154,14 @@ class _MemberRegisterDialogState extends State<MemberRegisterDialog> {
             textInputAction: TextInputAction.done,
             onFieldSubmitted: (_) => _submit(),
           ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _error!,
-              style: const TextStyle(color: AppColors.danger, fontSize: 13),
-            ),
-          ],
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton(
-                onPressed:
-                    _isLoading ? null : () => Navigator.of(context).pop(),
+                onPressed: _isLoading
+                    ? null
+                    : () => Navigator.of(context).pop(),
                 child: const Text('ยกเลิก'),
               ),
               const SizedBox(width: 8),
@@ -195,8 +189,7 @@ class _MemberRegisterDialogState extends State<MemberRegisterDialog> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.check_circle_outline,
-            color: Colors.green, size: 56),
+        const Icon(Icons.check_circle_outline, color: Colors.green, size: 56),
         const SizedBox(height: 12),
         Text(
           'ลงทะเบียนสมาชิก "${_nameController.text.trim()}" สำเร็จ',

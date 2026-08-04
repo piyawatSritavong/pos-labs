@@ -57,12 +57,14 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	userBranchRepo := repository.NewUserBranchRepository(db)
 
 	// Auth
-	authHandler := handlers.NewAuthHandler(userRepo, sessionRepo, userBranchRepo, branchRepo, posRepo, cfg.SessionDurationParsed())
+	authHandler := handlers.NewAuthHandler(userRepo, sessionRepo, userBranchRepo, branchRepo, posRepo)
 	authGroup := r.Group("/auth")
 	{
 		authGroup.POST("/login", authHandler.Login)
 		authGroup.POST("/verify-password", authHandler.VerifyPassword)
-		authGroup.POST("/logout", authMw.RequireAuth(), authHandler.Logout)
+		authGroup.POST("/logout", authHandler.Logout)
+		authGroup.GET("/session-state", authHandler.SessionState)
+		authGroup.POST("/session-conflict/resolve", authHandler.ResolveSessionConflict)
 		authGroup.GET("/me", authMw.RequireAuth(), authHandler.Me)
 	}
 
@@ -90,6 +92,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	{
 		parts.GET("", partsHandler.List)
 		parts.GET("/search", partsHandler.Search)
+		parts.GET("/next-code", partsHandler.NextCode)
 		parts.GET("/:code", partsHandler.Get)
 	}
 	partsWrite := r.Group("/parts")

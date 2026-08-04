@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/screens/backoffice_screen.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -87,8 +88,8 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
     final method = _paymentLabel(bill['paymentMethod']?.toString() ?? '');
     final total = bill['totalAmount']?.toString() ?? '';
     // Operator: prefer the resolved display name (e.g. "Administrator").
-    final operator =
-        (bill['createdByName'] ?? bill['createdBy'] ?? '').toString();
+    final operator = (bill['createdByName'] ?? bill['createdBy'] ?? '')
+        .toString();
     String memberText = '';
     final member = bill['member'];
     if (member is Map<String, dynamic>) {
@@ -297,8 +298,10 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
     final token = auth.token;
     if (token == null || token.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('หมดเซสชัน กรุณาเข้าสู่ระบบใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -413,9 +416,11 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await AppDialogService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text('ไม่สามารถดึงข้อมูลบิลได้: $e')));
+        error: e,
+        fallback: 'โหลดรายละเอียดบิลไม่สำเร็จ',
+      );
     }
   }
 

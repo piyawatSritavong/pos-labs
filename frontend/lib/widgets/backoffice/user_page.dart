@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/providers/auth_provider.dart';
 
 // ──────────────────────────────────────────────
@@ -312,9 +313,13 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      final retry = await AppDialogService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text('โหลดรายชื่อผู้ใช้ไม่สำเร็จ: $e')));
+        error: e,
+        fallback: 'โหลดรายชื่อผู้ใช้ไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) await _loadUsers();
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -656,8 +661,7 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
                         newRoleNameController.text.trim().isEmpty) {
                       missing.add('ชื่อบทบาทใหม่');
                     }
-                    if (selectedBranchId == null ||
-                        selectedBranchId!.isEmpty) {
+                    if (selectedBranchId == null || selectedBranchId!.isEmpty) {
                       missing.add('สาขาประจำ');
                     }
                     if (!isEdit && passwordController.text.isEmpty) {
@@ -712,8 +716,10 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('สร้างบทบาทใหม่ไม่สำเร็จ: $e')),
+          await AppDialogService.showError(
+            context,
+            error: e,
+            fallback: 'สร้างบทบาทใหม่ไม่สำเร็จ',
           );
         }
         return;
@@ -779,8 +785,10 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
       await _loadUsers();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('บันทึกข้อมูลผู้ใช้ไม่สำเร็จ: $e')),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'บันทึกข้อมูลผู้ใช้ไม่สำเร็จ',
       );
     } finally {
       usernameController.dispose();
@@ -854,9 +862,11 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
       ).showSnackBar(const SnackBar(content: Text('ตั้งรหัสผ่านใหม่สำเร็จ')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await AppDialogService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text('ตั้งรหัสผ่านใหม่ไม่สำเร็จ: $e')));
+        error: e,
+        fallback: 'ตั้งรหัสผ่านใหม่ไม่สำเร็จ',
+      );
     } finally {
       passwordController.dispose();
     }
@@ -902,9 +912,11 @@ class _UsersManagementSectionState extends State<UsersManagementSection> {
       await _loadUsers();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await AppDialogService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text('ลบผู้ใช้ไม่สำเร็จ: $e')));
+        error: e,
+        fallback: 'ลบผู้ใช้ไม่สำเร็จ',
+      );
     }
   }
 

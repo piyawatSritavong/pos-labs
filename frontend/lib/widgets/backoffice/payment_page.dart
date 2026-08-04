@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -16,8 +17,7 @@ class QrPaymentSettingsSection extends StatefulWidget {
       _QrPaymentSettingsSectionState();
 }
 
-class _QrPaymentSettingsSectionState
-    extends State<QrPaymentSettingsSection> {
+class _QrPaymentSettingsSectionState extends State<QrPaymentSettingsSection> {
   Uint8List? _qrImage;
   bool _isLoading = false;
   bool _isUploading = false;
@@ -64,12 +64,14 @@ class _QrPaymentSettingsSectionState
     if (token.isEmpty) return;
     setState(() => _isLoadingVanStaff = true);
     try {
-      final all =
-          await ApiService.getUsers(token: token, limit: 200, offset: 0);
+      final all = await ApiService.getUsers(
+        token: token,
+        limit: 200,
+        offset: 0,
+      );
       if (!mounted) return;
       setState(() {
-        _vanStaff =
-            all.where((u) => u['roleId'] == 'role.van_staff').toList();
+        _vanStaff = all.where((u) => u['roleId'] == 'role.van_staff').toList();
       });
     } catch (_) {
     } finally {
@@ -88,7 +90,8 @@ class _QrPaymentSettingsSectionState
       reader.readAsArrayBuffer(file);
       reader.onLoad.listen((_) async {
         final bytes = Uint8List.fromList(
-            (reader.result as List<int>).cast<int>());
+          (reader.result as List<int>).cast<int>(),
+        );
         final token = context.read<AuthProvider>().token ?? '';
         if (token.isEmpty || !mounted) return;
         setState(() => _isUploading = true);
@@ -99,13 +102,17 @@ class _QrPaymentSettingsSectionState
             contentType: file.type.isNotEmpty ? file.type : 'image/png',
           );
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('อัปโหลด QR สำเร็จ')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('อัปโหลด QR สำเร็จ')));
           _loadQrImage();
         } catch (e) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('อัปโหลดไม่สำเร็จ: $e')));
+          await AppDialogService.showError(
+            context,
+            error: e,
+            fallback: 'อัปโหลด QR ไม่สำเร็จ',
+          );
         } finally {
           if (mounted) setState(() => _isUploading = false);
         }
@@ -118,8 +125,9 @@ class _QrPaymentSettingsSectionState
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
     setState(() => _isSavingAssignment = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('บันทึกการมอบหมาย QR แล้ว')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('บันทึกการมอบหมาย QR แล้ว')));
   }
 
   @override
@@ -133,10 +141,7 @@ class _QrPaymentSettingsSectionState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Left: QR preview + upload
-              SizedBox(
-                width: 320,
-                child: _buildQrPanel(),
-              ),
+              SizedBox(width: 320, child: _buildQrPanel()),
               const SizedBox(width: 24),
               // Right: POS Staff assignment
               Expanded(child: _buildAssignmentPanel()),
@@ -150,8 +155,7 @@ class _QrPaymentSettingsSectionState
   Widget _buildQrPanel() {
     return Card(
       elevation: 1,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -159,8 +163,7 @@ class _QrPaymentSettingsSectionState
           children: [
             const Text(
               'QR โอนเงิน',
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             const Text(
@@ -170,12 +173,17 @@ class _QrPaymentSettingsSectionState
             const SizedBox(height: 16),
             if (_isLoading || _isUploading)
               const SizedBox(
-                  height: 200,
-                  child: Center(child: CircularProgressIndicator()))
+                height: 200,
+                child: Center(child: CircularProgressIndicator()),
+              )
             else if (_qrImage != null)
               Center(
-                child: Image.memory(_qrImage!,
-                    width: 200, height: 200, fit: BoxFit.contain),
+                child: Image.memory(
+                  _qrImage!,
+                  width: 200,
+                  height: 200,
+                  fit: BoxFit.contain,
+                ),
               )
             else
               Container(
@@ -188,24 +196,29 @@ class _QrPaymentSettingsSectionState
                 child: const Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.qr_code_2_outlined,
-                        size: 64, color: AppColors.muted),
+                    Icon(
+                      Icons.qr_code_2_outlined,
+                      size: 64,
+                      color: AppColors.muted,
+                    ),
                     SizedBox(height: 8),
-                    Text('ยังไม่มีรูป QR',
-                        style: TextStyle(color: AppColors.muted)),
+                    Text(
+                      'ยังไม่มีรูป QR',
+                      style: TextStyle(color: AppColors.muted),
+                    ),
                   ],
                 ),
               ),
             if (_error != null) ...[
               const SizedBox(height: 8),
-              Text(_error!,
-                  style: const TextStyle(
-                      color: AppColors.danger, fontSize: 12)),
+              Text(
+                _error!,
+                style: const TextStyle(color: AppColors.danger, fontSize: 12),
+              ),
             ],
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              onPressed:
-                  (_isUploading || _isLoading) ? null : _pickAndUploadQr,
+              onPressed: (_isUploading || _isLoading) ? null : _pickAndUploadQr,
               icon: const Icon(Icons.upload_file, size: 18),
               label: const Text('อัปโหลด QR ใหม่'),
             ),
@@ -224,8 +237,7 @@ class _QrPaymentSettingsSectionState
   Widget _buildAssignmentPanel() {
     return Card(
       elevation: 1,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -233,8 +245,7 @@ class _QrPaymentSettingsSectionState
           children: [
             const Text(
               'มอบหมาย QR ให้ POS Staff',
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             const Text(
@@ -251,8 +262,11 @@ class _QrPaymentSettingsSectionState
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 32),
                 child: Center(
-                    child: Text('ไม่พบบัญชี POS Staff',
-                        style: TextStyle(color: AppColors.muted))),
+                  child: Text(
+                    'ไม่พบบัญชี POS Staff',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
+                ),
               )
             else
               Column(
@@ -288,7 +302,10 @@ class _QrPaymentSettingsSectionState
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : const Text('บันทึกการมอบหมาย'),
             ),
           ],

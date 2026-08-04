@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/company_provider.dart';
 
@@ -55,9 +56,11 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
     if (token == null || token.isEmpty) {
-      setState(() {
-        _errorMessage = 'ไม่พบ token กรุณา login ใหม่';
-      });
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
+      );
       return;
     }
 
@@ -94,9 +97,14 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
       final logoUrl = data['logoUrl'];
       _logoUrl = (logoUrl is String && logoUrl.isNotEmpty) ? logoUrl : null;
     } catch (e) {
-      setState(() {
-        _errorMessage = 'โหลดข้อมูลบริษัทไม่สำเร็จ: $e';
-      });
+      if (!mounted) return;
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดข้อมูลบริษัทไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) await _loadCompany();
     } finally {
       if (mounted) {
         setState(() {
@@ -114,8 +122,10 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
     final auth = context.read<AuthProvider>();
     final token = auth.token;
     if (token == null || token.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ไม่พบ token กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -123,8 +133,10 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
     final vatRateText = _vatRateController.text.trim();
     final parsedVat = double.tryParse(vatRateText);
     if (parsedVat == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณากรอก VAT Rate เป็นตัวเลข')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('invalid_vat'),
+        fallback: 'กรุณากรอก VAT Rate เป็นตัวเลข',
       );
       return;
     }
@@ -155,9 +167,10 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
       // showing the old name/address until a full reload. Force-refresh it so
       // the edited values appear on the next printed/previewed receipt.
       if (mounted) {
-        await context
-            .read<CompanyProvider>()
-            .loadCompany(token: token, force: true);
+        await context.read<CompanyProvider>().loadCompany(
+          token: token,
+          force: true,
+        );
       }
 
       if (!mounted) return;
@@ -166,12 +179,11 @@ class _CompanySettingsSectionState extends State<CompanySettingsSection> {
       ).showSnackBar(const SnackBar(content: Text('บันทึกข้อมูลบริษัทสำเร็จ')));
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _errorMessage = 'บันทึกข้อมูลไม่สำเร็จ: $e';
-        });
-        ScaffoldMessenger.of(
+        await AppDialogService.showError(
           context,
-        ).showSnackBar(SnackBar(content: Text('บันทึกข้อมูลไม่สำเร็จ: $e')));
+          error: e,
+          fallback: 'บันทึกข้อมูลบริษัทไม่สำเร็จ',
+        );
       }
     } finally {
       if (mounted) {

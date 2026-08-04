@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -15,7 +16,6 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _notes = [];
   bool _isLoading = false;
-  String? _error;
 
   @override
   void initState() {
@@ -33,16 +33,16 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
     final token = context.read<AuthProvider>().token;
     if (token == null || token.isEmpty) {
       if (!mounted) return;
-      setState(() {
-        _notes = [];
-        _error = 'token หาย กรุณา login ใหม่';
-      });
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
+      );
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _error = null;
     });
 
     try {
@@ -59,9 +59,13 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = 'โหลดประวัติคืนของไม่สำเร็จ: $e';
-      });
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดประวัติคืนสินค้าไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) await _reload();
     } finally {
       if (mounted) {
         setState(() {
@@ -148,17 +152,6 @@ class _ReturnsHistorySectionState extends State<ReturnsHistorySection> {
               child: Card(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : _error != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            _error!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: AppColors.danger),
-                          ),
-                        ),
-                      )
                     : filtered.isEmpty
                     ? const Center(child: Text('ยังไม่มีประวัติคืนของ'))
                     : ListView.separated(

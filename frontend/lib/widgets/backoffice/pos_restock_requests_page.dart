@@ -4,6 +4,7 @@ import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_operations.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -27,7 +28,6 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
   String _selectedStatus = 'review';
   bool _loading = false;
   bool _acting = false;
-  String? _error;
   List<Map<String, dynamic>> _requests = [];
   Map<String, dynamic>? _selected;
 
@@ -41,7 +41,6 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
     final token = context.read<AuthProvider>().token ?? '';
     setState(() {
       _loading = true;
-      _error = null;
     });
     try {
       final list = await ApiOperationsService.getTransfers(
@@ -58,7 +57,15 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
         setState(() => _selected = null);
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) {
+        final retry = await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'โหลดรายการเบิกสินค้าไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry && mounted) await _load();
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -74,7 +81,14 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
       );
       if (mounted) setState(() => _selected = detail);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) {
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'โหลดรายละเอียดรายการไม่สำเร็จ',
+          allowRetry: true,
+        );
+      }
     }
   }
 
@@ -84,7 +98,6 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
     final token = context.read<AuthProvider>().token ?? '';
     setState(() {
       _acting = true;
-      _error = null;
     });
     try {
       final updated = await ApiOperationsService.approveRestockTransfer(
@@ -99,7 +112,13 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
         context,
       ).showSnackBar(const SnackBar(content: Text('ยืนยันโอนเข้ารถสำเร็จ')));
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) {
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ยืนยันการโอนเข้ารถไม่สำเร็จ',
+        );
+      }
     } finally {
       if (mounted) setState(() => _acting = false);
     }
@@ -119,7 +138,13 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
       setState(() => _selected = updated);
       await _load();
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) {
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ยกเลิกรายการไม่สำเร็จ',
+        );
+      }
     } finally {
       if (mounted) setState(() => _acting = false);
     }
@@ -162,14 +187,6 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
             ),
           ],
         ),
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              _error!,
-              style: const TextStyle(color: AppColors.danger),
-            ),
-          ),
         const SizedBox(height: 12),
         Expanded(
           child: Row(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/services/api_company.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 
 class CompanyProvider extends ChangeNotifier {
   Map<String, dynamic>? _company;
@@ -11,10 +12,7 @@ class CompanyProvider extends ChangeNotifier {
   String? get error => _error;
 
   /// โหลดข้อมูล company จาก API
-  Future<void> loadCompany({
-    required String token,
-    bool force = false,
-  }) async {
+  Future<void> loadCompany({required String token, bool force = false}) async {
     if (_isLoading) return;
     if (!force && _company != null) return;
 
@@ -26,7 +24,7 @@ class CompanyProvider extends ChangeNotifier {
       final result = await ApiCompanyService.getCompany(token: token);
       _company = result;
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -69,13 +67,13 @@ class CompanyProvider extends ChangeNotifier {
         taxType: taxType,
         receiptFooter: receiptFooter,
       );
-      
+
       // Refresh data after update
       _isLoading = false;
       await loadCompany(token: token, force: true);
       return updatedCompany;
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
       _isLoading = false;
       notifyListeners();
       rethrow;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -14,7 +15,6 @@ class InventoryTransferPage extends StatefulWidget {
 
 class _InventoryTransferPageState extends State<InventoryTransferPage> {
   bool _isLoading = true;
-  String? _error;
   List<Map<String, dynamic>> _transfers = [];
   Map<String, dynamic>? _selectedTransfer;
   List<Map<String, dynamic>> _branches = [];
@@ -42,15 +42,18 @@ class _InventoryTransferPageState extends State<InventoryTransferPage> {
     final token = context.read<AuthProvider>().token;
     if (token == null) {
       setState(() {
-        _error = 'ไม่พบ token กรุณา login ใหม่';
         _isLoading = false;
       });
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
+      );
       return;
     }
 
     setState(() {
       _isLoading = true;
-      _error = null;
     });
 
     try {
@@ -66,10 +69,14 @@ class _InventoryTransferPageState extends State<InventoryTransferPage> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
+        final retry = await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'โหลดรายการโอนสินค้าไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry && mounted) await _loadTransfers();
       }
     }
   }
@@ -85,9 +92,11 @@ class _InventoryTransferPageState extends State<InventoryTransferPage> {
       if (mounted) setState(() => _selectedTransfer = detail);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        await AppDialogService.showError(
           context,
-        ).showSnackBar(SnackBar(content: Text('ดึงรายละเอียดไม่สำเร็จ: $e')));
+          error: e,
+          fallback: 'โหลดรายละเอียดการโอนไม่สำเร็จ',
+        );
       }
     }
   }
@@ -166,9 +175,11 @@ class _InventoryTransferPageState extends State<InventoryTransferPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        await AppDialogService.showError(
           context,
-        ).showSnackBar(SnackBar(content: Text('รับเรื่องไม่สำเร็จ: $e')));
+          error: e,
+          fallback: 'รับเรื่องไม่สำเร็จ',
+        );
       }
     }
   }
@@ -187,9 +198,11 @@ class _InventoryTransferPageState extends State<InventoryTransferPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        await AppDialogService.showError(
           context,
-        ).showSnackBar(SnackBar(content: Text('อนุมัติไม่สำเร็จ: $e')));
+          error: e,
+          fallback: 'อนุมัติรายการไม่สำเร็จ',
+        );
       }
     }
   }
@@ -227,9 +240,11 @@ class _InventoryTransferPageState extends State<InventoryTransferPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        await AppDialogService.showError(
           context,
-        ).showSnackBar(SnackBar(content: Text('ยกเลิกไม่สำเร็จ: $e')));
+          error: e,
+          fallback: 'ยกเลิกรายการไม่สำเร็จ',
+        );
       }
     }
   }
@@ -286,23 +301,6 @@ class _InventoryTransferPageState extends State<InventoryTransferPage> {
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : _error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _error!,
-                              style: const TextStyle(color: AppColors.danger),
-                            ),
-                            const SizedBox(height: 8),
-                            OutlinedButton(
-                              onPressed: _loadTransfers,
-                              child: const Text('ลองใหม่'),
-                            ),
-                          ],
-                        ),
-                      )
                     : _transfers.isEmpty
                     ? const Center(child: Text('ยังไม่มีรายการโอนสินค้า'))
                     : ListView.separated(
@@ -849,10 +847,12 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-          _isSaving = false;
-        });
+        setState(() => _isSaving = false);
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'สร้างใบโอนสินค้าไม่สำเร็จ',
+        );
       }
     }
   }
@@ -1025,7 +1025,8 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
                                       final q = textEditingValue.text.trim();
                                       if (q.length < 2) {
                                         return const Iterable<
-                                            Map<String, dynamic>>.empty();
+                                          Map<String, dynamic>
+                                        >.empty();
                                       }
                                       try {
                                         return await ApiService.searchParts(
@@ -1035,7 +1036,8 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
                                         );
                                       } catch (_) {
                                         return const Iterable<
-                                            Map<String, dynamic>>.empty();
+                                          Map<String, dynamic>
+                                        >.empty();
                                       }
                                     },
                                     displayStringForOption: (p) =>
@@ -1242,10 +1244,12 @@ class _DispatchDialogState extends State<_DispatchDialog> {
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-          _isSaving = false;
-        });
+        setState(() => _isSaving = false);
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'จัดส่งสินค้าไม่สำเร็จ',
+        );
       }
     }
   }

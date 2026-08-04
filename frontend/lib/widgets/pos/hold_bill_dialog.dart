@@ -5,6 +5,7 @@ import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 
 class HoldBillDialog extends StatefulWidget {
   const HoldBillDialog({super.key});
@@ -37,9 +38,21 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
         final details = _extractDetails(bill);
         return {
           'id': bill['id']?.toString() ?? bill['billId']?.toString() ?? '',
-          'subtotal': _resolveAmount(bill, ['purchaseAmount', 'purchase_amount', 'subtotal']),
-          'discount': _resolveAmount(bill, ['totalDiscount', 'total_discount', 'discount']),
-          'total': _resolveAmount(bill, ['totalAmount', 'total_amount', 'total']),
+          'subtotal': _resolveAmount(bill, [
+            'purchaseAmount',
+            'purchase_amount',
+            'subtotal',
+          ]),
+          'discount': _resolveAmount(bill, [
+            'totalDiscount',
+            'total_discount',
+            'discount',
+          ]),
+          'total': _resolveAmount(bill, [
+            'totalAmount',
+            'total_amount',
+            'total',
+          ]),
           'itemCount': (bill['itemCount'] as num?)?.toInt() ?? details.length,
           'totalQty': _resolveTotalQty(bill, details),
           'createdAt': bill['createdAt']?.toString() ?? '',
@@ -56,9 +69,13 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
 
     if (token == null) {
       setState(() {
-        _error = 'token หาย กรุณา login ใหม่';
         _heldBills = [];
       });
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
+      );
       return;
     }
 
@@ -90,9 +107,14 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
       });
       _broadcastState();
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-      });
+      if (!mounted) return;
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดบิลที่พักไว้ไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) await _loadHeldBills();
     } finally {
       if (mounted) {
         setState(() {
@@ -161,8 +183,10 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
     final token = auth.token;
 
     if (token == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -191,8 +215,10 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
       Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เรียกบิลกลับมาทำต่อไม่สำเร็จ: $e')),
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'เรียกบิลกลับมาทำต่อไม่สำเร็จ',
         );
       }
     } finally {
@@ -209,8 +235,10 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
     final token = auth.token;
 
     if (token == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -255,9 +283,11 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
       await _loadHeldBills(); // reload list หลังลบ
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        await AppDialogService.showError(
           context,
-        ).showSnackBar(SnackBar(content: Text('ลบบิลไม่สำเร็จ: $e')));
+          error: e,
+          fallback: 'ลบบิลไม่สำเร็จ',
+        );
       }
     } finally {
       if (mounted) {

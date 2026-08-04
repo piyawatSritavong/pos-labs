@@ -18,6 +18,7 @@ import 'package:frontend/widgets/pos/daily_close_dialog.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/providers/theme_provider.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 
 enum _ScreenMode { desktop, tablet, mobile }
 
@@ -148,9 +149,11 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await AppDialogService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text('เปิดกล้องไม่ได้: $e')));
+        error: e,
+        fallback: 'เปิดกล้องสแกน Barcode ไม่สำเร็จ',
+      );
     } finally {
       if (mounted) {
         _barcodeFocusNode.requestFocus();
@@ -240,14 +243,18 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       } catch (e) {
         billProvider.loadBillSnapshot(pendingBill);
-        messenger.showSnackBar(
-          SnackBar(content: Text('ยกเลิกบิลที่ค้างอยู่ไม่สำเร็จ: $e')),
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ยกเลิกบิลที่ค้างอยู่ไม่สำเร็จ',
         );
       }
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text('ตรวจสอบบิลที่ค้างอยู่ไม่สำเร็จ: $e')),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'ตรวจสอบบิลที่ค้างอยู่ไม่สำเร็จ',
       );
     } finally {
       if (mounted) {
