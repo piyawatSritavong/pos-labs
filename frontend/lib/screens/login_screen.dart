@@ -4,9 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
-import 'home_screen.dart';
-import 'customer_screen.dart';
-import 'backoffice_screen.dart';
+import '../services/app_dialog_service.dart';
+import '../widgets/authentication/auth_gate.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -54,30 +53,18 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await auth.login(_username, _password);
 
-      // Navigate based on account type
       if (!mounted) return;
-
-      if (auth.isCustomerDisplay) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const CustomerScreen()),
-          (route) => false,
-        );
-      } else if (auth.hasBackofficeAccess) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const BackofficeScreen()),
-          (route) => false,
-        );
-      } else {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-          (route) => false,
-        );
-      }
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthGate()),
+        (route) => false,
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await AppDialogService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+        error: e,
+        fallback: 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+      );
     }
   }
 

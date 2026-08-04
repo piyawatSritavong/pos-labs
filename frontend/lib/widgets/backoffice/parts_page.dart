@@ -7,14 +7,15 @@ import 'package:provider/provider.dart';
 
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
-import 'package:http/http.dart' as http;
+import 'package:frontend/services/api_exception.dart';
+import 'package:frontend/services/app_dialog_service.dart';
+import 'package:frontend/services/api_http.dart' as http;
 
 class PartsManagementSection extends StatefulWidget {
   const PartsManagementSection({super.key});
 
   @override
-  State<PartsManagementSection> createState() =>
-      _PartsManagementSectionState();
+  State<PartsManagementSection> createState() => _PartsManagementSectionState();
 }
 
 class _PartsManagementSectionState extends State<PartsManagementSection> {
@@ -37,9 +38,28 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
     String token,
     PartsProvider partsProvider,
   ) async {
-    final codeController = TextEditingController();
+    Map<String, dynamic> generated;
+    try {
+      generated = await ApiService.getNextPartCode(token);
+    } catch (error) {
+      if (!context.mounted) return;
+      final retry = await AppDialogService.showError(
+        context,
+        error: error,
+        fallback: 'สร้างรหัสสินค้าอัตโนมัติไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && context.mounted) {
+        return _showCreatePartDialog(context, token, partsProvider);
+      }
+      return;
+    }
+    final generatedCode = generated['code']?.toString() ?? '';
+    final codeController = TextEditingController(text: generatedCode);
     final nameController = TextEditingController();
-    final barcodeController = TextEditingController();
+    final barcodeController = TextEditingController(
+      text: generated['barcode']?.toString() ?? generatedCode,
+    );
     final unitController = TextEditingController();
     final priceController = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -48,6 +68,7 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
       context: context,
       builder: (dialogContext) {
         bool isSaving = false;
+        bool barcodeWasEdited = false;
 
         return StatefulBuilder(
           builder: (ctx, setState) {
@@ -61,16 +82,11 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                     children: [
                       TextFormField(
                         controller: codeController,
+                        enabled: false,
                         decoration: const InputDecoration(
                           labelText: 'รหัสสินค้า',
                           isDense: true,
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'กรุณากรอกรหัสสินค้า';
-                          }
-                          return null;
-                        },
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -93,6 +109,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                           labelText: 'Barcode',
                           isDense: true,
                         ),
+                        onChanged: (value) {
+                          barcodeWasEdited = value.trim() != generatedCode;
+                        },
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -167,9 +186,10 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                                 'Authorization': 'Bearer $token',
                               },
                               body: jsonEncode({
-                                'code': codeController.text.trim(),
                                 'name': nameController.text.trim(),
-                                'barcode': barcodeController.text.trim(),
+                                'barcode': barcodeWasEdited
+                                    ? barcodeController.text.trim()
+                                    : '',
                                 'unit': unitController.text.trim(),
                                 'price': price,
                               }),
@@ -177,9 +197,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
 
                             if (response.statusCode != 200 &&
                                 response.statusCode != 201) {
-                              throw Exception(
-                                'สร้างสินค้าไม่สำเร็จ: '
-                                '${response.statusCode} ${response.body}',
+                              throw ApiException.fromResponse(
+                                response,
+                                fallback: 'สร้างสินค้าไม่สำเร็จ',
                               );
                             }
 
@@ -198,8 +218,10 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                               isSaving = false;
                             });
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
+                              await AppDialogService.showError(
+                                context,
+                                error: e,
+                                fallback: 'สร้างสินค้าไม่สำเร็จ',
                               );
                             }
                           }
@@ -231,10 +253,13 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
       text: part['name']?.toString() ?? '',
     );
     final barcodeController = TextEditingController(
-      text: part['barcode']?.toString() ?? '',
+      text: (part['barCode'] ?? part['barcode'])?.toString() ?? '',
     );
+    final unitValue = part['unit'];
     final unitController = TextEditingController(
-      text: part['unit']?.toString() ?? '',
+      text: unitValue is Map
+          ? (unitValue['id'] ?? unitValue['label'] ?? '').toString()
+          : unitValue?.toString() ?? '',
     );
     final priceValue = part['price'];
     final priceController = TextEditingController(
@@ -370,9 +395,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                             );
 
                             if (response.statusCode != 200) {
-                              throw Exception(
-                                'แก้ไขสินค้าไม่สำเร็จ: '
-                                '${response.statusCode} ${response.body}',
+                              throw ApiException.fromResponse(
+                                response,
+                                fallback: 'แก้ไขสินค้าไม่สำเร็จ',
                               );
                             }
 
@@ -391,8 +416,10 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                               isSaving = false;
                             });
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
+                              await AppDialogService.showError(
+                                context,
+                                error: e,
+                                fallback: 'แก้ไขสินค้าไม่สำเร็จ',
                               );
                             }
                           }
@@ -460,9 +487,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
 
                             if (response.statusCode != 200 &&
                                 response.statusCode != 204) {
-                              throw Exception(
-                                'ลบสินค้าไม่สำเร็จ: '
-                                '${response.statusCode} ${response.body}',
+                              throw ApiException.fromResponse(
+                                response,
+                                fallback: 'ลบสินค้าไม่สำเร็จ',
                               );
                             }
 
@@ -479,8 +506,10 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                               isDeleting = false;
                             });
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
+                              await AppDialogService.showError(
+                                context,
+                                error: e,
+                                fallback: 'ลบสินค้าไม่สำเร็จ',
                               );
                             }
                           }
@@ -699,13 +728,18 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                   DropdownButton<int>(
                     value: partsProvider.pageSize,
                     items: const [20, 50, 100]
-                        .map((s) => DropdownMenuItem(value: s, child: Text('$s')))
+                        .map(
+                          (s) => DropdownMenuItem(value: s, child: Text('$s')),
+                        )
                         .toList(),
                     onChanged: partsProvider.isLoading
                         ? null
                         : (v) {
                             if (v != null) {
-                              context.read<PartsProvider>().setPageSize(token, v);
+                              context.read<PartsProvider>().setPageSize(
+                                token,
+                                v,
+                              );
                             }
                           },
                   ),
@@ -726,11 +760,14 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                       partsProvider.pageCount < 1 ? 1 : partsProvider.pageCount,
                     ),
                     items: [
-                      for (var p = 1;
-                          p <= (partsProvider.pageCount < 1
-                              ? 1
-                              : partsProvider.pageCount);
-                          p++)
+                      for (
+                        var p = 1;
+                        p <=
+                            (partsProvider.pageCount < 1
+                                ? 1
+                                : partsProvider.pageCount);
+                        p++
+                      )
                         DropdownMenuItem(value: p, child: Text('$p')),
                     ],
                     onChanged: partsProvider.isLoading
@@ -742,7 +779,9 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                           },
                   ),
                   const SizedBox(width: 6),
-                  Text('/ ${partsProvider.pageCount}  (${partsProvider.total} รายการ)'),
+                  Text(
+                    '/ ${partsProvider.pageCount}  (${partsProvider.total} รายการ)',
+                  ),
                   IconButton(
                     icon: const Icon(Icons.chevron_right),
                     tooltip: 'ถัดไป',

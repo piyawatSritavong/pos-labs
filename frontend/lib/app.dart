@@ -4,6 +4,7 @@ import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/widgets/authentication/auth_gate.dart';
 import 'package:frontend/screens/customer_screen.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 
 class _MobileFontReducer extends TextScaler {
   const _MobileFontReducer(this.base);
@@ -38,6 +39,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, _) => MaterialApp(
+        navigatorKey: appNavigatorKey,
         title: 'POS Labs',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),

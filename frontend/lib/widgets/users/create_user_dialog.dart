@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/users_provider.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:provider/provider.dart';
 
 class CreateUserDialog extends StatefulWidget {
@@ -43,11 +44,10 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ไม่พบ token กรุณาเข้าสู่ระบบใหม่'),
-            backgroundColor: Colors.red,
-          ),
+        await AppDialogService.showError(
+          context,
+          error: Exception('missing_token'),
+          fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
         );
       }
       return;
@@ -65,17 +65,16 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
 
       if (mounted) {
         Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('สร้างผู้ใช้สำเร็จ')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('สร้างผู้ใช้สำเร็จ')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('เกิดข้อผิดพลาด: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'สร้างผู้ใช้ไม่สำเร็จ',
         );
       }
     } finally {
@@ -188,7 +187,9 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
               SwitchListTile(
                 title: const Text('เปิดใช้งาน'),
                 subtitle: Text(
-                  _isActive ? 'ผู้ใช้จะสามารถเข้าสู่ระบบได้' : 'ผู้ใช้จะไม่สามารถเข้าสู่ระบบได้',
+                  _isActive
+                      ? 'ผู้ใช้จะสามารถเข้าสู่ระบบได้'
+                      : 'ผู้ใช้จะไม่สามารถเข้าสู่ระบบได้',
                   style: TextStyle(
                     fontSize: 12,
                     color: _isActive ? Colors.green : Colors.grey,

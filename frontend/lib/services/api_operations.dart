@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:frontend/config/api_config.dart';
-import 'package:http/http.dart' as http;
+import 'api_http.dart' as http;
 
 class ApiOperationsService {
   static String get baseUrl => ApiConfig.apiBaseUrl;

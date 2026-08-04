@@ -159,8 +159,10 @@ class _SupportPosPageState extends State<SupportPosPage> {
 
     _channel!.stream.listen(
       _onMessage,
-      onError: (e) {
-        if (mounted) setState(() => _error = e.toString());
+      onError: (_) {
+        if (mounted) {
+          setState(() => _error = 'เชื่อมต่อ Support POS ไม่สำเร็จ');
+        }
       },
       onDone: () {
         if (mounted) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:provider/provider.dart';
 
 class PosManagementSection extends StatefulWidget {
@@ -13,7 +14,6 @@ class PosManagementSection extends StatefulWidget {
 
 class _PosManagementSectionState extends State<PosManagementSection> {
   bool _isLoading = false;
-  String? _error;
   List<Map<String, dynamic>> _vanStaff = [];
 
   @override
@@ -28,22 +28,29 @@ class _PosManagementSectionState extends State<PosManagementSection> {
 
     setState(() {
       _isLoading = true;
-      _error = null;
     });
 
     try {
-      final all = await ApiService.getUsers(token: token, limit: 200, offset: 0);
+      final all = await ApiService.getUsers(
+        token: token,
+        limit: 200,
+        offset: 0,
+      );
       setState(() {
-        _vanStaff = all
-            .where((u) => u['roleId'] == 'role.van_staff')
-            .toList();
+        _vanStaff = all.where((u) => u['roleId'] == 'role.van_staff').toList();
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() => _isLoading = false);
+        final retry = await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'โหลดข้อมูล POS Staff ไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry && mounted) await _load();
+      }
     }
   }
 
@@ -61,14 +68,15 @@ class _PosManagementSectionState extends State<PosManagementSection> {
                 children: [
                   const Text(
                     'POS Staff',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(width: 8),
                   Text(
                     '(${_vanStaff.length} คน)',
                     style: const TextStyle(
-                        color: AppColors.muted, fontSize: 14),
+                      color: AppColors.muted,
+                      fontSize: 14,
+                    ),
                   ),
                   const Spacer(),
                   IconButton(
@@ -82,40 +90,22 @@ class _PosManagementSectionState extends State<PosManagementSection> {
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : _error != null
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.error_outline,
-                                    color: AppColors.danger, size: 40),
-                                const SizedBox(height: 12),
-                                Text(_error!,
-                                    style: const TextStyle(
-                                        color: AppColors.danger)),
-                                const SizedBox(height: 12),
-                                OutlinedButton(
-                                    onPressed: _load,
-                                    child: const Text('ลองใหม่')),
-                              ],
-                            ),
-                          )
-                        : _vanStaff.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  'ไม่มีบัญชี POS Staff',
-                                  style: TextStyle(color: AppColors.muted),
-                                ),
-                              )
-                            : SingleChildScrollView(
-                                child: Wrap(
-                                  spacing: 16,
-                                  runSpacing: 16,
-                                  children: _vanStaff
-                                      .map((u) => _VanStaffCard(user: u))
-                                      .toList(),
-                                ),
-                              ),
+                    : _vanStaff.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'ไม่มีบัญชี POS Staff',
+                          style: TextStyle(color: AppColors.muted),
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        child: Wrap(
+                          spacing: 16,
+                          runSpacing: 16,
+                          children: _vanStaff
+                              .map((u) => _VanStaffCard(user: u))
+                              .toList(),
+                        ),
+                      ),
               ),
             ],
           ),
@@ -140,8 +130,7 @@ class _VanStaffCard extends StatelessWidget {
       width: 220,
       child: Card(
         elevation: 1,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -151,10 +140,12 @@ class _VanStaffCard extends StatelessWidget {
                 children: [
                   CircleAvatar(
                     radius: 20,
-                    backgroundColor:
-                        AppColors.primary.withValues(alpha: 0.1),
-                    child: const Icon(Icons.local_shipping_outlined,
-                        color: AppColors.primary, size: 20),
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                    child: const Icon(
+                      Icons.local_shipping_outlined,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
                   ),
                   const Spacer(),
                   Row(
@@ -169,9 +160,7 @@ class _VanStaffCard extends StatelessWidget {
                         isActive ? 'Active' : 'Inactive',
                         style: TextStyle(
                           fontSize: 11,
-                          color: isActive
-                              ? Colors.green.shade700
-                              : Colors.grey,
+                          color: isActive ? Colors.green.shade700 : Colors.grey,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -183,15 +172,16 @@ class _VanStaffCard extends StatelessWidget {
               Text(
                 name.isNotEmpty ? name : username,
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 14),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               if (username.isNotEmpty)
                 Text(
                   '@$username',
-                  style: const TextStyle(
-                      color: AppColors.muted, fontSize: 12),
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -199,14 +189,19 @@ class _VanStaffCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(Icons.store_outlined,
-                        size: 13, color: AppColors.muted),
+                    const Icon(
+                      Icons.store_outlined,
+                      size: 13,
+                      color: AppColors.muted,
+                    ),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         branchId,
                         style: const TextStyle(
-                            fontSize: 12, color: AppColors.muted),
+                          fontSize: 12,
+                          color: AppColors.muted,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

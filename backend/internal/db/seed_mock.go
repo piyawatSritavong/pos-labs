@@ -263,9 +263,9 @@ func SeedMockData(db *sql.DB) error {
 		if _, err := tx.Exec(`
 			INSERT INTO "address_master"(
 				"code", "part_code", "store_id", "shelf",
-				"qty", "min", "max", "rop", "remarks"
+				"qty", "rop", "remarks"
 			)
-			VALUES ($1, $2, 'main', 'A-01', 100, 10, 200, 20, 'Mock location - main store')
+			VALUES ($1, $2, 'main', 'A-01', 100, 20, 'Mock location - main store')
 		`, addrCode, partCode); err != nil {
 			return err
 		}
@@ -279,9 +279,9 @@ func SeedMockData(db *sql.DB) error {
 		if _, err := tx.Exec(`
 			INSERT INTO "address_master"(
 				"code", "part_code", "store_id", "shelf",
-				"qty", "min", "max", "rop", "remarks"
+				"qty", "rop", "remarks"
 			)
-			VALUES ($1, $2, 'tmp_store', 'B-01', 50, 5, 100, 10, 'Mock location - tmp store')
+			VALUES ($1, $2, 'tmp_store', 'B-01', 50, 10, 'Mock location - tmp store')
 		`, addrCode, partCode); err != nil {
 			return err
 		}
@@ -294,9 +294,9 @@ func SeedMockData(db *sql.DB) error {
 		if _, err := tx.Exec(`
 			INSERT INTO "address_master"(
 				"code", "part_code", "store_id", "shelf",
-				"qty", "min", "max", "rop", "remarks"
+				"qty", "rop", "remarks"
 			)
-			VALUES ($1, $2, 'store_00001', 'C-01', 75, 10, 150, 15, 'Mock location - branch 2')
+			VALUES ($1, $2, 'store_00001', 'C-01', 75, 15, 'Mock location - branch 2')
 		`, addrCode, partCode); err != nil {
 			return err
 		}
@@ -321,9 +321,9 @@ func SeedMockData(db *sql.DB) error {
 	if _, err := tx.Exec(`
 		INSERT INTO "address_master"(
 			"code", "part_code", "store_id", "shelf",
-			"qty", "min", "max", "rop", "remarks"
+			"qty", "rop", "remarks"
 		)
-		VALUES ('TMP0011', $1, 'tmp_store', 'B-02', 30, 5, 100, 10, 'Test location - tmp store (no default)')
+		VALUES ('TMP0011', $1, 'tmp_store', 'B-02', 30, 10, 'Test location - tmp store (no default)')
 	`, testPartCode); err != nil {
 		return err
 	}
@@ -332,9 +332,9 @@ func SeedMockData(db *sql.DB) error {
 	if _, err := tx.Exec(`
 		INSERT INTO "address_master"(
 			"code", "part_code", "store_id", "shelf",
-			"qty", "min", "max", "rop", "remarks"
+			"qty", "rop", "remarks"
 		)
-		VALUES ('NDS0011', $1, 'no_default_store', 'C-02', 25, 5, 100, 10, 'Test location - no default store')
+		VALUES ('NDS0011', $1, 'no_default_store', 'C-02', 25, 10, 'Test location - no default store')
 	`, testPartCode); err != nil {
 		return err
 	}
@@ -358,9 +358,9 @@ func SeedMockData(db *sql.DB) error {
 	if _, err := tx.Exec(`
 		INSERT INTO "address_master"(
 			"code", "part_code", "store_id", "shelf",
-			"qty", "min", "max", "rop", "remarks"
+			"qty", "rop", "remarks"
 		)
-		VALUES ('BR2ONLY', $1, 'store_00001', 'C-03', 40, 5, 100, 10, 'Test location - branch 2 only')
+		VALUES ('BR2ONLY', $1, 'store_00001', 'C-03', 40, 10, 'Test location - branch 2 only')
 	`, branch2OnlyPartCode); err != nil {
 		return err
 	}

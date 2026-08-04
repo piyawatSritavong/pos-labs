@@ -4,6 +4,7 @@ import 'package:frontend/config/feature_flags.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/screens/login_screen.dart';
 import 'package:frontend/services/api_operations.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
@@ -143,10 +144,18 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-          _isLoadingSummary = false;
-        });
+        setState(() => _isLoadingSummary = false);
+        final retry = await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'โหลดสรุปยอดไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry && mounted) {
+          await _loadSummary();
+        } else if (mounted) {
+          Navigator.of(context).pop();
+        }
       }
     }
   }
@@ -203,10 +212,12 @@ class _DailyCloseDialogState extends State<DailyCloseDialog> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-          _isClosing = false;
-        });
+        setState(() => _isClosing = false);
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ปิดยอดไม่สำเร็จ',
+        );
       }
     }
   }

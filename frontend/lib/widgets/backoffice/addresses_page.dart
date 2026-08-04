@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 
 class AddressesManagementSection extends StatefulWidget {
   const AddressesManagementSection({super.key});
@@ -23,8 +24,6 @@ class _AddressesManagementSectionState
   int _pageSize = 50;
 
   bool _isLoading = false;
-  String? _errorMessage;
-
   // Current page of results.
   List<Map<String, dynamic>> _addresses = [];
 
@@ -63,9 +62,11 @@ class _AddressesManagementSectionState
     final token = auth.token;
 
     if (token == null || token.isEmpty) {
-      setState(() {
-        _errorMessage = 'No auth token. Please login again.';
-      });
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
+      );
       return;
     }
 
@@ -73,7 +74,6 @@ class _AddressesManagementSectionState
 
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     try {
@@ -99,9 +99,15 @@ class _AddressesManagementSectionState
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _errorMessage = e.toString();
-      });
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดข้อมูลคลังสินค้าไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) {
+        await _load();
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -131,7 +137,8 @@ class _AddressesManagementSectionState
     await _load();
   }
 
-  int get _pageCount => _total <= 0 ? 1 : ((_total + _pageSize - 1) ~/ _pageSize);
+  int get _pageCount =>
+      _total <= 0 ? 1 : ((_total + _pageSize - 1) ~/ _pageSize);
   int get _currentPage => (_offset ~/ _pageSize) + 1;
 
   Future<void> _goToPage(int page) async {
@@ -234,8 +241,6 @@ class _AddressesManagementSectionState
                     padding: const EdgeInsets.all(16.0),
                     child: _isLoading
                         ? const Center(child: CircularProgressIndicator())
-                        : _errorMessage != null
-                        ? _buildErrorState()
                         : _addresses.isEmpty
                         ? const Center(child: Text('No addresses found.'))
                         : _buildDataTable(_addresses),
@@ -254,8 +259,7 @@ class _AddressesManagementSectionState
                     value: _pageSize,
                     items: const [20, 50, 100]
                         .map(
-                          (s) =>
-                              DropdownMenuItem(value: s, child: Text('$s')),
+                          (s) => DropdownMenuItem(value: s, child: Text('$s')),
                         )
                         .toList(),
                     onChanged: _isLoading
@@ -300,33 +304,14 @@ class _AddressesManagementSectionState
     );
   }
 
-  Widget _buildErrorState() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(Icons.error_outline, color: Colors.red),
-        const SizedBox(height: 8),
-        Text(_errorMessage ?? 'Unknown error', textAlign: TextAlign.center),
-        const SizedBox(height: 12),
-        ElevatedButton.icon(
-          onPressed: () => _load(),
-          icon: const Icon(Icons.refresh),
-          label: const Text('Retry'),
-        ),
-      ],
-    );
-  }
-
-  // Edit the low-stock thresholds (Min / ROP / Max) for one address. ROP is the
+  // Edit quantity and the ROP low-stock threshold for one address. ROP is the
   // reorder point the POS "สต็อกใกล้หมด" alert uses (per product). Current
   // qty/shelf/remarks are re-sent so a partial update never wipes them.
   Future<void> _editThreshold(Map<String, dynamic> a) async {
     final code = (a['code'] ?? '').toString();
     if (code.isEmpty) return;
     final qtyC = TextEditingController(text: (a['qty'] ?? '').toString());
-    final minC = TextEditingController(text: (a['min'] ?? '').toString());
     final ropC = TextEditingController(text: (a['rop'] ?? '').toString());
-    final maxC = TextEditingController(text: (a['max'] ?? '').toString());
 
     final ok = await showDialog<bool>(
       context: context,
@@ -346,30 +331,10 @@ class _AddressesManagementSectionState
             ),
             const SizedBox(height: 10),
             TextField(
-              controller: minC,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Min (ขั้นต่ำ)',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
               controller: ropC,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: 'ROP (จุดสั่งซื้อ — ใช้แจ้งเตือนสต๊อกใกล้หมด)',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: maxC,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Max (สูงสุด)',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
@@ -402,19 +367,19 @@ class _AddressesManagementSectionState
         shelf: (a['shelf'] ?? '').toString(),
         qty: toInt(qtyC.text),
         remarks: (a['remarks'] ?? '').toString(),
-        min: toInt(minC.text),
         rop: toInt(ropC.text),
-        max: toInt(maxC.text),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('บันทึกค่าแจ้งเตือนแล้ว')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('บันทึกค่าแจ้งเตือนแล้ว')));
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'บันทึกข้อมูลคลังสินค้าไม่สำเร็จ',
       );
     }
   }
@@ -435,8 +400,7 @@ class _AddressesManagementSectionState
               DataColumn(label: Text('Store')),
               DataColumn(label: Text('Shelf')),
               DataColumn(label: Text('Qty')),
-              DataColumn(label: Text('Min / ROP')),
-              DataColumn(label: Text('Max')),
+              DataColumn(label: Text('ROP')),
               DataColumn(label: Text('แก้ไข')),
             ],
             rows: items.map((a) {
@@ -446,9 +410,7 @@ class _AddressesManagementSectionState
                   .toString();
               final shelf = (a['shelf'] ?? '').toString();
               final qty = (a['qty'] ?? '').toString();
-              final min = (a['min'] ?? '').toString();
               final rop = (a['rop'] ?? '').toString();
-              final max = (a['max'] ?? '').toString();
 
               return DataRow(
                 cells: [
@@ -457,16 +419,11 @@ class _AddressesManagementSectionState
                   DataCell(Text(storeName.isEmpty ? '-' : storeName)),
                   DataCell(Text(shelf.isEmpty ? '-' : shelf)),
                   DataCell(Text(qty.isEmpty ? '-' : qty)),
-                  DataCell(
-                    Text(
-                      '${min.isEmpty ? '-' : min} / ${rop.isEmpty ? '-' : rop}',
-                    ),
-                  ),
-                  DataCell(Text(max.isEmpty ? '-' : max)),
+                  DataCell(Text(rop.isEmpty ? '-' : rop)),
                   DataCell(
                     IconButton(
                       icon: const Icon(Icons.edit_outlined),
-                      tooltip: 'แก้ไขจำนวน/จุดแจ้งเตือน (Qty/Min/ROP/Max)',
+                      tooltip: 'แก้ไขจำนวน/จุดสั่งซื้อ (Qty/ROP)',
                       onPressed: () => _editThreshold(a),
                     ),
                   ),

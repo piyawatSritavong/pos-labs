@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -126,7 +127,14 @@ class _MyRestocksTabState extends State<_MyRestocksTab> {
       );
       if (mounted) setState(() => _transfers = list);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (!mounted) return;
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดประวัติใบเบิกไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) await _load();
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -143,9 +151,11 @@ class _MyRestocksTabState extends State<_MyRestocksTab> {
       _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await AppDialogService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text('ยกเลิกไม่สำเร็จ: $e')));
+        error: e,
+        fallback: 'ยกเลิกใบเบิกไม่สำเร็จ',
+      );
     }
   }
 
@@ -320,7 +330,13 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
       _draftId = id;
       _notesController.text = transfer['notes']?.toString() ?? '';
     } catch (e) {
-      _error = e.toString();
+      if (mounted) {
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'โหลดใบเบิกไม่สำเร็จ',
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -363,7 +379,13 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
       _addPart(part);
       _scanController.clear();
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) {
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ค้นหาสินค้าไม่สำเร็จ',
+        );
+      }
     }
   }
 
@@ -409,7 +431,13 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
       }
       return _draftId;
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) {
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'บันทึกใบเบิกไม่สำเร็จ',
+        );
+      }
       return null;
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -433,7 +461,13 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
       ).showSnackBar(const SnackBar(content: Text('ส่งใบเบิกให้ HQ ตรวจแล้ว')));
       _clear();
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) {
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ส่งใบเบิกไม่สำเร็จ',
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -445,7 +479,13 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
       try {
         await ApiOperationsService.cancelTransfer(token: token, id: _draftId!);
       } catch (e) {
-        if (mounted) setState(() => _error = e.toString());
+        if (mounted) {
+          await AppDialogService.showError(
+            context,
+            error: e,
+            fallback: 'ยกเลิกใบเบิกไม่สำเร็จ',
+          );
+        }
         return;
       }
     }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/company_provider.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:provider/provider.dart';
 
 class EditCompanyDialog extends StatefulWidget {
@@ -54,7 +55,7 @@ class _EditCompanyDialogState extends State<EditCompanyDialog> {
     _logoUrlController = TextEditingController(
       text: widget.company['logoUrl']?.toString() ?? '',
     );
-    
+
     // taxRate มาเป็น 0.07 ต้องแปลงเป็น 7
     final taxRate = widget.company['taxRate'];
     double taxRatePercent = 0;
@@ -104,11 +105,10 @@ class _EditCompanyDialogState extends State<EditCompanyDialog> {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ไม่พบ token กรุณาเข้าสู่ระบบใหม่'),
-            backgroundColor: Colors.red,
-          ),
+        await AppDialogService.showError(
+          context,
+          error: Exception('missing_token'),
+          fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
         );
       }
       return;
@@ -142,11 +142,10 @@ class _EditCompanyDialogState extends State<EditCompanyDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('เกิดข้อผิดพลาด: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'บันทึกข้อมูลบริษัทไม่สำเร็จ',
         );
       }
     } finally {

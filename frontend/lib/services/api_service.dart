@@ -1,7 +1,22 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:frontend/config/api_config.dart';
-import 'package:http/http.dart' as http;
+import 'api_http.dart' as http;
+import 'api_exception.dart';
+
+class LoginResult {
+  const LoginResult({
+    required this.token,
+    required this.name,
+    required this.roleId,
+    required this.sessionState,
+  });
+
+  final String token;
+  final String name;
+  final String roleId;
+  final String sessionState;
+}
 
 class ApiService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
@@ -106,7 +121,7 @@ class ApiService {
   // ======================================================================
 
   // 1.1) POST /auth/login
-  static Future<String> login(String username, String password) async {
+  static Future<LoginResult> login(String username, String password) async {
     final uri = Uri.parse('$baseUrl/auth/login');
 
     final response = await http.post(
@@ -122,18 +137,32 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Login failed: ${response.statusCode} ${response.body}');
+      throw ApiException.fromResponse(
+        response,
+        fallback: 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+      );
     }
 
     final decoded = jsonDecode(response.body);
 
     if (decoded is Map<String, dynamic>) {
       if (decoded['token'] is String) {
-        return decoded['token'] as String;
+        return LoginResult(
+          token: decoded['token'] as String,
+          name: decoded['name']?.toString() ?? username,
+          roleId: decoded['roleId']?.toString() ?? '',
+          sessionState: decoded['sessionState']?.toString() ?? 'active',
+        );
       }
       if (decoded['data'] is Map<String, dynamic> &&
           (decoded['data'] as Map<String, dynamic>)['token'] is String) {
-        return (decoded['data'] as Map<String, dynamic>)['token'] as String;
+        final data = decoded['data'] as Map<String, dynamic>;
+        return LoginResult(
+          token: data['token'] as String,
+          name: data['name']?.toString() ?? username,
+          roleId: data['roleId']?.toString() ?? '',
+          sessionState: data['sessionState']?.toString() ?? 'active',
+        );
       }
     }
 
@@ -166,6 +195,55 @@ class ApiService {
     if (response.statusCode != 200 && response.statusCode != 204) {
       throw Exception('Logout failed: ${response.statusCode} ${response.body}');
     }
+  }
+
+  static Future<Map<String, dynamic>> getSessionState(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/auth/session-state'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
+      throw ApiException.fromResponse(response);
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    throw const ApiException(message: 'อ่านสถานะการเข้าสู่ระบบไม่สำเร็จ');
+  }
+
+  static Future<void> resolveSessionConflict({
+    required String token,
+    required String decision,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/session-conflict/resolve'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'decision': decision}),
+    );
+    if (response.statusCode != 200) {
+      throw ApiException.fromResponse(
+        response,
+        fallback: 'ยืนยันการเข้าสู่ระบบไม่สำเร็จ',
+      );
+    }
+  }
+
+  static Future<Map<String, dynamic>> getNextPartCode(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/parts/next-code'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
+      throw ApiException.fromResponse(
+        response,
+        fallback: 'สร้างรหัสสินค้าอัตโนมัติไม่สำเร็จ',
+      );
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    throw const ApiException(message: 'รูปแบบรหัสสินค้าไม่ถูกต้อง');
   }
 
   // 1.3) GET /auth/me
@@ -1360,7 +1438,8 @@ class ApiService {
       queryParams['categoryId'] = categoryId;
     }
     if (isActive != null) queryParams['isActive'] = isActive.toString();
-    if (crossBranch != null) queryParams['crossBranch'] = crossBranch.toString();
+    if (crossBranch != null)
+      queryParams['crossBranch'] = crossBranch.toString();
 
     final uri = Uri.parse(
       '$baseUrl/parts/search',
@@ -1999,8 +2078,6 @@ class ApiService {
     required String storeId,
     String? shelf,
     int? qty,
-    int? min,
-    int? max,
     int? rop,
     String? remarks,
   }) async {
@@ -2011,8 +2088,6 @@ class ApiService {
       'storeId': storeId,
       'shelf': shelf,
       'qty': qty,
-      'min': min,
-      'max': max,
       'rop': rop,
       'remarks': remarks,
     }..removeWhere((key, value) => value == null);
@@ -2042,8 +2117,6 @@ class ApiService {
     required String storeId,
     String? shelf,
     int? qty,
-    int? min,
-    int? max,
     int? rop,
     String? remarks,
   }) async {
@@ -2053,8 +2126,6 @@ class ApiService {
       'storeId': storeId,
       'shelf': shelf,
       'qty': qty,
-      'min': min,
-      'max': max,
       'rop': rop,
       'remarks': remarks,
     }..removeWhere((key, value) => value == null);
@@ -2150,8 +2221,9 @@ class ApiService {
     if (dateFrom != null && dateFrom.isNotEmpty) params['dateFrom'] = dateFrom;
     if (dateTo != null && dateTo.isNotEmpty) params['dateTo'] = dateTo;
     if (date != null && date.isNotEmpty) params['date'] = date;
-    final uri =
-        Uri.parse('$baseUrl/reports/bills').replace(queryParameters: params);
+    final uri = Uri.parse(
+      '$baseUrl/reports/bills',
+    ).replace(queryParameters: params);
 
     final response = await http.get(
       uri,

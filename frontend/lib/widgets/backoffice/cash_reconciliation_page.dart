@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/config/feature_flags.dart';
 import 'package:frontend/services/api_operations.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
@@ -20,7 +21,6 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
   List<Map<String, dynamic>> _reconciliations = [];
   bool _loadingPending = false;
   bool _loadingHistory = false;
-  String? _error;
 
   Map<String, dynamic>? _selectedClose;
   final _actualAmountController = TextEditingController();
@@ -53,7 +53,6 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
     if (token == null) return;
     setState(() {
       _loadingPending = true;
-      _error = null;
     });
     try {
       final all = await ApiOperationsService.getDailyCloses(
@@ -66,7 +65,13 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
       if (mounted) setState(() => _pendingCloses = closes);
     } catch (e) {
       if (mounted) {
-        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+        final retry = await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'โหลดรายการรอยืนยันไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry && mounted) await _fetchPending();
       }
     } finally {
       if (mounted) setState(() => _loadingPending = false);
@@ -83,7 +88,16 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
         limit: 100,
       );
       if (mounted) setState(() => _reconciliations = recons);
-    } catch (_) {
+    } catch (e) {
+      if (mounted) {
+        final retry = await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'โหลดประวัติการยืนยันไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry && mounted) await _fetchHistory();
+      }
     } finally {
       if (mounted) setState(() => _loadingHistory = false);
     }
@@ -123,8 +137,10 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
       }
     } catch (e) {
       if (mounted) {
-        setState(
-          () => _submitError = e.toString().replaceFirst('Exception: ', ''),
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ยืนยันการรับเงินไม่สำเร็จ',
         );
       }
     } finally {
@@ -147,14 +163,6 @@ class _CashReconciliationPageState extends State<CashReconciliationPage>
             Tab(text: 'ประวัติการยืนยัน'),
           ],
         ),
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              _error!,
-              style: const TextStyle(color: AppColors.danger),
-            ),
-          ),
         Expanded(
           child: TabBarView(
             controller: _tabController,

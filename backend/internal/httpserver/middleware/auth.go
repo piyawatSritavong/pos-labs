@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"strings"
@@ -80,11 +81,14 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 			}
 		}
 
-		ip := c.ClientIP()
 		now := time.Now().UTC()
 
-		sess, user, err := m.sessions.GetValidWithUserByID(c.Request.Context(), token, ip, now)
+		sess, user, err := m.sessions.GetValidWithUserByID(c.Request.Context(), token)
 		if err != nil {
+			if errors.Is(err, repository.ErrSessionPending) {
+				c.AbortWithStatusJSON(http.StatusLocked, gin.H{"error": "session_pending"})
+				return
+			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_or_expired_session"})
 			return
 		}
@@ -128,11 +132,14 @@ func (m *AuthMiddleware) RequirePermission(resource, action string) gin.HandlerF
 			}
 		}
 
-		ip := c.ClientIP()
 		now := time.Now().UTC()
 
-		sess, user, err := m.sessions.GetValidWithUserByID(c.Request.Context(), token, ip, now)
+		sess, user, err := m.sessions.GetValidWithUserByID(c.Request.Context(), token)
 		if err != nil {
+			if errors.Is(err, repository.ErrSessionPending) {
+				c.AbortWithStatusJSON(http.StatusLocked, gin.H{"error": "session_pending"})
+				return
+			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_or_expired_session"})
 			return
 		}

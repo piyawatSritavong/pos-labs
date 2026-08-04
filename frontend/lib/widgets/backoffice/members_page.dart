@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -46,9 +47,13 @@ class _MembersManagementSectionState extends State<MembersManagementSection> {
       setState(() => _members = members);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      final retry = await AppDialogService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text('โหลดสมาชิกไม่สำเร็จ: $e')));
+        error: e,
+        fallback: 'โหลดข้อมูลสมาชิกไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) await _loadMembers();
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -202,10 +207,10 @@ class _MembersManagementSectionState extends State<MembersManagementSection> {
                           } catch (e) {
                             if (!mounted) return;
                             setDialogState(() => isSaving = false);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('บันทึกสมาชิกไม่สำเร็จ: $e'),
-                              ),
+                            await AppDialogService.showError(
+                              context,
+                              error: e,
+                              fallback: 'บันทึกข้อมูลสมาชิกไม่สำเร็จ',
                             );
                           }
                         },
@@ -262,9 +267,11 @@ class _MembersManagementSectionState extends State<MembersManagementSection> {
       ).showSnackBar(const SnackBar(content: Text('ลบสมาชิกแล้ว')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await AppDialogService.showError(
         context,
-      ).showSnackBar(SnackBar(content: Text('ลบสมาชิกไม่สำเร็จ: $e')));
+        error: e,
+        fallback: 'ลบข้อมูลสมาชิกไม่สำเร็จ',
+      );
     }
   }
 

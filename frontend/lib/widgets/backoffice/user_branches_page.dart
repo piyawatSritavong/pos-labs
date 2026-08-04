@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
 
@@ -93,9 +94,13 @@ class _UserBranchesSectionState extends State<UserBranchesSection> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('โหลดข้อมูลผู้ใช้/สาขาไม่สำเร็จ: $e')),
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดข้อมูลผู้ใช้และสาขาไม่สำเร็จ',
+        allowRetry: true,
       );
+      if (retry && mounted) await _loadInitialData();
     } finally {
       if (mounted) {
         setState(() {
@@ -134,9 +139,13 @@ class _UserBranchesSectionState extends State<UserBranchesSection> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('โหลดพนักงานในสาขาไม่สำเร็จ: $e')),
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดพนักงานในสาขาไม่สำเร็จ',
+        allowRetry: true,
       );
+      if (retry && mounted) await _loadUserBranchesForBranch(branchKey);
     } finally {
       if (mounted) {
         setState(() {
@@ -179,10 +188,12 @@ class _UserBranchesSectionState extends State<UserBranchesSection> {
                       key: ValueKey('branch_${_selectedBranchKey ?? ''}'),
                       initialValue: _selectedBranchKey,
                       items: _branches
-                          .map((b) => DropdownMenuItem<String>(
-                                value: _branchKey(b),
-                                child: Text(_branchDisplay(b)),
-                              ))
+                          .map(
+                            (b) => DropdownMenuItem<String>(
+                              value: _branchKey(b),
+                              child: Text(_branchDisplay(b)),
+                            ),
+                          )
                           .toList(),
                       onChanged: (value) async {
                         if (value == null) return;
@@ -216,7 +227,8 @@ class _UserBranchesSectionState extends State<UserBranchesSection> {
                 child: Card(
                   elevation: 1,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                   clipBehavior: Clip.antiAlias,
                   child: Container(
                     color: AppColors.surface,
@@ -227,12 +239,15 @@ class _UserBranchesSectionState extends State<UserBranchesSection> {
                         Text(
                           'พนักงานในสาขา (${employeesInBranch.length} คน)',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         if (_isLoadingBranchMappings)
                           const Expanded(
-                              child: Center(child: CircularProgressIndicator()))
+                            child: Center(child: CircularProgressIndicator()),
+                          )
                         else if (employeesInBranch.isEmpty)
                           const Expanded(
                             child: Center(
@@ -247,50 +262,55 @@ class _UserBranchesSectionState extends State<UserBranchesSection> {
                             child: ListView.separated(
                               itemCount: employeesInBranch.length,
                               separatorBuilder: (_, _) => const Divider(
-                                  height: 1, color: AppColors.border),
+                                height: 1,
+                                color: AppColors.border,
+                              ),
                               itemBuilder: (context, i) {
                                 final u = employeesInBranch[i];
                                 final username =
                                     u['username']?.toString() ?? '';
                                 final name = u['name']?.toString() ?? '';
-                                final roleId =
-                                    u['roleId']?.toString() ?? '';
-                                final roleLabel =
-                                    roleId == 'role.admin'
-                                        ? 'Super Admin'
-                                        : roleId == 'role.hq_manager'
-                                            ? 'HQ Manager'
-                                            : roleId == 'role.van_staff'
-                                                ? 'POS Staff'
-                                                : roleId;
+                                final roleId = u['roleId']?.toString() ?? '';
+                                final roleLabel = roleId == 'role.admin'
+                                    ? 'Super Admin'
+                                    : roleId == 'role.hq_manager'
+                                    ? 'HQ Manager'
+                                    : roleId == 'role.van_staff'
+                                    ? 'POS Staff'
+                                    : roleId;
                                 return ListTile(
                                   leading: const Icon(Icons.person_outline),
                                   title: Text(
-                                      name.isNotEmpty ? name : username),
+                                    name.isNotEmpty ? name : username,
+                                  ),
                                   subtitle: username.isNotEmpty
                                       ? Text(username)
                                       : null,
                                   trailing: roleLabel.isNotEmpty
                                       ? Container(
-                                          padding:
-                                              const EdgeInsets.symmetric(
-                                                  horizontal: 8, vertical: 3),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
                                           decoration: BoxDecoration(
-                                            color: AppColors.primary
-                                                .withValues(alpha: 0.08),
-                                            borderRadius:
-                                                BorderRadius.circular(6),
+                                            color: AppColors.primary.withValues(
+                                              alpha: 0.08,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
                                             border: Border.all(
-                                                color: AppColors.primary
-                                                    .withValues(alpha: 0.3)),
+                                              color: AppColors.primary
+                                                  .withValues(alpha: 0.3),
+                                            ),
                                           ),
                                           child: Text(
                                             roleLabel,
                                             style: const TextStyle(
-                                                color: AppColors.primary,
-                                                fontSize: 11,
-                                                fontWeight:
-                                                    FontWeight.bold),
+                                              color: AppColors.primary,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
                                         )
                                       : null,

@@ -4,6 +4,7 @@ import 'package:frontend/providers/branches_provider.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/widgets/branches/create_branch_dialog.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 
 class BranchesTab extends StatefulWidget {
   const BranchesTab({super.key, this.data});
@@ -48,7 +49,9 @@ class _BranchesTabState extends State<BranchesTab> {
     super.dispose();
   }
 
-  List<Map<String, dynamic>> _getBranchesFromProvider(BranchesProvider branchesProvider) {
+  List<Map<String, dynamic>> _getBranchesFromProvider(
+    BranchesProvider branchesProvider,
+  ) {
     if (branchesProvider.branches.isNotEmpty) {
       return branchesProvider.branches;
     }
@@ -58,7 +61,9 @@ class _BranchesTabState extends State<BranchesTab> {
     return [];
   }
 
-  List<Map<String, dynamic>> _getFilteredBranches(BranchesProvider branchesProvider) {
+  List<Map<String, dynamic>> _getFilteredBranches(
+    BranchesProvider branchesProvider,
+  ) {
     final branches = _getBranchesFromProvider(branchesProvider);
     if (_searchQuery.isEmpty) return branches;
     return branches.where((branch) {
@@ -106,17 +111,16 @@ class _BranchesTabState extends State<BranchesTab> {
           isActive: result['isActive'] ?? true,
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('อัพเดทสาขาสำเร็จ')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('อัพเดทสาขาสำเร็จ')));
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('เกิดข้อผิดพลาด: ${e.toString()}'),
-              backgroundColor: Colors.red,
-            ),
+          await AppDialogService.showError(
+            context,
+            error: e,
+            fallback: 'อัปเดตสาขาไม่สำเร็จ',
           );
         }
       }
@@ -124,7 +128,8 @@ class _BranchesTabState extends State<BranchesTab> {
   }
 
   Future<void> _handleDelete(Map<String, dynamic> branch) async {
-    final branchName = branch['branchNameTh']?.toString() ??
+    final branchName =
+        branch['branchNameTh']?.toString() ??
         branch['branchName']?.toString() ??
         'ไม่ทราบชื่อ';
 
@@ -159,17 +164,16 @@ class _BranchesTabState extends State<BranchesTab> {
           branchId: branch['branchId']?.toString() ?? '',
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('ลบสาขาสำเร็จ')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('ลบสาขาสำเร็จ')));
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('เกิดข้อผิดพลาด: ${e.toString()}'),
-              backgroundColor: Colors.red,
-            ),
+          await AppDialogService.showError(
+            context,
+            error: e,
+            fallback: 'ลบสาขาไม่สำเร็จ',
           );
         }
       }
@@ -199,10 +203,7 @@ class _BranchesTabState extends State<BranchesTab> {
                 children: [
                   const Text(
                     'ข้อมูลสาขา',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                   TextButton.icon(
                     onPressed: _handleAddBranch,
@@ -244,12 +245,13 @@ class _BranchesTabState extends State<BranchesTab> {
                 : GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 1.35,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                          childAspectRatio: 1.35,
+                        ),
                     itemCount: filteredBranches.length,
                     itemBuilder: (context, index) {
                       final branch = filteredBranches[index];
@@ -281,22 +283,20 @@ class _BranchCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final branchId = branch['branchId']?.toString() ?? '-';
-    final branchName = branch['branchNameTh']?.toString() ??
+    final branchName =
+        branch['branchNameTh']?.toString() ??
         branch['branchName']?.toString() ??
         'ไม่ทราบชื่อ';
     final branchNameEn = branch['branchName']?.toString() ?? '';
-    final address = branch['addressTh']?.toString() ??
-        branch['address']?.toString() ??
-        '-';
+    final address =
+        branch['addressTh']?.toString() ?? branch['address']?.toString() ?? '-';
     final phone = branch['phone']?.toString() ?? '-';
     final isActive = branch['isActive'] != false;
 
     return Card(
       elevation: 2,
       color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -328,7 +328,10 @@ class _BranchCard extends StatelessWidget {
                 // Branch ID
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.muted.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
@@ -345,7 +348,10 @@ class _BranchCard extends StatelessWidget {
                 ),
                 // Active Badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: isActive
                         ? Colors.green.withValues(alpha: 0.1)
@@ -404,7 +410,11 @@ class _BranchCard extends StatelessWidget {
             // Address + Phone
             Row(
               children: [
-                Icon(Icons.location_on_outlined, size: 16, color: Colors.grey[500]),
+                Icon(
+                  Icons.location_on_outlined,
+                  size: 16,
+                  color: Colors.grey[500],
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -444,7 +454,10 @@ class _BranchCard extends StatelessWidget {
                   label: const Text('แก้ไข'),
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.blue,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -454,7 +467,10 @@ class _BranchCard extends StatelessWidget {
                   label: const Text('ลบ'),
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ],

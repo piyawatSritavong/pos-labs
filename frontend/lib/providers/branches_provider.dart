@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/services/api_branches.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 
 class BranchesProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _branches = [];
@@ -11,10 +12,7 @@ class BranchesProvider extends ChangeNotifier {
   String? get error => _error;
 
   /// โหลดรายการ branches ทั้งหมด
-  Future<void> loadBranches({
-    required String token,
-    bool force = false,
-  }) async {
+  Future<void> loadBranches({required String token, bool force = false}) async {
     if (_isLoading) return;
     if (!force && _branches.isNotEmpty) return;
 
@@ -26,7 +24,7 @@ class BranchesProvider extends ChangeNotifier {
       final result = await ApiBranchesService.getBranches(token: token);
       _branches = result;
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -44,7 +42,7 @@ class BranchesProvider extends ChangeNotifier {
         branchId: branchId,
       );
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
       notifyListeners();
       rethrow;
     }
@@ -82,7 +80,7 @@ class BranchesProvider extends ChangeNotifier {
       await loadBranches(token: token, force: true);
       return newBranch;
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
       _isLoading = false;
       notifyListeners();
       rethrow;
@@ -121,7 +119,7 @@ class BranchesProvider extends ChangeNotifier {
       await loadBranches(token: token, force: true);
       return updatedBranch;
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
       _isLoading = false;
       notifyListeners();
       rethrow;
@@ -138,16 +136,13 @@ class BranchesProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await ApiBranchesService.deleteBranch(
-        token: token,
-        branchId: branchId,
-      );
+      await ApiBranchesService.deleteBranch(token: token, branchId: branchId);
 
       // Refresh list after delete
       _isLoading = false;
       await loadBranches(token: token, force: true);
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
       _isLoading = false;
       notifyListeners();
       rethrow;

@@ -1,36 +1,37 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:frontend/app.dart';
-import 'package:frontend/providers/auth_provider.dart';
-import 'package:frontend/providers/bill_provider.dart';
-import 'package:frontend/providers/branches_provider.dart';
-import 'package:frontend/providers/company_provider.dart';
-import 'package:frontend/providers/theme_provider.dart';
-import 'package:frontend/providers/users_provider.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:frontend/services/app_dialog_service.dart';
 
 void main() {
-  testWidgets('shows login screen when no saved session exists', (
-    WidgetTester tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({});
-
+  testWidgets('shows a safe standard error dialog', (tester) async {
     await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => AuthProvider()),
-          ChangeNotifierProvider(create: (_) => BillProvider()),
-          ChangeNotifierProvider(create: (_) => UsersProvider()),
-          ChangeNotifierProvider(create: (_) => CompanyProvider()),
-          ChangeNotifierProvider(create: (_) => BranchesProvider()),
-          ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ],
-        child: const MyApp(),
+      MaterialApp(
+        navigatorKey: appNavigatorKey,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                AppDialogService.showError(
+                  context,
+                  error: Exception('SQLSTATE should stay hidden'),
+                  fallback: 'โหลดข้อมูลไม่สำเร็จ',
+                  allowRetry: true,
+                );
+              },
+              child: const Text('เปิด'),
+            ),
+          ),
+        ),
       ),
     );
+
+    await tester.tap(find.text('เปิด'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Login'), findsOneWidget);
-    expect(find.text('เข้าสู่ระบบ'), findsOneWidget);
+    expect(find.text('เกิดข้อผิดพลาด'), findsOneWidget);
+    expect(find.text('โหลดข้อมูลไม่สำเร็จ'), findsOneWidget);
+    expect(find.text('ลองใหม่'), findsOneWidget);
+    expect(find.textContaining('SQLSTATE'), findsNothing);
   });
 }

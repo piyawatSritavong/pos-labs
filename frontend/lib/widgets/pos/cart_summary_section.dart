@@ -6,6 +6,7 @@ import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/providers/company_provider.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
@@ -140,11 +141,12 @@ class _CartSummarySectionState extends State<CartSummarySection> {
 
     final auth = context.read<AuthProvider>();
     final bill = context.read<BillProvider>();
-    final messenger = ScaffoldMessenger.of(context);
     final token = auth.token;
     if (token == null) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -178,8 +180,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         );
       }
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('อัปเดตจำนวนสินค้าไม่สำเร็จ: $e')),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'อัปเดตจำนวนสินค้าไม่สำเร็จ',
       );
     }
   }
@@ -203,7 +207,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     if (message.contains('invalid_line_total')) {
       return 'กรุณากรอกราคามากกว่า 0';
     }
-    return 'แก้ไขราคาไม่สำเร็จ: $error';
+    return 'แก้ไขราคาไม่สำเร็จ';
   }
 
   Future<void> _increaseItemQty(
@@ -215,11 +219,12 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     }
     final auth = context.read<AuthProvider>();
     final bill = context.read<BillProvider>();
-    final messenger = ScaffoldMessenger.of(context);
     final token = auth.token;
     if (token == null) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -233,8 +238,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         qty: 1,
       );
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('เพิ่มจำนวนสินค้าไม่สำเร็จ: $e')),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'เพิ่มจำนวนสินค้าไม่สำเร็จ',
       );
     }
   }
@@ -248,11 +255,12 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     }
     final auth = context.read<AuthProvider>();
     final bill = context.read<BillProvider>();
-    final messenger = ScaffoldMessenger.of(context);
     final token = auth.token;
     if (token == null) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -267,8 +275,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         isRemoveAll: item.qty <= 1,
       );
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('ลดจำนวนสินค้าไม่สำเร็จ: $e')),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'ลดจำนวนสินค้าไม่สำเร็จ',
       );
     }
   }
@@ -309,12 +319,13 @@ class _CartSummarySectionState extends State<CartSummarySection> {
 
     final auth = context.read<AuthProvider>();
     final bill = context.read<BillProvider>();
-    final messenger = ScaffoldMessenger.of(context);
     final token = auth.token;
     if (token == null) {
       controller.text = currentLineTotal.toStringAsFixed(2);
-      messenger.showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -328,8 +339,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       );
     } catch (e) {
       controller.text = currentLineTotal.toStringAsFixed(2);
-      messenger.showSnackBar(
-        SnackBar(content: Text(_friendlyItemPriceError(e))),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: _friendlyItemPriceError(e),
       );
     }
   }
@@ -397,8 +410,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     final messenger = ScaffoldMessenger.of(context);
     final token = auth.token;
     if (token == null) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -409,7 +424,11 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       bill.resetCurrentBillState();
       messenger.showSnackBar(const SnackBar(content: Text('พักบิลแล้ว')));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('พักบิลไม่สำเร็จ: $e')));
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'พักบิลไม่สำเร็จ',
+      );
     }
   }
 
@@ -419,8 +438,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     final messenger = ScaffoldMessenger.of(context);
     final token = auth.token;
     if (token == null) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -430,7 +451,11 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       await bill.clearBill(token: token);
       messenger.showSnackBar(const SnackBar(content: Text('ล้างตะกร้าแล้ว')));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('ล้างบิลไม่สำเร็จ: $e')));
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'ล้างบิลไม่สำเร็จ',
+      );
     }
   }
 
@@ -440,8 +465,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     final messenger = ScaffoldMessenger.of(context);
     final token = auth.token;
     if (token == null) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
+      await AppDialogService.showError(
+        context,
+        error: Exception('missing_token'),
+        fallback: 'กรุณาเข้าสู่ระบบอีกครั้ง',
       );
       return;
     }
@@ -463,11 +490,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.red.shade700,
-          content: Text(_memberAttachErrorMessage(e)),
-        ),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: _memberAttachErrorMessage(e),
       );
     }
   }
@@ -490,7 +516,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         s.contains('missing_bill_id')) {
       return 'ยังไม่มีบิล กรุณาเพิ่มสินค้าลงตะกร้าก่อนผูกสมาชิก';
     }
-    return 'ผูกสมาชิกไม่สำเร็จ: $e';
+    return 'ผูกสมาชิกไม่สำเร็จ';
   }
 
   void _applyQuickDiscount(
@@ -640,8 +666,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         await bill.clearManualDiscount(token: token);
         return true;
       } catch (e) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('ลบส่วนลดไม่สำเร็จ: $e')),
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ลบส่วนลดไม่สำเร็จ',
         );
         return false;
       }
@@ -660,8 +688,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         await bill.clearManualDiscount(token: token);
         return true;
       } catch (e) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('ลบส่วนลดไม่สำเร็จ: $e')),
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ลบส่วนลดไม่สำเร็จ',
         );
         return false;
       }
@@ -675,8 +705,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       );
       return true;
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('บันทึกส่วนลดไม่สำเร็จ: $e')),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'บันทึกส่วนลดไม่สำเร็จ',
       );
       return false;
     }
@@ -1472,10 +1504,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                                     .unassignMember(token: token);
                               } catch (e) {
                                 if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('ยกเลิกสมาชิกไม่สำเร็จ: $e'),
-                                  ),
+                                await AppDialogService.showError(
+                                  context,
+                                  error: e,
+                                  fallback: 'ยกเลิกสมาชิกไม่สำเร็จ',
                                 );
                               }
                             },
@@ -1924,14 +1956,12 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _finalizeError = e.toString();
+        _finalizeError = 'ปิดการขายไม่สำเร็จ';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.red.shade700,
-          content: Text('ปิดการขายไม่สำเร็จ: $e'),
-          duration: const Duration(seconds: 4),
-        ),
+      await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'ปิดการขายไม่สำเร็จ',
       );
     } finally {
       if (mounted) {
@@ -2329,8 +2359,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () =>
-                            _handleFinalize(closeOnSuccess: false),
+                        onPressed: () => _handleFinalize(closeOnSuccess: false),
                         child: const Text('ลองใหม่อีกครั้ง'),
                       ),
                     ),

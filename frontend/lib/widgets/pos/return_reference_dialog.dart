@@ -4,6 +4,7 @@ import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_bills.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
@@ -111,7 +112,13 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
       setState(() => _todayBills = filtered);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _billsError = e.toString());
+      final retry = await AppDialogService.showError(
+        context,
+        error: e,
+        fallback: 'โหลดรายการบิลไม่สำเร็จ',
+        allowRetry: true,
+      );
+      if (retry && mounted) await _loadTodayBills();
     } finally {
       if (mounted) {
         setState(() => _isLoadingBills = false);
@@ -135,18 +142,26 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
       'type': 'return',
       'stage': bill == null ? 'search' : 'selecting',
       'invoiceId': _invoiceController.text.trim(),
-      if (bill != null) 'bill': {
-        'id': bill['id']?.toString() ?? '',
-        'total': bill['totalAmount'] ?? 0,
-      },
+      if (bill != null)
+        'bill': {
+          'id': bill['id']?.toString() ?? '',
+          'total': bill['totalAmount'] ?? 0,
+        },
       'items': _details.map((detail) {
         final key = _rowKey(detail);
         return {
           'partCode': detail['partCode']?.toString() ?? '',
-          'partName': detail['name']?.toString() ?? detail['partCode']?.toString() ?? '',
-          'originalQty': _toDouble(detail['originalQty'] ?? detail['qty']).toInt(),
+          'partName':
+              detail['name']?.toString() ??
+              detail['partCode']?.toString() ??
+              '',
+          'originalQty': _toDouble(
+            detail['originalQty'] ?? detail['qty'],
+          ).toInt(),
           'alreadyReturned': _toDouble(detail['returnedQty']).toInt(),
-          'maxReturnable': _toDouble(detail['remainingQty'] ?? detail['returnableQty'] ?? detail['qty']).toInt(),
+          'maxReturnable': _toDouble(
+            detail['remainingQty'] ?? detail['returnableQty'] ?? detail['qty'],
+          ).toInt(),
           'selectedQty': _selectedQtyByKey[key] ?? 0,
         };
       }).toList(),
@@ -249,9 +264,15 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
       });
       _broadcastState();
     } catch (e) {
-      setState(() {
-        _error = 'ไม่พบบิลหรือดึงข้อมูลไม่สำเร็จ: $e';
-      });
+      if (mounted) {
+        final retry = await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ไม่พบบิลหรือโหลดข้อมูลบิลไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry && mounted) await _loadReturnableBill(billId);
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -607,8 +628,8 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
       'total',
     ]);
     final raw = bill['details'] ?? bill['items'];
-    final itemCount = (bill['itemCount'] as num?)?.toInt() ??
-        (raw is List ? raw.length : 0);
+    final itemCount =
+        (bill['itemCount'] as num?)?.toInt() ?? (raw is List ? raw.length : 0);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -634,10 +655,7 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
                 Text(
                   'เวลา ${_formatTime(created)} • $itemCount รายการ • '
                   'รวม ฿${total.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: AppColors.muted,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
                 ),
               ],
             ),

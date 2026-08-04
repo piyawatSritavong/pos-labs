@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_operations.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
@@ -59,15 +60,21 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
   void _broadcastState() {
     PosMirrorService.current?.notifyDialogState({
       'type': 'physical_count',
-      'stage': _submitted ? 'variance' : (_isCreating ? 'creating' : 'counting'),
+      'stage': _submitted
+          ? 'variance'
+          : (_isCreating ? 'creating' : 'counting'),
       'countId': _countId ?? '',
       'items': _items.map((item) {
         final code = item['partCode']?.toString() ?? '';
         final systemQty = _toDouble(item['systemQty'] ?? item['system_qty']);
-        final counted = double.tryParse(_controllers[code]?.text.trim() ?? '') ?? systemQty;
+        final counted =
+            double.tryParse(_controllers[code]?.text.trim() ?? '') ?? systemQty;
         return {
           'partCode': code,
-          'partName': item['partNameTh']?.toString() ?? item['partName']?.toString() ?? code,
+          'partName':
+              item['partNameTh']?.toString() ??
+              item['partName']?.toString() ??
+              code,
           'systemQty': systemQty,
           'countedQty': counted,
         };
@@ -106,7 +113,8 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
         storeId: widget.storeId,
       );
 
-      final id = result['id']?.toString() ?? result['countId']?.toString() ?? '';
+      final id =
+          result['id']?.toString() ?? result['countId']?.toString() ?? '';
       if (id.isEmpty) {
         throw Exception('ไม่ได้รับ count ID จาก backend');
       }
@@ -124,8 +132,8 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
       final controllers = <String, TextEditingController>{};
       for (final item in items) {
         final code = item['partCode']?.toString() ?? '';
-        final systemQty =
-            (item['systemQty'] ?? item['system_qty'] ?? 0).toString();
+        final systemQty = (item['systemQty'] ?? item['system_qty'] ?? 0)
+            .toString();
         controllers[code] = TextEditingController(text: systemQty);
       }
 
@@ -143,10 +151,18 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-          _isCreating = false;
-        });
+        setState(() => _isCreating = false);
+        final retry = await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'เริ่มรอบนับสต๊อกไม่สำเร็จ',
+          allowRetry: true,
+        );
+        if (retry && mounted) {
+          await _createCount();
+        } else if (mounted) {
+          Navigator.of(context).pop();
+        }
       }
     }
   }
@@ -195,15 +211,17 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('บันทึกรายการแล้ว')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('บันทึกรายการแล้ว')));
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-        });
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'บันทึกผลนับสต๊อกไม่สำเร็จ',
+        );
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -219,7 +237,8 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
       builder: (ctx) => AlertDialog(
         title: const Text('ยืนยันการส่งนับสต็อก'),
         content: const Text(
-            'เมื่อส่งแล้วจะไม่สามารถแก้ไขได้ ต้องการส่งยืนยันหรือไม่?'),
+          'เมื่อส่งแล้วจะไม่สามารถแก้ไขได้ ต้องการส่งยืนยันหรือไม่?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -246,7 +265,8 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
         final code = item['partCode']?.toString() ?? '';
         final controller = _controllers[code];
         final counted =
-            double.tryParse(controller?.text.trim() ?? '') ?? _toDouble(item['systemQty'] ?? item['system_qty']);
+            double.tryParse(controller?.text.trim() ?? '') ??
+            _toDouble(item['systemQty'] ?? item['system_qty']);
         allItems.add({'partCode': code, 'countedQty': counted});
       }
 
@@ -258,11 +278,12 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
         );
       }
 
-      await ApiOperationsService.submitStockCount(
-          token: token, id: _countId!);
+      await ApiOperationsService.submitStockCount(token: token, id: _countId!);
 
       final variance = await ApiOperationsService.getStockVariance(
-          token: token, countId: _countId!);
+        token: token,
+        countId: _countId!,
+      );
 
       if (mounted) {
         setState(() {
@@ -274,10 +295,12 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-          _isSubmitting = false;
-        });
+        setState(() => _isSubmitting = false);
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ส่งผลนับสต๊อกไม่สำเร็จ',
+        );
       }
     }
   }
@@ -303,8 +326,7 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
                 children: [
                   const Text(
                     'นับสต็อก',
-                    style:
-                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   const Spacer(),
                   IconButton(
@@ -330,10 +352,10 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
                           ),
                         )
                       : _error != null && !_submitted
-                          ? _buildError()
-                          : _submitted
-                              ? _buildVarianceReport()
-                              : _buildItemList(),
+                      ? _buildError()
+                      : _submitted
+                      ? _buildVarianceReport()
+                      : _buildItemList(),
                 ),
               ),
               if (!_isCreating && !_submitted && _error == null) ...[
@@ -345,32 +367,33 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
                       Expanded(
                         child: Text(
                           _error!,
-                          style:
-                              const TextStyle(color: AppColors.danger, fontSize: 12),
+                          style: const TextStyle(
+                            color: AppColors.danger,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     OutlinedButton(
-                      onPressed:
-                          (_isSaving || _isSubmitting) ? null : _save,
+                      onPressed: (_isSaving || _isSubmitting) ? null : _save,
                       child: _isSaving
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Text('บันทึก'),
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(
-                      onPressed:
-                          (_isSaving || _isSubmitting) ? null : _submit,
+                      onPressed: (_isSaving || _isSubmitting) ? null : _submit,
                       child: _isSubmitting
                           ? const SizedBox(
                               width: 16,
                               height: 16,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
                             )
                           : const Text('ส่งยืนยัน'),
                     ),
@@ -397,8 +420,7 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
             style: const TextStyle(color: AppColors.danger),
           ),
           const SizedBox(height: 12),
-          OutlinedButton(
-              onPressed: _createCount, child: const Text('ลองใหม่')),
+          OutlinedButton(onPressed: _createCount, child: const Text('ลองใหม่')),
         ],
       ),
     );
@@ -419,7 +441,9 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
             decoration: BoxDecoration(
               color: AppColors.danger.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: AppColors.danger.withValues(alpha: 0.3),
+              ),
             ),
             child: Text(
               _error!,
@@ -435,11 +459,31 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
           ),
           child: Row(
             children: const [
-              Expanded(flex: 4, child: Text('สินค้า', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+              Expanded(
+                flex: 4,
+                child: Text(
+                  'สินค้า',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
               SizedBox(width: 8),
-              SizedBox(width: 80, child: Text('จำนวนระบบ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12), textAlign: TextAlign.center)),
+              SizedBox(
+                width: 80,
+                child: Text(
+                  'จำนวนระบบ',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ),
               SizedBox(width: 8),
-              SizedBox(width: 100, child: Text('นับจริง', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12), textAlign: TextAlign.center)),
+              SizedBox(
+                width: 100,
+                child: Text(
+                  'นับจริง',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ),
             ],
           ),
         ),
@@ -451,15 +495,20 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
             itemBuilder: (context, index) {
               final item = _items[index];
               final code = item['partCode']?.toString() ?? '';
-              final nameTh = item['partNameTh']?.toString() ??
+              final nameTh =
+                  item['partNameTh']?.toString() ??
                   item['partName']?.toString() ??
                   code;
-              final systemQty = _toDouble(item['systemQty'] ?? item['system_qty']);
+              final systemQty = _toDouble(
+                item['systemQty'] ?? item['system_qty'],
+              );
               final controller = _controllers[code];
 
               return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(8),
@@ -475,12 +524,16 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
                           Text(
                             nameTh,
                             style: const TextStyle(
-                                fontWeight: FontWeight.w600, fontSize: 13),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
                           ),
                           Text(
                             code,
                             style: const TextStyle(
-                                color: AppColors.muted, fontSize: 11),
+                              color: AppColors.muted,
+                              fontSize: 11,
+                            ),
                           ),
                         ],
                       ),
@@ -490,7 +543,8 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
                       width: 80,
                       child: Text(
                         systemQty.toStringAsFixed(
-                            systemQty.truncateToDouble() == systemQty ? 0 : 2),
+                          systemQty.truncateToDouble() == systemQty ? 0 : 2,
+                        ),
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: AppColors.muted),
                       ),
@@ -503,12 +557,15 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
                               controller: controller,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
-                                      decimal: true),
+                                    decimal: true,
+                                  ),
                               textAlign: TextAlign.center,
                               decoration: const InputDecoration(
                                 isDense: true,
                                 contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 8),
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
                               ),
                             )
                           : const Text('-'),
@@ -539,23 +596,26 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
       children: [
         Row(
           children: [
-            const Icon(Icons.check_circle_outline,
-                color: Colors.green, size: 24),
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.green,
+              size: 24,
+            ),
             const SizedBox(width: 8),
             const Text(
               'ส่งยืนยันสำเร็จ',
               style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green),
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.green,
+              ),
             ),
           ],
         ),
         const SizedBox(height: 12),
         Row(
           children: [
-            _StatChip(
-                label: 'สินค้าทั้งหมด', value: '${items.length} รายการ'),
+            _StatChip(label: 'สินค้าทั้งหมด', value: '${items.length} รายการ'),
             const SizedBox(width: 8),
             _StatChip(
               label: 'มีความต่าง',
@@ -567,8 +627,7 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
         const SizedBox(height: 12),
         if (items.isNotEmpty) ...[
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: AppColors.bg,
               borderRadius: BorderRadius.circular(8),
@@ -576,13 +635,40 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
             ),
             child: Row(
               children: const [
-                Expanded(flex: 3, child: Text('สินค้า', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    'สินค้า',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                ),
                 SizedBox(width: 8),
-                SizedBox(width: 70, child: Text('ระบบ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12), textAlign: TextAlign.center)),
+                SizedBox(
+                  width: 70,
+                  child: Text(
+                    'ระบบ',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
                 SizedBox(width: 8),
-                SizedBox(width: 70, child: Text('นับจริง', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12), textAlign: TextAlign.center)),
+                SizedBox(
+                  width: 70,
+                  child: Text(
+                    'นับจริง',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
                 SizedBox(width: 8),
-                SizedBox(width: 70, child: Text('ต่าง', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12), textAlign: TextAlign.center)),
+                SizedBox(
+                  width: 70,
+                  child: Text(
+                    'ต่าง',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               ],
             ),
           ),
@@ -594,7 +680,8 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
               itemBuilder: (context, index) {
                 final item = items[index];
                 final code = item['partCode']?.toString() ?? '';
-                final name = item['partNameTh']?.toString() ??
+                final name =
+                    item['partNameTh']?.toString() ??
                     item['partName']?.toString() ??
                     code;
                 final system = _toDouble(item['systemQty']);
@@ -614,16 +701,19 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
 
                 return Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: bgColor,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                        color: hasVariance
-                            ? (variance < 0
+                      color: hasVariance
+                          ? (variance < 0
                                 ? AppColors.danger.withValues(alpha: 0.3)
                                 : Colors.green.withValues(alpha: 0.3))
-                            : AppColors.border),
+                          : AppColors.border,
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -632,13 +722,20 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13)),
-                            Text(code,
-                                style: const TextStyle(
-                                    color: AppColors.muted, fontSize: 11)),
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              code,
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 11,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -646,17 +743,21 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
                       SizedBox(
                         width: 70,
                         child: Text(
-                            system.toStringAsFixed(
-                                system.truncateToDouble() == system ? 0 : 2),
-                            textAlign: TextAlign.center),
+                          system.toStringAsFixed(
+                            system.truncateToDouble() == system ? 0 : 2,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       SizedBox(
                         width: 70,
                         child: Text(
-                            counted.toStringAsFixed(
-                                counted.truncateToDouble() == counted ? 0 : 2),
-                            textAlign: TextAlign.center),
+                          counted.toStringAsFixed(
+                            counted.truncateToDouble() == counted ? 0 : 2,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       SizedBox(
@@ -664,13 +765,13 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
                         child: Text(
                           (variance >= 0 ? '+' : '') +
                               variance.toStringAsFixed(
-                                  variance.truncateToDouble() == variance
-                                      ? 0
-                                      : 2),
+                                variance.truncateToDouble() == variance ? 0 : 2,
+                              ),
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                              color: varColor,
-                              fontWeight: FontWeight.bold),
+                            color: varColor,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -680,8 +781,7 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
             ),
           ),
         ] else
-          const Expanded(
-              child: Center(child: Text('ไม่มีรายการความต่าง'))),
+          const Expanded(child: Center(child: Text('ไม่มีรายการความต่าง'))),
         const SizedBox(height: 12),
         ElevatedButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -693,11 +793,7 @@ class _PhysicalCountDialogState extends State<PhysicalCountDialog> {
 }
 
 class _StatChip extends StatelessWidget {
-  const _StatChip({
-    required this.label,
-    required this.value,
-    this.color,
-  });
+  const _StatChip({required this.label, required this.value, this.color});
 
   final String label;
   final String value;
@@ -715,13 +811,16 @@ class _StatChip extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, color: AppColors.muted),
+          ),
           Text(
             value,
             style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: color ?? AppColors.text),
+              fontWeight: FontWeight.bold,
+              color: color ?? AppColors.text,
+            ),
           ),
         ],
       ),

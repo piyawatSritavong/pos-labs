@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/services/api_users.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 
 class UsersProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _users = [];
@@ -31,7 +32,7 @@ class UsersProvider extends ChangeNotifier {
       );
       _users = results;
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -47,10 +48,13 @@ class UsersProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final user = await ApiUsersService.getUserById(token: token, userId: userId);
+      final user = await ApiUsersService.getUserById(
+        token: token,
+        userId: userId,
+      );
       return user;
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
       notifyListeners();
       rethrow;
     } finally {
@@ -87,7 +91,7 @@ class UsersProvider extends ChangeNotifier {
       await loadUsers(token: token, force: true);
       return newUser;
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
       _isLoading = false;
       notifyListeners();
       rethrow;
@@ -129,7 +133,7 @@ class UsersProvider extends ChangeNotifier {
       await loadUsers(token: token, force: true);
       return updatedUser;
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
       _isLoading = false;
       notifyListeners();
       rethrow;
@@ -152,7 +156,7 @@ class UsersProvider extends ChangeNotifier {
       _isLoading = false;
       await loadUsers(token: token, force: true);
     } catch (e) {
-      _error = e.toString();
+      _error = AppDialogService.safeMessage(e);
       _isLoading = false;
       notifyListeners();
       rethrow;
@@ -165,4 +169,3 @@ class UsersProvider extends ChangeNotifier {
     notifyListeners();
   }
 }
-

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -60,13 +61,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 					FROM "address_master" a3
 					JOIN "branch_store" bs3 ON bs3.store_id = a3.store_id
 					WHERE a3.part_code = p.code AND bs3.branch_id = $3
-				), 0) AS total_rop,
-				COALESCE((
-					SELECT SUM(a4.min)
-					FROM "address_master" a4
-					JOIN "branch_store" bs4 ON bs4.store_id = a4.store_id
-					WHERE a4.part_code = p.code AND bs4.branch_id = $3
-				), 0) AS total_min
+				), 0) AS total_rop
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
@@ -95,8 +90,7 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 				p.price,
 				COALESCE(p.is_active, false),
 				COALESCE(SUM(a.qty), 0) AS total_stock,
-				COALESCE(SUM(a.rop), 0) AS total_rop,
-				COALESCE(SUM(a.min), 0) AS total_min
+				COALESCE(SUM(a.rop), 0) AS total_rop
 			FROM "part_master" p
 			LEFT JOIN "category_master" c ON c.id = p.category_id
 			LEFT JOIN "unit_master" u ON u.id = p.unit_id
@@ -133,7 +127,6 @@ func (r *partRepositoryPG) ListParts(ctx context.Context, limit, offset int, bra
 			&s.IsActive,
 			&s.TotalStock,
 			&s.ReorderPoint,
-			&s.MinStock,
 		); err != nil {
 			return nil, err
 		}
@@ -258,8 +251,6 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 				s.label_th,
 				a.shelf,
 				a.qty,
-				a.min,
-				a.max,
 				a.rop,
 				COALESCE(a.remarks, ''),
 				COALESCE(bs.is_default, false) as is_default
@@ -279,8 +270,6 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 				s.label_th,
 				a.shelf,
 				a.qty,
-				a.min,
-				a.max,
 				a.rop,
 				COALESCE(a.remarks, ''),
 				false as is_default
@@ -306,8 +295,6 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 			&a.StoreLabelTH,
 			&a.Shelf,
 			&a.Qty,
-			&a.Min,
-			&a.Max,
 			&a.Rop,
 			&a.Remarks,
 			&a.IsDefault,
@@ -327,10 +314,74 @@ func (r *partRepositoryPG) GetPartDetail(ctx context.Context, code string, branc
 // using `part_code = ANY($1)`, returning them grouped by part code. This
 // replaces the per-part GetPartDetail calls that previously caused N+1 queries
 // when building search/list responses.
-func (r *partRepositoryPG) CreatePart(ctx context.Context, p PartInput) error {
+type partQueryer interface {
+	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
+}
+
+func nextPartCode(ctx context.Context, q partQueryer) (string, error) {
+	var next int64
+	if err := q.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(substring("code" FROM 2)::bigint), 0) + 1
+		FROM "part_master"
+		WHERE "code" ~ '^P[0-9]+$'
+	`).Scan(&next); err != nil {
+		return "", err
+	}
+	for {
+		candidate := formatPartCode(next)
+		var exists bool
+		if err := q.QueryRowContext(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM "part_master"
+				WHERE "code"=$1 OR "bar_code"=$1
+			)
+		`, candidate).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+		next++
+	}
+}
+
+func formatPartCode(sequence int64) string {
+	return fmt.Sprintf("P%04d", sequence)
+}
+
+func (r *partRepositoryPG) GetNextPartCode(ctx context.Context) (string, error) {
+	return nextPartCode(ctx, r.db)
+}
+
+func (r *partRepositoryPG) CreatePart(ctx context.Context, p PartInput) (PartInput, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return PartInput{}, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('part_master_write'))`); err != nil {
+		return PartInput{}, err
+	}
+	code, err := nextPartCode(ctx, tx)
+	if err != nil {
+		return PartInput{}, err
+	}
+	barcode := strings.TrimSpace(p.BarCode)
+	if barcode == "" {
+		barcode = code
+	} else {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM "part_master" WHERE "bar_code"=$1)`, barcode).Scan(&exists); err != nil {
+			return PartInput{}, err
+		}
+		if exists {
+			return PartInput{}, ErrBarcodeExists
+		}
+	}
+	p.Code, p.BarCode = code, barcode
 	// Sub-selects resolve unit/category to NULL when the given value isn't a
 	// valid master id, so free-text input never trips the foreign keys.
-	_, err := r.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO "part_master"
 			("code", "bar_code", "name", "name_th", "unit_id", "category_id", "price", "cost", "details", "is_active")
 		VALUES (
@@ -341,11 +392,41 @@ func (r *partRepositoryPG) CreatePart(ctx context.Context, p PartInput) error {
 		)
 	`, p.Code, p.BarCode, p.Name, p.NameTH, p.UnitID, p.CategoryID,
 		p.Price, p.Cost, p.Details, p.IsActive)
-	return err
+	if err != nil {
+		return PartInput{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return PartInput{}, err
+	}
+	return p, nil
 }
 
 func (r *partRepositoryPG) UpdatePart(ctx context.Context, code string, p PartInput) error {
-	res, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('part_master_write'))`); err != nil {
+		return err
+	}
+	var currentBarcode string
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE("bar_code", '') FROM "part_master" WHERE "code"=$1 FOR UPDATE`, code).Scan(&currentBarcode); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if p.BarCode != currentBarcode {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM "part_master" WHERE "bar_code"=$1 AND "code"<>$2)`, p.BarCode, code).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return ErrBarcodeExists
+		}
+	}
+	res, err := tx.ExecContext(ctx, `
 		UPDATE "part_master" SET
 			"bar_code" = $2,
 			"name" = $3,
@@ -360,7 +441,7 @@ func (r *partRepositoryPG) UpdatePart(ctx context.Context, code string, p PartIn
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (r *partRepositoryPG) DeletePart(ctx context.Context, code string) error {
@@ -392,8 +473,6 @@ func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []
 				s.label_th,
 				a.shelf,
 				a.qty,
-				a.min,
-				a.max,
 				a.rop,
 				COALESCE(a.remarks, ''),
 				COALESCE(bs.is_default, false) as is_default
@@ -413,8 +492,6 @@ func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []
 				s.label_th,
 				a.shelf,
 				a.qty,
-				a.min,
-				a.max,
 				a.rop,
 				COALESCE(a.remarks, ''),
 				false as is_default
@@ -439,8 +516,6 @@ func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []
 			&a.StoreLabelTH,
 			&a.Shelf,
 			&a.Qty,
-			&a.Min,
-			&a.Max,
 			&a.Rop,
 			&a.Remarks,
 			&a.IsDefault,
@@ -541,8 +616,6 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 			s.label_th,
 			a.shelf,
 			a.qty,
-			a.min,
-			a.max,
 			a.rop,
 			COALESCE(a.remarks, ''),
 			COALESCE(bs.is_default, false) as is_default
@@ -568,8 +641,6 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 			&a.StoreLabelTH,
 			&a.Shelf,
 			&a.Qty,
-			&a.Min,
-			&a.Max,
 			&a.Rop,
 			&a.Remarks,
 			&a.IsDefault,

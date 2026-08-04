@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/screens/backoffice_screen.dart';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -135,8 +136,10 @@ class _PromotionsManagementSectionState
                   if (!mounted) return;
                   Navigator.of(ctx).pop(true);
                 } catch (e) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(content: Text('สร้างโปรโมชั่นไม่สำเร็จ: $e')),
+                  await AppDialogService.showError(
+                    context,
+                    error: e,
+                    fallback: 'สร้างโปรโมชั่นไม่สำเร็จ',
                   );
                 }
               },
@@ -250,8 +253,10 @@ class _PromotionsManagementSectionState
                   if (!mounted) return;
                   Navigator.of(ctx).pop(true);
                 } catch (e) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(content: Text('แก้ไขโปรโมชั่นไม่สำเร็จ: $e')),
+                  await AppDialogService.showError(
+                    context,
+                    error: e,
+                    fallback: 'แก้ไขโปรโมชั่นไม่สำเร็จ',
                   );
                 }
               },
@@ -311,9 +316,11 @@ class _PromotionsManagementSectionState
         ).showSnackBar(const SnackBar(content: Text('ลบโปรโมชั่นสำเร็จ')));
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
+        await AppDialogService.showError(
           context,
-        ).showSnackBar(SnackBar(content: Text('ลบโปรโมชั่นไม่สำเร็จ: $e')));
+          error: e,
+          fallback: 'ลบโปรโมชั่นไม่สำเร็จ',
+        );
       }
     }
   }
