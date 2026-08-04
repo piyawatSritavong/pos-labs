@@ -353,6 +353,50 @@ func (r *partRepositoryPG) GetNextPartCode(ctx context.Context) (string, error) 
 	return nextPartCode(ctx, r.db)
 }
 
+// createInitialPartAddresses makes a newly created catalog item visible to
+// inventory and branch-scoped POS searches. Each branch gets one zero-stock
+// address in its preferred store. branch_store.is_default is authoritative;
+// store_master.is_default and store id are deterministic fallbacks for legacy
+// data where more than one store (or no store) was marked as the default.
+func createInitialPartAddresses(ctx context.Context, tx *sql.Tx, partCode string) error {
+	result, err := tx.ExecContext(ctx, `
+		WITH preferred_stores AS (
+			SELECT DISTINCT ON (bs."branch_id")
+				bs."branch_id", bs."store_id"
+			FROM "branch_store" bs
+			JOIN "store_master" s ON s."id" = bs."store_id"
+			ORDER BY
+				bs."branch_id",
+				COALESCE(bs."is_default", false) DESC,
+				COALESCE(s."is_default", false) DESC,
+				bs."store_id"
+		)
+		INSERT INTO "address_master"(
+			"code", "part_code", "store_id", "shelf", "qty", "rop", "remarks"
+		)
+		SELECT
+			'AUTO-' || md5($1 || ':' || ps."store_id"),
+			$1,
+			ps."store_id",
+			'',
+			0,
+			0,
+			'Automatically assigned when product was created'
+		FROM preferred_stores ps
+	`, partCode)
+	if err != nil {
+		return err
+	}
+	created, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if created == 0 {
+		return ErrStockStoreNotConfigured
+	}
+	return nil
+}
+
 func (r *partRepositoryPG) CreatePart(ctx context.Context, p PartInput) (PartInput, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -393,6 +437,9 @@ func (r *partRepositoryPG) CreatePart(ctx context.Context, p PartInput) (PartInp
 	`, p.Code, p.BarCode, p.Name, p.NameTH, p.UnitID, p.CategoryID,
 		p.Price, p.Cost, p.Details, p.IsActive)
 	if err != nil {
+		return PartInput{}, err
+	}
+	if err := createInitialPartAddresses(ctx, tx, p.Code); err != nil {
 		return PartInput{}, err
 	}
 	if err := tx.Commit(); err != nil {

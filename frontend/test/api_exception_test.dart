@@ -23,6 +23,17 @@ void main() {
       expect(exception.message, 'Barcode นี้ถูกใช้งานกับสินค้าอื่นแล้ว');
     });
 
+    test('translates missing stock-store configuration', () {
+      final response = http.Response(
+        '{"error":"stock_store_not_configured"}',
+        409,
+      );
+
+      final error = ApiException.fromResponse(response);
+
+      expect(error.message, 'ยังไม่ได้กำหนดคลังสินค้าสำหรับสาขา');
+    });
+
     test('does not expose an unknown raw server message', () {
       final exception = ApiException.fromResponse(
         http.Response(

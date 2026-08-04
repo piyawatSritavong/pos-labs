@@ -361,6 +361,13 @@ func (h *PartsHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "barcode_already_exists", "message": "Barcode นี้ถูกใช้งานแล้ว"})
 			return
 		}
+		if errors.Is(err, repository.ErrStockStoreNotConfigured) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   "stock_store_not_configured",
+				"message": "ยังไม่ได้กำหนดคลังสินค้าสำหรับสาขา",
+			})
+			return
+		}
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
 			c.JSON(http.StatusConflict, gin.H{"error": "part_code_exists", "message": "รหัสสินค้านี้มีอยู่แล้ว"})
 			return
