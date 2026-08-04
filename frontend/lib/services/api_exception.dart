@@ -29,11 +29,7 @@ class ApiException implements Exception {
     );
   }
 
-  static String _messageFor(
-    String? code,
-    int status,
-    String fallback,
-  ) {
+  static String _messageFor(String? code, int status, String fallback) {
     switch (code) {
       case 'invalid_credentials':
         return 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
@@ -41,6 +37,8 @@ class ApiException implements Exception {
         return 'มีคำขอเข้าสู่ระบบของบัญชีนี้รอการยืนยันอยู่แล้ว';
       case 'barcode_already_exists':
         return 'Barcode นี้ถูกใช้งานกับสินค้าอื่นแล้ว';
+      case 'stock_store_not_configured':
+        return 'ยังไม่ได้กำหนดคลังสินค้าสำหรับสาขา';
       case 'forbidden':
       case 'access_denied':
         return 'คุณไม่มีสิทธิ์ดำเนินการนี้';

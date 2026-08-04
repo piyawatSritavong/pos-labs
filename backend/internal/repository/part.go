@@ -93,6 +93,7 @@ type PartInput struct {
 
 var ErrNotFound = errors.New("not found")
 var ErrBarcodeExists = errors.New("barcode already exists")
+var ErrStockStoreNotConfigured = errors.New("no stock store configured")
 
 func IsNotFoundError(err error) bool {
 	return errors.Is(err, ErrNotFound)
