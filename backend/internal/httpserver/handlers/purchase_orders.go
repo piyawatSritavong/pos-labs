@@ -157,3 +157,25 @@ func (h *PurchaseOrderHandler) GetByID(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"data": purchaseOrderOutput(order, items)})
 }
+
+func (h *PurchaseOrderHandler) Delete(c *gin.Context) {
+	if !requirePurchaseOrderAdmin(c) {
+		return
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_purchase_order_id"})
+		return
+	}
+	if err := h.orders.Delete(c.Request.Context(), id); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "purchase_order_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_delete_purchase_order"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{"id": id, "mode": "document_only"},
+	})
+}

@@ -92,6 +92,99 @@ void main() {
     );
   });
 
+  testWidgets('purchase order delete warns and only removes after confirm', (
+    tester,
+  ) async {
+    var deleteCalls = 0;
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => AuthProvider(),
+        child: MaterialApp(
+          theme: AppTheme.light().copyWith(
+            splashFactory: NoSplash.splashFactory,
+          ),
+          home: Scaffold(
+            body: PurchaseOrdersPage(
+              autoLoad: false,
+              initialOrders: const [
+                {
+                  'id': 'PO20260804000001',
+                  'orderDate': '2026-08-04',
+                  'notes': '',
+                  'totalCost': 4,
+                  'totalSaleValue': 8,
+                },
+              ],
+              deleteOrder: (id) async => deleteCalls++,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('delete-purchase-order-PO20260804000001')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('จำนวนสินค้าในคลังจะไม่เปลี่ยน'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('ยกเลิก'));
+    await tester.pumpAndSettle();
+    expect(deleteCalls, 0);
+    expect(find.text('PO20260804000001'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('delete-purchase-order-PO20260804000001')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ลบเอกสาร'));
+    await tester.pumpAndSettle();
+    expect(deleteCalls, 1);
+    expect(find.text('PO20260804000001'), findsNothing);
+  });
+
+  testWidgets('shared purchase order action opens create form directly', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => AuthProvider(),
+        child: MaterialApp(
+          theme: AppTheme.light().copyWith(
+            splashFactory: NoSplash.splashFactory,
+          ),
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => showCreatePurchaseOrderDialog(context),
+                child: const Text('เปิดฟอร์ม'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('เปิดฟอร์ม'));
+    await tester.pumpAndSettle();
+    expect(find.text('สร้างใบสั่งซื้อสินค้าเข้า'), findsOneWidget);
+    expect(
+      find.byKey(const Key('purchase-order-product-search')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('บันทึกแล้วสินค้าและจำนวนจะเข้าคลังหลักทันที'),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'purchase order product picker opens and selects without typing',
     (tester) async {

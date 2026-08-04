@@ -43,4 +43,5 @@ type PurchaseOrderRepository interface {
 	Create(ctx context.Context, requestID string, orderDate time.Time, notes, userID string, items []PurchaseOrderInputItem) (*PurchaseOrder, []PurchaseOrderItem, bool, error)
 	GetByID(ctx context.Context, id string) (*PurchaseOrder, []PurchaseOrderItem, error)
 	List(ctx context.Context, limit, offset int) ([]PurchaseOrder, error)
+	Delete(ctx context.Context, id string) error
 }

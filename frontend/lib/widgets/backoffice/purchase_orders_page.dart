@@ -7,22 +7,75 @@ import 'package:frontend/services/api_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
+Future<bool> showCreatePurchaseOrderDialog(BuildContext context) async {
+  return await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const _CreatePurchaseOrderDialog(),
+      ) ??
+      false;
+}
+
+Future<bool> showPurchaseOrderDeleteConfirmation(
+  BuildContext context,
+  String id,
+) async {
+  return await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('ยืนยันการลบใบสั่งซื้อสินค้าเข้า'),
+          content: Text(
+            'ต้องการลบเอกสาร $id ใช่หรือไม่?\n\n'
+            'ระบบจะลบเฉพาะเอกสาร จำนวนสินค้าในคลังจะไม่เปลี่ยน',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('ยกเลิก'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+              child: const Text('ลบเอกสาร'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+}
+
+typedef PurchaseOrderDelete = Future<void> Function(String id);
+
 class PurchaseOrdersPage extends StatefulWidget {
-  const PurchaseOrdersPage({super.key});
+  const PurchaseOrdersPage({
+    super.key,
+    this.autoLoad = true,
+    this.initialOrders = const [],
+    this.deleteOrder,
+  });
+
+  final bool autoLoad;
+  final List<Map<String, dynamic>> initialOrders;
+  final PurchaseOrderDelete? deleteOrder;
 
   @override
   State<PurchaseOrdersPage> createState() => _PurchaseOrdersPageState();
 }
 
 class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
-  bool _loading = true;
+  late bool _loading;
   String? _error;
-  List<Map<String, dynamic>> _orders = [];
+  late List<Map<String, dynamic>> _orders;
+  final Set<String> _deleting = {};
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    _loading = widget.autoLoad;
+    _orders = List<Map<String, dynamic>>.from(widget.initialOrders);
+    if (widget.autoLoad) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    }
   }
 
   Future<void> _load() async {
@@ -43,12 +96,41 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
   }
 
   Future<void> _create() async {
-    final saved = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const _CreatePurchaseOrderDialog(),
-    );
-    if (saved == true) await _load();
+    final saved = await showCreatePurchaseOrderDialog(context);
+    if (saved) await _load();
+  }
+
+  Future<void> _delete(String id) async {
+    if (_deleting.contains(id)) return;
+    final confirmed = await showPurchaseOrderDeleteConfirmation(context, id);
+    if (!confirmed || !mounted) return;
+    setState(() {
+      _deleting.add(id);
+      _error = null;
+    });
+    try {
+      if (widget.deleteOrder != null) {
+        await widget.deleteOrder!(id);
+      } else {
+        final token = context.read<AuthProvider>().token ?? '';
+        if (token.isEmpty) throw Exception('ไม่พบข้อมูลเข้าสู่ระบบ');
+        await ApiOperationsService.deletePurchaseOrder(token: token, id: id);
+      }
+      if (!mounted) return;
+      if (widget.autoLoad) {
+        await _load();
+      } else {
+        setState(() => _orders.removeWhere((order) => order['id'] == id));
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ลบเอกสาร $id แล้ว โดยไม่เปลี่ยนยอดสต๊อก')),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = 'ลบเอกสารไม่สำเร็จ: $error');
+    } finally {
+      if (mounted) setState(() => _deleting.remove(id));
+    }
   }
 
   Future<void> _showDetail(String id) async {
@@ -116,7 +198,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
                         DataColumn(label: Text('หมายเหตุ')),
                         DataColumn(label: Text('มูลค่าต้นทุน')),
                         DataColumn(label: Text('มูลค่าราคาขาย')),
-                        DataColumn(label: Text('เปิด')),
+                        DataColumn(label: Text('จัดการ')),
                       ],
                       rows: _orders.map((order) {
                         final id = order['id']?.toString() ?? '';
@@ -130,10 +212,31 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
                             DataCell(Text(_money(order['totalCost']))),
                             DataCell(Text(_money(order['totalSaleValue']))),
                             DataCell(
-                              IconButton(
-                                tooltip: 'ดูรายละเอียด',
-                                icon: const Icon(Icons.visibility_outlined),
-                                onPressed: () => _showDetail(id),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'ดูรายละเอียด',
+                                    icon: const Icon(Icons.visibility_outlined),
+                                    onPressed: () => _showDetail(id),
+                                  ),
+                                  IconButton(
+                                    key: ValueKey('delete-purchase-order-$id'),
+                                    tooltip: 'ลบเอกสาร',
+                                    color: AppColors.danger,
+                                    onPressed: _deleting.contains(id)
+                                        ? null
+                                        : () => _delete(id),
+                                    icon: _deleting.contains(id)
+                                        ? const SizedBox.square(
+                                            dimension: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.delete_outline),
+                                  ),
+                                ],
                               ),
                             ),
                           ],

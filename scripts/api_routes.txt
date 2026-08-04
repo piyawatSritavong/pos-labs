@@ -37,6 +37,7 @@ GET /pos/:id
 GET /pos/:id/secret
 GET /purchase-orders
 GET /purchase-orders/:id
+DELETE /purchase-orders/:id
 GET /promotions
 GET /promotions/:code
 GET /ready

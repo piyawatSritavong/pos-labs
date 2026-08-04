@@ -358,6 +358,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	purchaseOrdersWrite.Use(authMw.RequirePermission("purchase_orders", "write"))
 	{
 		purchaseOrdersWrite.POST("", purchaseOrderHandler.Create)
+		purchaseOrdersWrite.DELETE("/:id", purchaseOrderHandler.Delete)
 	}
 	// Users (CRUD)
 	userHandler := handlers.NewUserHandler(userRepo)

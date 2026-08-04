@@ -905,6 +905,15 @@ def main() -> int:
             mode="validation",
             note="An empty item list validates the route without receiving stock.",
         )
+        check(
+            "DELETE /purchase-orders/:id",
+            "DELETE",
+            f"/purchase-orders/{FAKE_ID}",
+            404,
+            token=admin_token,
+            mode="validation",
+            note="A nonexistent document validates deletion without changing stock.",
+        )
 
         # Irreversible operational documents are exercised through validation/not-found paths.
         check(

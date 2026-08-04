@@ -253,6 +253,21 @@ class ApiOperationsService {
     return _parseObject(jsonDecode(response.body), '/purchase-orders');
   }
 
+  static Future<void> deletePurchaseOrder({
+    required String token,
+    required String id,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/purchase-orders/$id'),
+      headers: _headers(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'DELETE /purchase-orders/$id failed: ${response.statusCode} ${response.body}',
+      );
+    }
+  }
+
   static Future<Map<String, dynamic>> getVehicleInventory({
     required String token,
     required String posId,

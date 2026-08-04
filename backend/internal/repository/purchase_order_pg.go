@@ -240,3 +240,21 @@ func (r *purchaseOrderRepositoryPG) List(ctx context.Context, limit, offset int)
 	}
 	return orders, rows.Err()
 }
+
+// Delete removes only the inbound document. purchase_order_item rows are
+// removed by FK cascade; product master data and warehouse quantities are
+// intentionally left unchanged.
+func (r *purchaseOrderRepositoryPG) Delete(ctx context.Context, id string) error {
+	result, err := r.db.ExecContext(ctx, `DELETE FROM "purchase_order" WHERE "id" = $1`, strings.TrimSpace(id))
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

@@ -689,20 +689,15 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton.icon(
-                    onPressed: () => showDialog<void>(
-                      context: context,
-                      builder: (_) => const Dialog(
-                        insetPadding: EdgeInsets.all(24),
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: SizedBox(
-                            width: 1200,
-                            height: 760,
-                            child: PurchaseOrdersPage(),
-                          ),
-                        ),
-                      ),
-                    ),
+                    onPressed: token.isEmpty
+                        ? null
+                        : () async {
+                            final saved = await showCreatePurchaseOrderDialog(
+                              context,
+                            );
+                            if (!mounted || !saved) return;
+                            await partsProvider.fetchParts(token);
+                          },
                     icon: const Icon(Icons.playlist_add),
                     label: const Text('สร้างใบสั่งซื้อสินค้าเข้า'),
                   ),
