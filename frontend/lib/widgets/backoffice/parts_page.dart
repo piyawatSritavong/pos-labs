@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/utils/store_summary.dart';
+import 'package:frontend/widgets/backoffice/parts_import_dialog.dart';
 import 'package:frontend/widgets/backoffice/purchase_orders_page.dart';
 import 'package:http/http.dart' as http;
 
@@ -686,6 +687,30 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                     },
                     icon: const Icon(Icons.add),
                     label: const Text('เพิ่มสินค้าใหม่'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: token.isEmpty
+                        ? null
+                        : () async {
+                            // Captured before the awaits — the closure's own
+                            // context is gone once the dialog has closed.
+                            final messenger = ScaffoldMessenger.of(context);
+                            final imported = await showPartsImportDialog(
+                              context,
+                              token,
+                            );
+                            if (!mounted || !imported) return;
+                            await partsProvider.fetchParts(token);
+                            if (!mounted) return;
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('เพิ่มสินค้าจากไฟล์สำเร็จ'),
+                              ),
+                            );
+                          },
+                    icon: const Icon(Icons.upload_file),
+                    label: const Text('เพิ่มด้วยไฟล์'),
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton.icon(

@@ -44,6 +44,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   pdf: ^3.12.0 # Generate exact-mm label PDFs (incl. pw.BarcodeWidget / Code128)
   printing: ^5.14.3 # PdfPreview widget + browser print dialog (web-friendly)
+  file_picker: ^8.1.7 # Pick the .xlsx for "เพิ่มสินค้าด้วยไฟล์" (web + desktop)
+  url_launcher: ^6.3.1 # Download the import template from the backend
 
 dev_dependencies:
   flutter_test:

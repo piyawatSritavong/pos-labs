@@ -1515,6 +1515,71 @@ class ApiService {
     return _extractObjectFromResponse(decoded, '/parts/generate-code');
   }
 
+  // ---------------------------------------------------------------- Parts import
+
+  /// URL of the blank import template. The endpoint is unauthenticated so the
+  /// browser (or the OS) can fetch it as a plain download.
+  static Uri partsImportTemplateUrl() =>
+      Uri.parse('$baseUrl/parts/import/template');
+
+  /// GET /parts/import/limits — the caps the server enforces, so the dialog
+  /// never shows numbers that have drifted from the backend.
+  static Future<PartsImportLimits> getPartsImportLimits(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/parts/import/limits'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to load import limits: ${response.statusCode} ${response.body}',
+      );
+    }
+    return PartsImportLimits.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  /// POST /parts/import — upload a filled-in template. The whole file is
+  /// applied or none of it, so a failed result means nothing was created.
+  static Future<PartsImportResult> importPartsFromExcel({
+    required String token,
+    required String filename,
+    required Uint8List bytes,
+  }) async {
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$baseUrl/parts/import'))
+          ..headers['Authorization'] = 'Bearer $token'
+          ..files.add(
+            http.MultipartFile.fromBytes('file', bytes, filename: filename),
+          );
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+
+    Map<String, dynamic> decoded;
+    try {
+      decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      throw Exception('อัปโหลดไม่สำเร็จ (${response.statusCode})');
+    }
+
+    if (response.statusCode == 201) {
+      return PartsImportResult.success(
+        created: (decoded['created'] as num?)?.toInt() ?? 0,
+        message: decoded['message']?.toString() ?? '',
+      );
+    }
+    return PartsImportResult.failure(
+      message:
+          decoded['message']?.toString() ??
+          'อัปโหลดไม่สำเร็จ (${response.statusCode})',
+      rows: (decoded['rows'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(PartsImportRowError.fromJson)
+          .toList(),
+    );
+  }
+
   // GET /parts/:code
   static Future<Map<String, dynamic>> getPartByCode({
     required String token,
@@ -2720,4 +2785,94 @@ class ApiService {
       );
     }
   }
+}
+
+/// Caps the /parts/import endpoint enforces, mirrored for display.
+class PartsImportLimits {
+  const PartsImportLimits({
+    required this.maxFileBytes,
+    required this.maxRows,
+    required this.extensions,
+  });
+
+  final int maxFileBytes;
+  final int maxRows;
+  final List<String> extensions;
+
+  static const fallback = PartsImportLimits(
+    maxFileBytes: 2 * 1024 * 1024,
+    maxRows: 1000,
+    extensions: ['xlsx'],
+  );
+
+  factory PartsImportLimits.fromJson(Map<String, dynamic> json) {
+    return PartsImportLimits(
+      maxFileBytes:
+          (json['maxFileBytes'] as num?)?.toInt() ?? fallback.maxFileBytes,
+      maxRows: (json['maxRows'] as num?)?.toInt() ?? fallback.maxRows,
+      extensions: (json['extensions'] as List<dynamic>? ?? const ['xlsx'])
+          .map((e) => e.toString())
+          .toList(),
+    );
+  }
+
+  String get maxFileLabel {
+    final mb = maxFileBytes / (1024 * 1024);
+    return mb >= 1
+        ? '${mb.toStringAsFixed(mb.truncateToDouble() == mb ? 0 : 1)} MB'
+        : '${(maxFileBytes / 1024).round()} KB';
+  }
+}
+
+/// One cell the user has to fix before the file will import.
+class PartsImportRowError {
+  const PartsImportRowError({
+    required this.row,
+    required this.column,
+    required this.message,
+  });
+
+  final int row;
+  final String column;
+  final String message;
+
+  factory PartsImportRowError.fromJson(Map<String, dynamic> json) {
+    return PartsImportRowError(
+      row: (json['row'] as num?)?.toInt() ?? 0,
+      column: json['column']?.toString() ?? '',
+      message: json['message']?.toString() ?? '',
+    );
+  }
+
+  String get label => column.isEmpty ? 'แถว $row' : 'แถว $row · $column';
+}
+
+/// Outcome of an import. Nothing is written unless [ok] is true.
+class PartsImportResult {
+  const PartsImportResult({
+    required this.ok,
+    required this.created,
+    required this.message,
+    required this.rows,
+  });
+
+  final bool ok;
+  final int created;
+  final String message;
+  final List<PartsImportRowError> rows;
+
+  factory PartsImportResult.success({
+    required int created,
+    required String message,
+  }) => PartsImportResult(
+    ok: true,
+    created: created,
+    message: message,
+    rows: const [],
+  );
+
+  factory PartsImportResult.failure({
+    required String message,
+    required List<PartsImportRowError> rows,
+  }) => PartsImportResult(ok: false, created: 0, message: message, rows: rows);
 }

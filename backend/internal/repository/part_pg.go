@@ -941,3 +941,167 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 
 	return parts, nil
 }
+
+// ImportParts writes a whole spreadsheet or none of it. Both uniqueness checks
+// happen inside the transaction, so two people importing overlapping files at
+// the same time cannot both succeed.
+func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow) (PartImportResult, error) {
+	result := PartImportResult{Codes: make([]string, 0, len(rows))}
+	if len(rows) == 0 {
+		return result, nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return result, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// The catalog keeps one product per name in the single warehouse, so a name
+	// that already exists is a conflict rather than a second row.
+	names := make([]string, 0, len(rows))
+	codes := make([]string, 0, len(rows))
+	for _, row := range rows {
+		names = append(names, strings.ToLower(strings.TrimSpace(row.Name)))
+		if row.Code != "" {
+			codes = append(codes, row.Code)
+		}
+	}
+
+	takenNames, err := r.lookupTaken(ctx, tx, `
+		SELECT lower(btrim("name")) FROM "part_master"
+		WHERE lower(btrim("name")) = ANY($1)
+	`, names)
+	if err != nil {
+		return result, err
+	}
+	takenCodes, err := r.lookupTaken(ctx, tx, `
+		SELECT upper("code") FROM "part_master" WHERE upper("code") = ANY($1)
+	`, upperAll(codes))
+	if err != nil {
+		return result, err
+	}
+
+	for _, row := range rows {
+		if takenNames[strings.ToLower(strings.TrimSpace(row.Name))] {
+			result.Conflicts = append(result.Conflicts, PartImportConflict{
+				SheetRow: row.SheetRow,
+				Column:   "ชื่อสินค้า",
+				Message:  "มีสินค้าชื่อนี้อยู่แล้วในระบบ",
+			})
+		}
+		if row.Code != "" && takenCodes[strings.ToUpper(row.Code)] {
+			result.Conflicts = append(result.Conflicts, PartImportConflict{
+				SheetRow: row.SheetRow,
+				Column:   "รหัสสินค้า",
+				Message:  "รหัสสินค้านี้มีอยู่แล้ว",
+			})
+		}
+	}
+	if len(result.Conflicts) > 0 {
+		return result, nil
+	}
+
+	// One running-code cursor for the batch; taking it inside the transaction
+	// keeps the generated codes contiguous even under concurrent imports.
+	var nextCode int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(CAST(SUBSTRING("code" FROM 2) AS INTEGER)), 0) + 1
+		FROM "part_master"
+		WHERE "code" ~ '^P[0-9]+$'
+	`).Scan(&nextCode); err != nil {
+		return result, err
+	}
+
+	insertPart, err := tx.PrepareContext(ctx, `
+		INSERT INTO "part_master"
+			("code", "bar_code", "name", "name_th", "unit_id", "category_id",
+			 "price", "cost", "min_price", "details", "is_active", "receipt_name")
+		VALUES (
+			$1, $2, $3, $3,
+			(SELECT "id" FROM "unit_master" WHERE "id" = $4),
+			NULL, $5, $6, $7, $8, true, ''
+		)
+	`)
+	if err != nil {
+		return result, err
+	}
+	defer insertPart.Close()
+
+	insertAddress, err := tx.PrepareContext(ctx, `
+		INSERT INTO "address_master"
+			("code", "part_code", "store_id", "shelf", "qty", "rop", "remarks", "is_active")
+		VALUES ($1, $2, $3, $4, $5, 0, '', true)
+	`)
+	if err != nil {
+		return result, err
+	}
+	defer insertAddress.Close()
+
+	for _, row := range rows {
+		code := row.Code
+		if code == "" {
+			code = fmt.Sprintf("P%04d", nextCode)
+			nextCode++
+			// Skip over codes an earlier manual entry already claimed.
+			for takenCodes[strings.ToUpper(code)] {
+				code = fmt.Sprintf("P%04d", nextCode)
+				nextCode++
+			}
+		}
+		takenCodes[strings.ToUpper(code)] = true
+
+		barCode := row.BarCode
+		if barCode == "" {
+			barCode = code
+		}
+		if _, err := insertPart.ExecContext(ctx, code, barCode, strings.TrimSpace(row.Name),
+			row.UnitID, row.Price, row.Cost, row.MinPrice, row.Details); err != nil {
+			return PartImportResult{}, fmt.Errorf("แถว %d: %w", row.SheetRow, err)
+		}
+		if _, err := insertAddress.ExecContext(ctx,
+			"ADDR-"+code+"-"+ImportWarehouseStoreID, code, ImportWarehouseStoreID,
+			row.Shelf, row.Qty); err != nil {
+			return PartImportResult{}, fmt.Errorf("แถว %d: %w", row.SheetRow, err)
+		}
+		result.Codes = append(result.Codes, code)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return PartImportResult{}, err
+	}
+	result.Created = len(result.Codes)
+	return result, nil
+}
+
+// ImportWarehouseStoreID is the only store an imported product may enter — the
+// catalog is modelled as a single warehouse that the vehicles draw from.
+const ImportWarehouseStoreID = "main"
+
+func (r *partRepositoryPG) lookupTaken(ctx context.Context, tx *sql.Tx, query string, values []string) (map[string]bool, error) {
+	taken := map[string]bool{}
+	if len(values) == 0 {
+		return taken, nil
+	}
+	rows, err := tx.QueryContext(ctx, query, pq.Array(values))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		taken[value] = true
+	}
+	return taken, rows.Err()
+}
+
+func upperAll(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, strings.ToUpper(value))
+	}
+	return out
+}

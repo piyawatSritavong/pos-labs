@@ -241,6 +241,9 @@ func (*stubRestockPartRepository) DeletePart(context.Context, string) (string, e
 func (*stubRestockPartRepository) GenerateNextPartCode(context.Context) (string, error) {
 	return "P0001", nil
 }
+func (*stubRestockPartRepository) ImportParts(context.Context, []repository.PartImportRow) (repository.PartImportResult, error) {
+	return repository.PartImportResult{}, nil
+}
 
 func TestRestockCatalogSupportsPaginationWithoutCostFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)

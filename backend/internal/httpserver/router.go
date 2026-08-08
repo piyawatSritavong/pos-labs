@@ -102,6 +102,17 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		partsWrite.POST("", partsHandler.Create)
 		partsWrite.PUT("/:code", partsHandler.Update)
 	}
+	// Bulk create from a spreadsheet. The blank template carries no business
+	// data, so it is served without auth — that is what lets the client offer
+	// it as a plain download link.
+	partsImportHandler := handlers.NewPartsImportHandler(partRepo)
+	r.GET("/parts/import/template", partsImportHandler.Template)
+	partsImport := r.Group("/parts/import")
+	partsImport.Use(authMw.RequirePermission("parts", "write"))
+	{
+		partsImport.GET("/limits", partsImportHandler.Limits)
+		partsImport.POST("", partsImportHandler.Import)
+	}
 	partsDelete := r.Group("/parts")
 	partsDelete.Use(authMw.RequirePermission("parts", "delete"))
 	{

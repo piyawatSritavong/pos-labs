@@ -82,6 +82,43 @@ type PartRepository interface {
 	// convention (P0001, P0002, …). The same value doubles as the default
 	// barcode (Code128 renders the code directly — see migration 0012).
 	GenerateNextPartCode(ctx context.Context) (string, error)
+	// ImportParts creates many products and their warehouse rows in one
+	// transaction. Rows whose code or name is already taken are reported as
+	// conflicts and nothing is written — a half-applied spreadsheet is worse
+	// than a rejected one.
+	ImportParts(ctx context.Context, rows []PartImportRow) (PartImportResult, error)
+}
+
+// PartImportRow is one product from an uploaded spreadsheet. SheetRow travels
+// with it so conflicts can be reported against the row the user sees. An empty
+// Code means "assign the next running code".
+type PartImportRow struct {
+	SheetRow int
+	Code     string
+	Name     string
+	BarCode  string
+	UnitID   string
+	Shelf    string
+	Details  string
+	Price    float64
+	Cost     float64
+	MinPrice float64
+	Qty      int
+}
+
+// PartImportConflict is a row that collides with the existing catalog.
+type PartImportConflict struct {
+	SheetRow int    `json:"row"`
+	Column   string `json:"column,omitempty"`
+	Message  string `json:"message"`
+}
+
+// PartImportResult reports what an import did. When Conflicts is non-empty
+// nothing was written and Created is zero.
+type PartImportResult struct {
+	Created   int
+	Codes     []string
+	Conflicts []PartImportConflict
 }
 
 // PartInput is the writable shape for creating/updating a part. UnitID and
