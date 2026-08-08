@@ -10,14 +10,17 @@ import 'package:url_launcher/url_launcher.dart';
 /// reports one of two outcomes: every row was created, or nothing was and here
 /// is the list of cells to fix.
 ///
-/// Returns true when products were created, so the caller can refresh its list.
-Future<bool> showPartsImportDialog(BuildContext context, String token) async {
-  final imported = await showDialog<bool>(
+/// Returns the outcome when the file was applied, or null when the user closed
+/// the dialog without importing.
+Future<PartsImportResult?> showPartsImportDialog(
+  BuildContext context,
+  String token,
+) {
+  return showDialog<PartsImportResult>(
     context: context,
     barrierDismissible: false,
     builder: (_) => _PartsImportDialog(token: token),
   );
-  return imported ?? false;
 }
 
 class _PartsImportDialog extends StatefulWidget {
@@ -134,7 +137,7 @@ class _PartsImportDialogState extends State<_PartsImportDialog> {
       );
       if (!mounted) return;
       if (result.ok) {
-        Navigator.of(context).pop(true);
+        Navigator.of(context).pop(result);
         return;
       }
       setState(() {
@@ -244,9 +247,7 @@ class _PartsImportDialogState extends State<_PartsImportDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _isUploading
-              ? null
-              : () => Navigator.of(context).pop(false),
+          onPressed: _isUploading ? null : () => Navigator.of(context).pop(),
           child: const Text('ปิด'),
         ),
         ElevatedButton(
@@ -277,8 +278,10 @@ class _RulesBox extends StatelessWidget {
       'เพิ่มได้ครั้งละไม่เกิน ${limits.maxRows} รายการ',
       'กรอกในชีตแรก แถวที่ 1 เป็นหัวคอลัมน์ ห้ามแก้ไข',
       'ต้องกรอก: ชื่อสินค้า, ราคาขาย — ที่เหลือเว้นว่างได้',
-      'รหัสสินค้าเว้นว่างไว้ได้ ระบบจะออกให้อัตโนมัติ',
-      'สินค้าใหม่จะถูกเพิ่มเข้าคลังหลักเท่านั้น',
+      'รหัสสินค้าเว้นว่างไว้ = สินค้าใหม่ ระบบจะออกรหัสให้อัตโนมัติ',
+      'กรอกรหัสสินค้าที่มีอยู่แล้ว = อัปเดตของเดิม — บวกจำนวนเข้าคลัง '
+          'และแก้ต้นทุน/ราคา ส่วนชื่อและบาร์โค้ดจะไม่ถูกแก้',
+      'สินค้าเข้าคลังหลักเท่านั้น',
       'ถ้ามีข้อผิดพลาดแม้แต่บรรทัดเดียว จะไม่บันทึกทั้งไฟล์',
     ];
     return Container(

@@ -125,7 +125,6 @@ func Parse(sheet *Sheet) ([]Row, []RowError, error) {
 	rows := make([]Row, 0, len(body))
 	problems := make([]RowError, 0)
 	seenCodes := map[string]int{}
-	seenNames := map[string]int{}
 
 	for index, raw := range body {
 		sheetRow := index + 2 // worksheet rows are 1-based and row 1 is the header
@@ -143,19 +142,13 @@ func Parse(sheet *Sheet) ([]Row, []RowError, error) {
 		row := Row{SheetRow: sheetRow}
 		before := len(problems)
 
+		// Names are only checked for collisions once the catalog is in hand:
+		// a row whose code already exists updates that product and its name is
+		// left alone, so it cannot collide with anything. The repository does
+		// that check inside the import transaction.
 		row.Name = cellAt(raw, positions, colName)
 		if row.Name == "" {
 			problems = append(problems, RowError{sheetRow, Columns[colName].Header, "ต้องกรอกชื่อสินค้า"})
-		} else if previous, duplicate := seenNames[strings.ToLower(row.Name)]; duplicate {
-			problems = append(problems, RowError{
-				SheetRow: sheetRow,
-				Column:   Columns[colName].Header,
-				Message:  fmt.Sprintf("ชื่อซ้ำกับแถว %d ในไฟล์เดียวกัน", previous),
-			})
-		} else {
-			// Remember the name even if the rest of the row is bad, so the
-			// second copy is still reported as a duplicate.
-			seenNames[strings.ToLower(row.Name)] = sheetRow
 		}
 
 		row.Price = parseAmount(cellAt(raw, positions, colPrice), sheetRow, colPrice, true, &problems)

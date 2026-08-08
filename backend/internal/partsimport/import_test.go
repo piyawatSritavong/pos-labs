@@ -160,8 +160,9 @@ func TestParseReportsEveryBadRow(t *testing.T) {
 		{"", "10", "", "", "", "", "", "", "", ""},                // missing name
 		{"ของดี", "ไม่ใช่ตัวเลข", "", "", "", "", "", "", "", ""}, // price not a number
 		{"ของถูก", "10", "", "", "", "", "", "20", "", ""},        // min price above price
-		{"ของดี", "10", "", "", "", "", "", "", "", ""},           // duplicate name
-		{"ของใหม่", "10", "", "", "P 001", "", "", "", "", ""},    // code with a space
+		{"ของใหม่", "10", "", "", "P0001", "", "", "", "", ""},    // fine
+		{"ของอื่น", "10", "", "", "P0001", "", "", "", "", ""},    // code repeats row 5
+		{"ของท้าย", "10", "", "", "P 001", "", "", "", "", ""},    // code with a space
 	})
 	sheet, err := ReadFirstSheet(data)
 	if err != nil {
@@ -171,16 +172,43 @@ func TestParseReportsEveryBadRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if len(rows) != 0 {
-		t.Fatalf("no row should survive, got %d", len(rows))
+	if len(rows) != 1 || rows[0].SheetRow != 5 {
+		t.Fatalf("only the good row should survive, got %+v", rows)
 	}
-	if len(problems) != 5 {
+	wantRows := []int{2, 3, 4, 6, 7}
+	if len(problems) != len(wantRows) {
 		t.Fatalf("expected one problem per bad row, got %d: %v", len(problems), problems)
 	}
-	for index, problem := range problems {
-		if problem.SheetRow != index+2 {
-			t.Fatalf("problem %d points at row %d: %v", index, problem.SheetRow, problem)
+	for index, wantRow := range wantRows {
+		if problems[index].SheetRow != wantRow {
+			t.Fatalf("problem %d points at row %d, want %d: %v",
+				index, problems[index].SheetRow, wantRow, problems[index])
 		}
+	}
+}
+
+func TestParseLeavesDuplicateNamesToTheRepository(t *testing.T) {
+	// Two rows can legitimately carry the same name when one of them updates an
+	// existing product by code — only the repository knows which codes exist,
+	// so the parser must not pre-judge it.
+	data := buildXLSX(t, "สินค้า", [][]string{
+		headerRow(),
+		{"ตะปู 3*10", "650", "", "20", "P0001", "", "", "", "", ""},
+		{"ตะปู 3*10", "650", "", "5", "", "", "", "", "", ""},
+	})
+	sheet, err := ReadFirstSheet(data)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	rows, problems, err := Parse(sheet)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(problems) != 0 {
+		t.Fatalf("the parser should not judge duplicate names: %v", problems)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected both rows to reach the repository, got %d", len(rows))
 	}
 }
 

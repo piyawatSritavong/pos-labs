@@ -132,14 +132,19 @@ func (r *purchaseOrderRepositoryPG) Create(
 	}
 
 	for _, item := range resolved {
+		// A line for a product that already exists is a restock, not a
+		// redefinition: it refreshes what a purchase can legitimately change
+		// (cost, prices) and leaves identity alone. Renaming a product or
+		// reassigning its barcode has to go through the edit form, so a typo on
+		// a receiving document cannot quietly rewrite the catalog. The name and
+		// barcode as typed are still kept on the purchase_order_item line, which
+		// records what was ordered.
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO "part_master"(
 				"code", "bar_code", "name", "name_th", "receipt_name", "unit_id",
 				"cost", "price", "min_price", "is_active"
 			) VALUES ($1, $2, $3, $3, $3, 'pcs', $4, $5, $6, true)
 			ON CONFLICT ("code") DO UPDATE SET
-				"bar_code" = EXCLUDED."bar_code", "name" = EXCLUDED."name",
-				"name_th" = EXCLUDED."name_th", "receipt_name" = EXCLUDED."receipt_name",
 				"cost" = EXCLUDED."cost", "price" = EXCLUDED."price",
 				"min_price" = EXCLUDED."min_price", "is_active" = true
 		`, item.PartCode, item.BarCode, item.PartName, item.Cost, item.Price, item.MinPrice); err != nil {

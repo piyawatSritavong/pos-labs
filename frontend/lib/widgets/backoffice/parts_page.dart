@@ -700,13 +700,11 @@ class _PartsManagementSectionState extends State<PartsManagementSection> {
                               context,
                               token,
                             );
-                            if (!mounted || !imported) return;
+                            if (!mounted || imported == null) return;
                             await partsProvider.fetchParts(token);
                             if (!mounted) return;
                             messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text('เพิ่มสินค้าจากไฟล์สำเร็จ'),
-                              ),
+                              SnackBar(content: Text(imported.message)),
                             );
                           },
                     icon: const Icon(Icons.upload_file),

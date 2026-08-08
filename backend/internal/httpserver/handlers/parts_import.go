@@ -54,9 +54,10 @@ func (h *PartsImportHandler) Limits(c *gin.Context) {
 	})
 }
 
-// Import reads an uploaded workbook and creates every product in it, or none.
-// Validation errors and catalog conflicts come back as a per-row list so the
-// user can fix the spreadsheet in one pass.
+// Import reads an uploaded workbook and applies all of it, or none. A row whose
+// รหัสสินค้า already exists restocks and reprices that product; the rest create
+// new ones. Validation errors and catalog conflicts come back as a per-row list
+// so the user can fix the spreadsheet in one pass.
 func (h *PartsImportHandler) Import(c *gin.Context) {
 	// Cap what the request body may consume before touching the multipart
 	// reader, so an oversized upload is refused instead of buffered.
@@ -151,18 +152,34 @@ func (h *PartsImportHandler) Import(c *gin.Context) {
 	if len(result.Conflicts) > 0 {
 		c.JSON(http.StatusConflict, gin.H{
 			"error":   "conflicting_rows",
-			"message": fmt.Sprintf("มี %d รายการซ้ำกับสินค้าในระบบ ยังไม่มีการบันทึกสินค้า", len(result.Conflicts)),
+			"message": fmt.Sprintf("มี %d รายการที่ใช้ไม่ได้ ยังไม่มีการบันทึกสินค้า", len(result.Conflicts)),
 			"rows":    result.Conflicts,
 		})
 		return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"created": result.Created,
-		"codes":   result.Codes,
-		"storeId": partsimport.WarehouseStoreID,
-		"message": fmt.Sprintf("เพิ่มสินค้าเข้าคลังหลัก %d รายการ", result.Created),
+		"created":      result.Created,
+		"updated":      result.Updated,
+		"codes":        result.Codes,
+		"updatedCodes": result.UpdatedCodes,
+		"storeId":      partsimport.WarehouseStoreID,
+		"message":      importSummary(result.Created, result.Updated),
 	})
+}
+
+// importSummary says which of the two things happened, and stays honest when
+// only one of them did.
+func importSummary(created, updated int) string {
+	switch {
+	case created > 0 && updated > 0:
+		return fmt.Sprintf("เพิ่มสินค้าใหม่ %d รายการ และอัปเดตของเดิม %d รายการ เข้าคลังหลัก",
+			created, updated)
+	case updated > 0:
+		return fmt.Sprintf("อัปเดตสินค้าเดิม %d รายการ เข้าคลังหลัก", updated)
+	default:
+		return fmt.Sprintf("เพิ่มสินค้าเข้าคลังหลัก %d รายการ", created)
+	}
 }
 
 func respondFileTooLarge(c *gin.Context) {

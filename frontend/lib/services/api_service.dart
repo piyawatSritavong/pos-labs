@@ -1566,6 +1566,7 @@ class ApiService {
     if (response.statusCode == 201) {
       return PartsImportResult.success(
         created: (decoded['created'] as num?)?.toInt() ?? 0,
+        updated: (decoded['updated'] as num?)?.toInt() ?? 0,
         message: decoded['message']?.toString() ?? '',
       );
     }
@@ -2852,21 +2853,30 @@ class PartsImportResult {
   const PartsImportResult({
     required this.ok,
     required this.created,
+    required this.updated,
     required this.message,
     required this.rows,
   });
 
   final bool ok;
+
+  /// Products the file introduced.
   final int created;
+
+  /// Products the file restocked and repriced by matching an existing code.
+  final int updated;
+
   final String message;
   final List<PartsImportRowError> rows;
 
   factory PartsImportResult.success({
     required int created,
+    required int updated,
     required String message,
   }) => PartsImportResult(
     ok: true,
     created: created,
+    updated: updated,
     message: message,
     rows: const [],
   );
@@ -2874,5 +2884,11 @@ class PartsImportResult {
   factory PartsImportResult.failure({
     required String message,
     required List<PartsImportRowError> rows,
-  }) => PartsImportResult(ok: false, created: 0, message: message, rows: rows);
+  }) => PartsImportResult(
+    ok: false,
+    created: 0,
+    updated: 0,
+    message: message,
+    rows: rows,
+  );
 }

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -942,11 +943,21 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 	return parts, nil
 }
 
-// ImportParts writes a whole spreadsheet or none of it. Both uniqueness checks
-// happen inside the transaction, so two people importing overlapping files at
-// the same time cannot both succeed.
+// ImportParts writes a whole spreadsheet or none of it.
+//
+// A row that names a code already in the catalog is a restock, not a new
+// product: it adds to the warehouse quantity and refreshes the figures a
+// restock can legitimately change. Identity — code, name, barcode, unit — is
+// left alone, so a spreadsheet can never quietly rename a product; that has to
+// go through the edit form.
+//
+// Every check happens inside the transaction, so two people importing
+// overlapping files at the same time cannot both succeed.
 func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow) (PartImportResult, error) {
-	result := PartImportResult{Codes: make([]string, 0, len(rows))}
+	result := PartImportResult{
+		Codes:        make([]string, 0, len(rows)),
+		UpdatedCodes: make([]string, 0),
+	}
 	if len(rows) == 0 {
 		return result, nil
 	}
@@ -957,17 +968,43 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// The catalog keeps one product per name in the single warehouse, so a name
-	// that already exists is a conflict rather than a second row.
-	names := make([]string, 0, len(rows))
-	codes := make([]string, 0, len(rows))
-	for _, row := range rows {
-		names = append(names, strings.ToLower(strings.TrimSpace(row.Name)))
-		if row.Code != "" {
-			codes = append(codes, row.Code)
-		}
+	// Serialise imports against each other so the existence checks below and
+	// the running-code cursor cannot be invalidated by a concurrent import.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('parts-import'))`); err != nil {
+		return result, err
 	}
 
+	givenCodes := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.Code != "" {
+			givenCodes = append(givenCodes, strings.ToUpper(row.Code))
+		}
+	}
+	// Map the codes the sheet supplied to the codes as the catalog spells them,
+	// so a lowercase entry still updates the right product.
+	existing, err := r.lookupCanonicalCodes(ctx, tx, givenCodes)
+	if err != nil {
+		return result, err
+	}
+
+	updates := make([]PartImportRow, 0, len(rows))
+	creates := make([]PartImportRow, 0, len(rows))
+	for _, row := range rows {
+		if row.Code != "" {
+			if canonical, found := existing[strings.ToUpper(row.Code)]; found {
+				row.Code = canonical
+				updates = append(updates, row)
+				continue
+			}
+		}
+		creates = append(creates, row)
+	}
+
+	// Only new products need a name: an update keeps the catalog's own.
+	names := make([]string, 0, len(creates))
+	for _, row := range creates {
+		names = append(names, strings.ToLower(strings.TrimSpace(row.Name)))
+	}
 	takenNames, err := r.lookupTaken(ctx, tx, `
 		SELECT lower(btrim("name")) FROM "part_master"
 		WHERE lower(btrim("name")) = ANY($1)
@@ -975,35 +1012,34 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 	if err != nil {
 		return result, err
 	}
-	takenCodes, err := r.lookupTaken(ctx, tx, `
-		SELECT upper("code") FROM "part_master" WHERE upper("code") = ANY($1)
-	`, upperAll(codes))
-	if err != nil {
-		return result, err
-	}
 
-	for _, row := range rows {
-		if takenNames[strings.ToLower(strings.TrimSpace(row.Name))] {
+	seenNames := map[string]int{}
+	for _, row := range creates {
+		name := strings.ToLower(strings.TrimSpace(row.Name))
+		if takenNames[name] {
 			result.Conflicts = append(result.Conflicts, PartImportConflict{
 				SheetRow: row.SheetRow,
 				Column:   "ชื่อสินค้า",
-				Message:  "มีสินค้าชื่อนี้อยู่แล้วในระบบ",
+				Message:  "มีสินค้าชื่อนี้อยู่แล้วในระบบ ถ้าต้องการแก้ไขให้ระบุรหัสสินค้าเดิม",
 			})
+			continue
 		}
-		if row.Code != "" && takenCodes[strings.ToUpper(row.Code)] {
+		if previous, duplicate := seenNames[name]; duplicate {
 			result.Conflicts = append(result.Conflicts, PartImportConflict{
 				SheetRow: row.SheetRow,
-				Column:   "รหัสสินค้า",
-				Message:  "รหัสสินค้านี้มีอยู่แล้ว",
+				Column:   "ชื่อสินค้า",
+				Message:  fmt.Sprintf("ชื่อซ้ำกับแถว %d ในไฟล์เดียวกัน", previous),
 			})
+			continue
 		}
+		seenNames[name] = row.SheetRow
 	}
 	if len(result.Conflicts) > 0 {
 		return result, nil
 	}
 
 	// One running-code cursor for the batch; taking it inside the transaction
-	// keeps the generated codes contiguous even under concurrent imports.
+	// keeps the generated codes contiguous.
 	var nextCode int
 	if err := tx.QueryRowContext(ctx, `
 		SELECT COALESCE(MAX(CAST(SUBSTRING("code" FROM 2) AS INTEGER)), 0) + 1
@@ -1028,6 +1064,21 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 	}
 	defer insertPart.Close()
 
+	// Prices move, identity does not. A blank remarks/details cell means "no
+	// change", so an import that only carries quantities never wipes text
+	// somebody typed in the product form.
+	updatePart, err := tx.PrepareContext(ctx, `
+		UPDATE "part_master" SET
+			"cost" = $2, "price" = $3, "min_price" = $4,
+			"details" = CASE WHEN $5 = '' THEN "details" ELSE $5 END,
+			"is_active" = true
+		WHERE "code" = $1
+	`)
+	if err != nil {
+		return result, err
+	}
+	defer updatePart.Close()
+
 	insertAddress, err := tx.PrepareContext(ctx, `
 		INSERT INTO "address_master"
 			("code", "part_code", "store_id", "shelf", "qty", "rop", "remarks", "is_active")
@@ -1038,7 +1089,12 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 	}
 	defer insertAddress.Close()
 
-	for _, row := range rows {
+	takenCodes := map[string]bool{}
+	for _, canonical := range existing {
+		takenCodes[strings.ToUpper(canonical)] = true
+	}
+
+	for _, row := range creates {
 		code := row.Code
 		if code == "" {
 			code = fmt.Sprintf("P%04d", nextCode)
@@ -1067,11 +1123,82 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 		result.Codes = append(result.Codes, code)
 	}
 
+	for _, row := range updates {
+		if _, err := updatePart.ExecContext(ctx, row.Code,
+			row.Cost, row.Price, row.MinPrice, row.Details); err != nil {
+			return PartImportResult{}, fmt.Errorf("แถว %d: %w", row.SheetRow, err)
+		}
+		if err := r.receiveIntoWarehouse(ctx, tx, row); err != nil {
+			return PartImportResult{}, fmt.Errorf("แถว %d: %w", row.SheetRow, err)
+		}
+		result.UpdatedCodes = append(result.UpdatedCodes, row.Code)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return PartImportResult{}, err
 	}
 	result.Created = len(result.Codes)
+	result.Updated = len(result.UpdatedCodes)
 	return result, nil
+}
+
+// receiveIntoWarehouse adds the sheet's quantity to what the warehouse already
+// holds — the column is what was received, not a new stock level, so importing
+// the same delivery note twice is visible as double stock rather than silently
+// overwriting a count somebody took. A product with no warehouse row yet gets
+// one, which is how a part that only ever lived on a vehicle gets registered.
+func (r *partRepositoryPG) receiveIntoWarehouse(ctx context.Context, tx *sql.Tx, row PartImportRow) error {
+	var addressCode string
+	err := tx.QueryRowContext(ctx, `
+		SELECT "code" FROM "address_master"
+		WHERE "part_code" = $1 AND "store_id" = $2
+		ORDER BY "is_active" DESC, "code" LIMIT 1
+		FOR UPDATE
+	`, row.Code, ImportWarehouseStoreID).Scan(&addressCode)
+	if errors.Is(err, sql.ErrNoRows) {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO "address_master"
+				("code", "part_code", "store_id", "shelf", "qty", "rop", "remarks", "is_active")
+			VALUES ($1, $2, $3, $4, $5, 0, '', true)
+		`, "ADDR-"+row.Code+"-"+ImportWarehouseStoreID, row.Code,
+			ImportWarehouseStoreID, row.Shelf, row.Qty)
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	// A blank shelf cell leaves the existing one alone.
+	_, err = tx.ExecContext(ctx, `
+		UPDATE "address_master"
+		SET "qty" = "qty" + $2,
+		    "shelf" = CASE WHEN $3 = '' THEN "shelf" ELSE $3 END,
+		    "is_active" = true
+		WHERE "code" = $1
+	`, addressCode, row.Qty, row.Shelf)
+	return err
+}
+
+// lookupCanonicalCodes maps upper-cased codes to the spelling the catalog uses.
+func (r *partRepositoryPG) lookupCanonicalCodes(ctx context.Context, tx *sql.Tx, codes []string) (map[string]string, error) {
+	found := map[string]string{}
+	if len(codes) == 0 {
+		return found, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT upper("code"), "code" FROM "part_master" WHERE upper("code") = ANY($1)
+	`, pq.Array(codes))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var upper, canonical string
+		if err := rows.Scan(&upper, &canonical); err != nil {
+			return nil, err
+		}
+		found[upper] = canonical
+	}
+	return found, rows.Err()
 }
 
 // ImportWarehouseStoreID is the only store an imported product may enter — the
@@ -1096,12 +1223,4 @@ func (r *partRepositoryPG) lookupTaken(ctx context.Context, tx *sql.Tx, query st
 		taken[value] = true
 	}
 	return taken, rows.Err()
-}
-
-func upperAll(values []string) []string {
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		out = append(out, strings.ToUpper(value))
-	}
-	return out
 }
