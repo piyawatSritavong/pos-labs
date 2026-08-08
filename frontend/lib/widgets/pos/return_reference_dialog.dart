@@ -6,6 +6,7 @@ import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/widgets/qty_stepper.dart';
 import 'package:provider/provider.dart';
 
 class ReturnReferenceDialog extends StatefulWidget {
@@ -441,41 +442,19 @@ class _ReturnReferenceDialogState extends State<ReturnReferenceDialog> {
                                       ],
                                     ),
                                   ),
-                                  IconButton(
-                                    onPressed: selectedQty <= 0
-                                        ? null
-                                        : () {
-                                            setState(() {
-                                              _selectedQtyByKey[key] =
-                                                  selectedQty - 1;
-                                            });
-                                            _broadcastState();
-                                          },
-                                    icon: const Icon(
-                                      Icons.remove_circle_outline,
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: 36,
-                                    child: Text(
-                                      '$selectedQty',
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    onPressed: selectedQty >= maxQty
-                                        ? null
-                                        : () {
-                                            setState(() {
-                                              _selectedQtyByKey[key] =
-                                                  selectedQty + 1;
-                                            });
-                                            _broadcastState();
-                                          },
-                                    icon: const Icon(Icons.add_circle_outline),
+                                  QtyStepper(
+                                    key: ValueKey('return-qty-$key'),
+                                    value: selectedQty,
+                                    max: maxQty,
+                                    compact: true,
+                                    decrementTooltip: 'ลดจำนวนที่คืน',
+                                    incrementTooltip: 'เพิ่มจำนวนที่คืน',
+                                    onChanged: (qty) {
+                                      setState(() {
+                                        _selectedQtyByKey[key] = qty;
+                                      });
+                                      _broadcastState();
+                                    },
                                   ),
                                   SizedBox(
                                     width: 120,

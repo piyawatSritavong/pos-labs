@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/widgets/qty_stepper.dart';
 import 'package:frontend/widgets/backoffice/barcode_sheet_page.dart';
 import 'package:provider/provider.dart';
 
@@ -189,11 +190,6 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
     });
   }
 
-  void _bumpQty(String code, int delta) {
-    final current = _selectedQty[code] ?? 1;
-    _setQty(code, current + delta);
-  }
-
   /// Select/clear every row on the *current page* (selection on other pages is
   /// preserved). Server-side paging means we never have the whole catalog in
   /// memory, so "select all" is scoped to what is visible.
@@ -370,50 +366,25 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
                                           DataCell(Text(code)),
                                           DataCell(Text(name)),
                                           DataCell(Text(bar)),
-                                          // Quantity stepper — ±1 (any count;
-                                          // partial last row is padded blank).
+                                          // Label count — steppable and
+                                          // typeable (a partial last row is
+                                          // padded blank).
                                           DataCell(
                                             Opacity(
                                               opacity: selected ? 1 : 0.4,
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  IconButton(
-                                                    icon: const Icon(Icons
-                                                        .remove_circle_outline),
-                                                    iconSize: 20,
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    tooltip: 'ลด 1',
-                                                    onPressed: selected
-                                                        ? () =>
-                                                            _bumpQty(code, -1)
-                                                        : null,
-                                                  ),
-                                                  SizedBox(
-                                                    width: 40,
-                                                    child: Text(
-                                                      '$qty',
-                                                      textAlign:
-                                                          TextAlign.center,
-                                                      style: const TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w600),
-                                                    ),
-                                                  ),
-                                                  IconButton(
-                                                    icon: const Icon(Icons
-                                                        .add_circle_outline),
-                                                    iconSize: 20,
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    tooltip: 'เพิ่ม 1',
-                                                    onPressed: selected
-                                                        ? () =>
-                                                            _bumpQty(code, 1)
-                                                        : null,
-                                                  ),
-                                                ],
+                                              child: QtyStepper(
+                                                key:
+                                                    ValueKey('label-qty-$code'),
+                                                value: qty,
+                                                min: 1,
+                                                max: 999,
+                                                enabled: selected,
+                                                compact: true,
+                                                fieldWidth: 48,
+                                                decrementTooltip: 'ลด 1',
+                                                incrementTooltip: 'เพิ่ม 1',
+                                                onChanged: (v) =>
+                                                    _setQty(code, v),
                                               ),
                                             ),
                                           ),

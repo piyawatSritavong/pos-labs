@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/widgets/qty_stepper.dart';
 import 'package:provider/provider.dart';
 
 class RequisitionDialog extends StatefulWidget {
@@ -530,18 +531,11 @@ class _CreateRestockTabState extends State<_CreateRestockTab> {
                     final line = entry.value;
                     return _LineTile(
                       line: line,
-                      onMinus: () {
-                        setState(() {
-                          if (line.qty > 1) {
-                            line.qty--;
-                          } else {
-                            _lines.removeAt(index);
-                          }
-                        });
-                      },
-                      onPlus: line.qty >= line.availableQty
-                          ? null
-                          : () => setState(() => line.qty++),
+                      onQtyChanged: (qty) => setState(() => line.qty = qty),
+                      // Stepping below 1 drops the line, the way it did when
+                      // the quantity was not editable.
+                      onStepBelowOne: () =>
+                          setState(() => _lines.removeAt(index)),
                       onDelete: () => setState(() => _lines.removeAt(index)),
                     );
                   }),
@@ -841,14 +835,14 @@ class _RestockCatalogPickerState extends State<RestockCatalogPicker> {
 class _LineTile extends StatelessWidget {
   const _LineTile({
     required this.line,
-    required this.onMinus,
-    required this.onPlus,
+    required this.onQtyChanged,
+    required this.onStepBelowOne,
     required this.onDelete,
   });
 
   final _RestockLine line;
-  final VoidCallback onMinus;
-  final VoidCallback? onPlus;
+  final ValueChanged<int> onQtyChanged;
+  final VoidCallback onStepBelowOne;
   final VoidCallback onDelete;
 
   @override
@@ -884,16 +878,16 @@ class _LineTile extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(onPressed: onMinus, icon: const Icon(Icons.remove)),
-          SizedBox(
-            width: 44,
-            child: Text(
-              '${line.qty}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+          QtyStepper(
+            // Keyed by product so reusing the tile for a different line resets
+            // the field instead of carrying the previous number over.
+            key: ValueKey('restock-qty-${line.code}'),
+            value: line.qty,
+            min: 1,
+            max: line.availableQty,
+            onChanged: onQtyChanged,
+            onDecrementBelowMin: onStepBelowOne,
           ),
-          IconButton(onPressed: onPlus, icon: const Icon(Icons.add)),
           IconButton(
             onPressed: onDelete,
             color: AppColors.danger,
