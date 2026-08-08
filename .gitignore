@@ -86,3 +86,6 @@ Thumbs.db
 *.har
 ResultClaudeCowork.txt
 ไจ๊เฮง-stock - สินค้า.csv
+
+# Database backups (contain password hashes, session tokens, pos_secret)
+_dev-resources/backups/
