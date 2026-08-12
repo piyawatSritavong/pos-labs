@@ -31,11 +31,20 @@ func RunServer(cfg config.Config) error {
 
 	addr := ":" + cfg.Port
 	log.Printf("Starting backend server on %s", addr)
+	// ReadTimeout covers receiving the whole request body, so it has to leave
+	// room for a spreadsheet upload over a phone tether, not just for headers.
+	// WriteTimeout is the deadline for the entire exchange: at ten seconds a
+	// bulk import or a wide report was cut off mid-flight, and because nothing
+	// had been written yet the browser reported it as a CORS/network failure
+	// with no clue as to the cause. These are backstops against a stuck
+	// connection, not a way to bound slow work.
 	server := &http.Server{
-		Addr:         addr,
-		Handler:      engine,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		Addr:              addr,
+		Handler:           engine,
+		ReadHeaderTimeout: 15 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		WriteTimeout:      3 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
 	}
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err

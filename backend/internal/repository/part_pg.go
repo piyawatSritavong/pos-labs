@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -1060,88 +1059,50 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 		return result, err
 	}
 
-	insertPart, err := tx.PrepareContext(ctx, `
-		INSERT INTO "part_master"
-			("code", "bar_code", "name", "name_th", "unit_id", "category_id",
-			 "price", "cost", "min_price", "details", "is_active", "receipt_name")
-		VALUES (
-			$1, $2, $3, $3,
-			(SELECT "id" FROM "unit_master" WHERE "id" = $4),
-			NULL, $5, $6, $7, $8, true, ''
-		)
-	`)
-	if err != nil {
-		return result, err
-	}
-	defer insertPart.Close()
-
-	// Prices move, identity does not. A blank details cell means "no change",
-	// so an import that only carries quantities never wipes text somebody typed
-	// in the product form.
-	updatePart, err := tx.PrepareContext(ctx, `
-		UPDATE "part_master" SET
-			"cost" = $2, "price" = $3, "min_price" = $4,
-			"details" = CASE WHEN $5 = '' THEN "details" ELSE $5 END,
-			"is_active" = true
-		WHERE "code" = $1
-	`)
-	if err != nil {
-		return result, err
-	}
-	defer updatePart.Close()
-
-	insertAddress, err := tx.PrepareContext(ctx, `
-		INSERT INTO "address_master"
-			("code", "part_code", "store_id", "shelf", "qty", "rop", "remarks", "is_active")
-		VALUES ($1, $2, $3, $4, $5, 0, '', true)
-	`)
-	if err != nil {
-		return result, err
-	}
-	defer insertAddress.Close()
-
 	takenCodes := map[string]bool{}
 	for _, canonical := range byCode {
 		takenCodes[strings.ToUpper(canonical)] = true
 	}
-
-	for _, row := range creates.rows {
-		code := row.Code
-		if code == "" {
+	for at := range creates.rows {
+		if creates.rows[at].Code != "" {
+			takenCodes[strings.ToUpper(creates.rows[at].Code)] = true
+			continue
+		}
+		code := fmt.Sprintf("P%04d", nextCode)
+		nextCode++
+		// Skip over codes an earlier manual entry already claimed.
+		for takenCodes[strings.ToUpper(code)] {
 			code = fmt.Sprintf("P%04d", nextCode)
 			nextCode++
-			// Skip over codes an earlier manual entry already claimed.
-			for takenCodes[strings.ToUpper(code)] {
-				code = fmt.Sprintf("P%04d", nextCode)
-				nextCode++
-			}
 		}
 		takenCodes[strings.ToUpper(code)] = true
-
-		barCode := row.BarCode
-		if barCode == "" {
-			barCode = code
-		}
-		if _, err := insertPart.ExecContext(ctx, code, barCode, strings.TrimSpace(row.Name),
-			row.UnitID, row.Price, row.Cost, row.MinPrice, row.Details); err != nil {
-			return PartImportResult{}, fmt.Errorf("แถว %d: %w", row.SheetRow, err)
-		}
-		if _, err := insertAddress.ExecContext(ctx,
-			"ADDR-"+code+"-"+ImportWarehouseStoreID, code, ImportWarehouseStoreID,
-			row.Shelf, row.Qty); err != nil {
-			return PartImportResult{}, fmt.Errorf("แถว %d: %w", row.SheetRow, err)
-		}
-		result.Codes = append(result.Codes, code)
+		creates.rows[at].Code = code
 	}
 
+	// The writes below are set-based on purpose. A row-at-a-time loop costs
+	// three round trips per product, which against a database in another region
+	// puts a thousand-row import into the minutes — long enough that the client
+	// gives up mid-flight and the user sees a network error rather than a
+	// result. As batches the whole import is a handful of statements.
+	if err := r.insertImportedParts(ctx, tx, creates.rows); err != nil {
+		return PartImportResult{}, err
+	}
+	if err := r.updateImportedParts(ctx, tx, updates.rows); err != nil {
+		return PartImportResult{}, err
+	}
+	// Existing warehouse rows are topped up first; whatever still has no row in
+	// the warehouse is inserted after, so nothing is counted twice.
+	if err := r.addImportedStock(ctx, tx, updates.rows); err != nil {
+		return PartImportResult{}, err
+	}
+	if err := r.insertImportedStock(ctx, tx, append(append([]PartImportRow{}, creates.rows...), updates.rows...)); err != nil {
+		return PartImportResult{}, err
+	}
+
+	for _, row := range creates.rows {
+		result.Codes = append(result.Codes, row.Code)
+	}
 	for _, row := range updates.rows {
-		if _, err := updatePart.ExecContext(ctx, row.Code,
-			row.Cost, row.Price, row.MinPrice, row.Details); err != nil {
-			return PartImportResult{}, fmt.Errorf("แถว %d: %w", row.SheetRow, err)
-		}
-		if err := r.receiveIntoWarehouse(ctx, tx, row); err != nil {
-			return PartImportResult{}, fmt.Errorf("แถว %d: %w", row.SheetRow, err)
-		}
 		result.UpdatedCodes = append(result.UpdatedCodes, row.Code)
 	}
 
@@ -1197,40 +1158,148 @@ func (b *importBatch) add(key string, row PartImportRow) {
 	b.rows = append(b.rows, row)
 }
 
-// receiveIntoWarehouse adds the sheet's quantity to what the warehouse already
-// holds — the column is what was received, not a new stock level, so importing
-// the same delivery note twice is visible as double stock rather than silently
-// overwriting a count somebody took. A product with no warehouse row yet gets
-// one, which is how a part that only ever lived on a vehicle gets registered.
-func (r *partRepositoryPG) receiveIntoWarehouse(ctx context.Context, tx *sql.Tx, row PartImportRow) error {
-	var addressCode string
-	err := tx.QueryRowContext(ctx, `
-		SELECT "code" FROM "address_master"
-		WHERE "part_code" = $1 AND "store_id" = $2
-		ORDER BY "is_active" DESC, "code" LIMIT 1
-		FOR UPDATE
-	`, row.Code, ImportWarehouseStoreID).Scan(&addressCode)
-	if errors.Is(err, sql.ErrNoRows) {
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO "address_master"
-				("code", "part_code", "store_id", "shelf", "qty", "rop", "remarks", "is_active")
-			VALUES ($1, $2, $3, $4, $5, 0, '', true)
-		`, "ADDR-"+row.Code+"-"+ImportWarehouseStoreID, row.Code,
-			ImportWarehouseStoreID, row.Shelf, row.Qty)
-		return err
+// The four statements the import writes with. Each takes parallel arrays and
+// works on the whole batch at once.
+
+func (r *partRepositoryPG) insertImportedParts(ctx context.Context, tx *sql.Tx, rows []PartImportRow) error {
+	if len(rows) == 0 {
+		return nil
 	}
-	if err != nil {
-		return err
+	codes := make([]string, len(rows))
+	barCodes := make([]string, len(rows))
+	names := make([]string, len(rows))
+	units := make([]string, len(rows))
+	details := make([]string, len(rows))
+	costs := make([]float64, len(rows))
+	prices := make([]float64, len(rows))
+	minPrices := make([]float64, len(rows))
+	for at, row := range rows {
+		codes[at] = row.Code
+		barCodes[at] = row.BarCode
+		if barCodes[at] == "" {
+			barCodes[at] = row.Code
+		}
+		names[at] = strings.TrimSpace(row.Name)
+		units[at] = row.UnitID
+		details[at] = row.Details
+		costs[at] = row.Cost
+		prices[at] = row.Price
+		minPrices[at] = row.MinPrice
 	}
-	// A blank shelf cell leaves the existing one alone.
-	_, err = tx.ExecContext(ctx, `
-		UPDATE "address_master"
-		SET "qty" = "qty" + $2,
-		    "shelf" = CASE WHEN $3 = '' THEN "shelf" ELSE $3 END,
-		    "is_active" = true
-		WHERE "code" = $1
-	`, addressCode, row.Qty, row.Shelf)
+	// A unit the master table does not know becomes NULL, the same as the
+	// one-at-a-time create path, so free-text input never trips the foreign key.
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO "part_master"
+			("code", "bar_code", "name", "name_th", "unit_id", "category_id",
+			 "cost", "price", "min_price", "details", "is_active", "receipt_name")
+		SELECT c.code, c.bar_code, c.name, c.name,
+		       (SELECT u."id" FROM "unit_master" u WHERE u."id" = c.unit_id),
+		       NULL, c.cost, c.price, c.min_price, c.details, true, ''
+		  FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[],
+		              $6::numeric[], $7::numeric[], $8::numeric[])
+		       AS c(code, bar_code, name, unit_id, details, cost, price, min_price)
+	`, pq.Array(codes), pq.Array(barCodes), pq.Array(names), pq.Array(units),
+		pq.Array(details), pq.Array(costs), pq.Array(prices), pq.Array(minPrices))
 	return err
+}
+
+// updateImportedParts refreshes what a restock may change. A blank details cell
+// means "no change", so an import carrying only quantities never wipes text
+// somebody typed in the product form. Identity is not in the SET list at all.
+func (r *partRepositoryPG) updateImportedParts(ctx context.Context, tx *sql.Tx, rows []PartImportRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	codes := make([]string, len(rows))
+	details := make([]string, len(rows))
+	costs := make([]float64, len(rows))
+	prices := make([]float64, len(rows))
+	minPrices := make([]float64, len(rows))
+	for at, row := range rows {
+		codes[at] = row.Code
+		details[at] = row.Details
+		costs[at] = row.Cost
+		prices[at] = row.Price
+		minPrices[at] = row.MinPrice
+	}
+	_, err := tx.ExecContext(ctx, `
+		UPDATE "part_master" p SET
+			"cost" = u.cost, "price" = u.price, "min_price" = u.min_price,
+			"details" = CASE WHEN u.details = '' THEN p."details" ELSE u.details END,
+			"is_active" = true
+		  FROM unnest($1::text[], $2::numeric[], $3::numeric[], $4::numeric[], $5::text[])
+		       AS u(code, cost, price, min_price, details)
+		 WHERE p."code" = u.code
+	`, pq.Array(codes), pq.Array(costs), pq.Array(prices), pq.Array(minPrices), pq.Array(details))
+	return err
+}
+
+// addImportedStock adds each row's quantity to what the warehouse already holds
+// — the column is what was received, not a new stock level, so importing the
+// same delivery note twice is visible as double stock rather than silently
+// overwriting a count somebody took. Products with no warehouse row yet are
+// left to insertImportedStock.
+func (r *partRepositoryPG) addImportedStock(ctx context.Context, tx *sql.Tx, rows []PartImportRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	codes, quantities, shelves := stockArrays(rows)
+	// DISTINCT ON picks the same row the single-product path would: the active
+	// one, then the lowest code.
+	_, err := tx.ExecContext(ctx, `
+		WITH incoming AS (
+			SELECT * FROM unnest($1::text[], $2::int[], $3::text[])
+			       AS t(part_code, qty, shelf)
+		), target AS (
+			SELECT DISTINCT ON (a."part_code") a."part_code", a."code"
+			  FROM "address_master" a
+			  JOIN incoming i ON i.part_code = a."part_code"
+			 WHERE a."store_id" = $4
+			 ORDER BY a."part_code", a."is_active" DESC, a."code"
+		)
+		UPDATE "address_master" a SET
+			"qty" = a."qty" + i.qty,
+			"shelf" = CASE WHEN i.shelf = '' THEN a."shelf" ELSE i.shelf END,
+			"is_active" = true
+		  FROM target t
+		  JOIN incoming i ON i.part_code = t."part_code"
+		 WHERE a."code" = t."code"
+	`, pq.Array(codes), pq.Array(quantities), pq.Array(shelves), ImportWarehouseStoreID)
+	return err
+}
+
+// insertImportedStock gives a warehouse row to every imported product that does
+// not have one yet — new products, and the occasional existing product that
+// only ever lived on a vehicle. Run it after addImportedStock so a product that
+// already had a row is not counted twice.
+func (r *partRepositoryPG) insertImportedStock(ctx context.Context, tx *sql.Tx, rows []PartImportRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	codes, quantities, shelves := stockArrays(rows)
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO "address_master"
+			("code", "part_code", "store_id", "shelf", "qty", "rop", "remarks", "is_active")
+		SELECT 'ADDR-' || i.part_code || '-' || $4, i.part_code, $4, i.shelf, i.qty, 0, '', true
+		  FROM unnest($1::text[], $2::int[], $3::text[]) AS i(part_code, qty, shelf)
+		 WHERE NOT EXISTS (
+			SELECT 1 FROM "address_master" a
+			 WHERE a."part_code" = i.part_code AND a."store_id" = $4
+		 )
+	`, pq.Array(codes), pq.Array(quantities), pq.Array(shelves), ImportWarehouseStoreID)
+	return err
+}
+
+func stockArrays(rows []PartImportRow) (codes []string, quantities []int64, shelves []string) {
+	codes = make([]string, len(rows))
+	quantities = make([]int64, len(rows))
+	shelves = make([]string, len(rows))
+	for at, row := range rows {
+		codes[at] = row.Code
+		quantities[at] = int64(row.Qty)
+		shelves[at] = row.Shelf
+	}
+	return codes, quantities, shelves
 }
 
 // lookupCodes runs a "SELECT <key>, code FROM part_master WHERE <key> = ANY($1)"
