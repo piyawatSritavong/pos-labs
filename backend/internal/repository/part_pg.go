@@ -945,11 +945,17 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 
 // ImportParts writes a whole spreadsheet or none of it.
 //
-// A row that names a code already in the catalog is a restock, not a new
-// product: it adds to the warehouse quantity and refreshes the figures a
-// restock can legitimately change. Identity — code, name, barcode, unit — is
-// left alone, so a spreadsheet can never quietly rename a product; that has to
-// go through the edit form.
+// A row is matched to an existing product by its code, or — when the code cell
+// is blank — by an exact name. Name matching is unambiguous because the
+// warehouse holds one product per name, so a name that is already in the
+// catalog can only mean that product. A matched row is a restock: it adds to
+// the warehouse quantity and refreshes the figures a restock can legitimately
+// change. Identity — code, name, barcode, unit — is left alone, so a
+// spreadsheet can never quietly rename a product; that has to go through the
+// edit form.
+//
+// Rows that land on the same product are merged, quantities summed, because a
+// list typed by hand repeats an item without meaning to order it twice.
 //
 // Every check happens inside the transaction, so two people importing
 // overlapping files at the same time cannot both succeed.
@@ -968,71 +974,76 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Serialise imports against each other so the existence checks below and
-	// the running-code cursor cannot be invalidated by a concurrent import.
+	// Serialise imports against each other so the lookups below and the
+	// running-code cursor cannot be invalidated by a concurrent import.
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('parts-import'))`); err != nil {
 		return result, err
 	}
 
 	givenCodes := make([]string, 0, len(rows))
+	lookupNames := make([]string, 0, len(rows))
 	for _, row := range rows {
 		if row.Code != "" {
 			givenCodes = append(givenCodes, strings.ToUpper(row.Code))
+			continue
 		}
+		lookupNames = append(lookupNames, importNameKey(row.Name))
 	}
-	// Map the codes the sheet supplied to the codes as the catalog spells them,
-	// so a lowercase entry still updates the right product.
-	existing, err := r.lookupCanonicalCodes(ctx, tx, givenCodes)
+
+	// Map what the sheet supplied to the codes as the catalog spells them, so a
+	// lowercase entry still updates the right product.
+	byCode, err := r.lookupCodes(ctx, tx, `
+		SELECT upper("code"), "code" FROM "part_master" WHERE upper("code") = ANY($1)
+	`, givenCodes)
+	if err != nil {
+		return result, err
+	}
+	byName, err := r.lookupCodes(ctx, tx, `
+		SELECT lower(btrim("name")), "code" FROM "part_master"
+		WHERE lower(btrim("name")) = ANY($1)
+	`, lookupNames)
 	if err != nil {
 		return result, err
 	}
 
-	updates := make([]PartImportRow, 0, len(rows))
-	creates := make([]PartImportRow, 0, len(rows))
+	// A row that names a code the catalog does not have creates a product, so
+	// its name still has to be free.
+	takenNames, err := r.lookupCodes(ctx, tx, `
+		SELECT lower(btrim("name")), "code" FROM "part_master"
+		WHERE lower(btrim("name")) = ANY($1)
+	`, newCodeRowNames(rows, byCode))
+	if err != nil {
+		return result, err
+	}
+
+	updates := newImportBatch()
+	creates := newImportBatch()
 	for _, row := range rows {
 		if row.Code != "" {
-			if canonical, found := existing[strings.ToUpper(row.Code)]; found {
+			if canonical, found := byCode[strings.ToUpper(row.Code)]; found {
 				row.Code = canonical
-				updates = append(updates, row)
+				updates.add(canonical, row)
 				continue
 			}
-		}
-		creates = append(creates, row)
-	}
-
-	// Only new products need a name: an update keeps the catalog's own.
-	names := make([]string, 0, len(creates))
-	for _, row := range creates {
-		names = append(names, strings.ToLower(strings.TrimSpace(row.Name)))
-	}
-	takenNames, err := r.lookupTaken(ctx, tx, `
-		SELECT lower(btrim("name")) FROM "part_master"
-		WHERE lower(btrim("name")) = ANY($1)
-	`, names)
-	if err != nil {
-		return result, err
-	}
-
-	seenNames := map[string]int{}
-	for _, row := range creates {
-		name := strings.ToLower(strings.TrimSpace(row.Name))
-		if takenNames[name] {
-			result.Conflicts = append(result.Conflicts, PartImportConflict{
-				SheetRow: row.SheetRow,
-				Column:   "ชื่อสินค้า",
-				Message:  "มีสินค้าชื่อนี้อยู่แล้วในระบบ ถ้าต้องการแก้ไขให้ระบุรหัสสินค้าเดิม",
-			})
+			if owner, taken := takenNames[importNameKey(row.Name)]; taken {
+				result.Conflicts = append(result.Conflicts, PartImportConflict{
+					SheetRow: row.SheetRow,
+					Column:   "ชื่อสินค้า",
+					Message: fmt.Sprintf(
+						"ชื่อนี้เป็นของสินค้า %s อยู่แล้ว ถ้าจะแก้ของเดิมให้ใส่รหัส %s หรือเว้นรหัสว่าง",
+						owner, owner),
+				})
+				continue
+			}
+			creates.add(strings.ToUpper(row.Code), row)
 			continue
 		}
-		if previous, duplicate := seenNames[name]; duplicate {
-			result.Conflicts = append(result.Conflicts, PartImportConflict{
-				SheetRow: row.SheetRow,
-				Column:   "ชื่อสินค้า",
-				Message:  fmt.Sprintf("ชื่อซ้ำกับแถว %d ในไฟล์เดียวกัน", previous),
-			})
+		if canonical, found := byName[importNameKey(row.Name)]; found {
+			row.Code = canonical
+			updates.add(canonical, row)
 			continue
 		}
-		seenNames[name] = row.SheetRow
+		creates.add("name:"+importNameKey(row.Name), row)
 	}
 	if len(result.Conflicts) > 0 {
 		return result, nil
@@ -1064,9 +1075,9 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 	}
 	defer insertPart.Close()
 
-	// Prices move, identity does not. A blank remarks/details cell means "no
-	// change", so an import that only carries quantities never wipes text
-	// somebody typed in the product form.
+	// Prices move, identity does not. A blank details cell means "no change",
+	// so an import that only carries quantities never wipes text somebody typed
+	// in the product form.
 	updatePart, err := tx.PrepareContext(ctx, `
 		UPDATE "part_master" SET
 			"cost" = $2, "price" = $3, "min_price" = $4,
@@ -1090,11 +1101,11 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 	defer insertAddress.Close()
 
 	takenCodes := map[string]bool{}
-	for _, canonical := range existing {
+	for _, canonical := range byCode {
 		takenCodes[strings.ToUpper(canonical)] = true
 	}
 
-	for _, row := range creates {
+	for _, row := range creates.rows {
 		code := row.Code
 		if code == "" {
 			code = fmt.Sprintf("P%04d", nextCode)
@@ -1123,7 +1134,7 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 		result.Codes = append(result.Codes, code)
 	}
 
-	for _, row := range updates {
+	for _, row := range updates.rows {
 		if _, err := updatePart.ExecContext(ctx, row.Code,
 			row.Cost, row.Price, row.MinPrice, row.Details); err != nil {
 			return PartImportResult{}, fmt.Errorf("แถว %d: %w", row.SheetRow, err)
@@ -1140,6 +1151,50 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 	result.Created = len(result.Codes)
 	result.Updated = len(result.UpdatedCodes)
 	return result, nil
+}
+
+// importNameKey matches the collation the name lookups use — lower(btrim(...))
+// in SQL, so nothing more clever here or the two would disagree.
+func importNameKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+// newCodeRowNames collects the names of rows that supplied a code the catalog
+// does not have. Those rows create a product, so their names must be free.
+func newCodeRowNames(rows []PartImportRow, byCode map[string]string) []string {
+	names := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.Code == "" {
+			continue
+		}
+		if _, found := byCode[strings.ToUpper(row.Code)]; found {
+			continue
+		}
+		names = append(names, importNameKey(row.Name))
+	}
+	return names
+}
+
+// importBatch keeps rows in sheet order while folding repeats of the same
+// product together. The first row wins on every field except the quantity,
+// which accumulates: a hand-typed list repeats an item without meaning to order
+// it twice, and the later line is a second delivery of the same thing.
+type importBatch struct {
+	rows  []PartImportRow
+	index map[string]int
+}
+
+func newImportBatch() *importBatch {
+	return &importBatch{index: map[string]int{}}
+}
+
+func (b *importBatch) add(key string, row PartImportRow) {
+	if at, seen := b.index[key]; seen {
+		b.rows[at].Qty += row.Qty
+		return
+	}
+	b.index[key] = len(b.rows)
+	b.rows = append(b.rows, row)
 }
 
 // receiveIntoWarehouse adds the sheet's quantity to what the warehouse already
@@ -1178,25 +1233,25 @@ func (r *partRepositoryPG) receiveIntoWarehouse(ctx context.Context, tx *sql.Tx,
 	return err
 }
 
-// lookupCanonicalCodes maps upper-cased codes to the spelling the catalog uses.
-func (r *partRepositoryPG) lookupCanonicalCodes(ctx context.Context, tx *sql.Tx, codes []string) (map[string]string, error) {
+// lookupCodes runs a "SELECT <key>, code FROM part_master WHERE <key> = ANY($1)"
+// and returns the mapping, so callers can resolve a sheet's codes or names to
+// the product they name.
+func (r *partRepositoryPG) lookupCodes(ctx context.Context, tx *sql.Tx, query string, keys []string) (map[string]string, error) {
 	found := map[string]string{}
-	if len(codes) == 0 {
+	if len(keys) == 0 {
 		return found, nil
 	}
-	rows, err := tx.QueryContext(ctx, `
-		SELECT upper("code"), "code" FROM "part_master" WHERE upper("code") = ANY($1)
-	`, pq.Array(codes))
+	rows, err := tx.QueryContext(ctx, query, pq.Array(keys))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var upper, canonical string
-		if err := rows.Scan(&upper, &canonical); err != nil {
+		var key, code string
+		if err := rows.Scan(&key, &code); err != nil {
 			return nil, err
 		}
-		found[upper] = canonical
+		found[key] = code
 	}
 	return found, rows.Err()
 }
@@ -1204,23 +1259,3 @@ func (r *partRepositoryPG) lookupCanonicalCodes(ctx context.Context, tx *sql.Tx,
 // ImportWarehouseStoreID is the only store an imported product may enter — the
 // catalog is modelled as a single warehouse that the vehicles draw from.
 const ImportWarehouseStoreID = "main"
-
-func (r *partRepositoryPG) lookupTaken(ctx context.Context, tx *sql.Tx, query string, values []string) (map[string]bool, error) {
-	taken := map[string]bool{}
-	if len(values) == 0 {
-		return taken, nil
-	}
-	rows, err := tx.QueryContext(ctx, query, pq.Array(values))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var value string
-		if err := rows.Scan(&value); err != nil {
-			return nil, err
-		}
-		taken[value] = true
-	}
-	return taken, rows.Err()
-}

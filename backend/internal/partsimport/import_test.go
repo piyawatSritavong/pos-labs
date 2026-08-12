@@ -188,9 +188,9 @@ func TestParseReportsEveryBadRow(t *testing.T) {
 }
 
 func TestParseLeavesDuplicateNamesToTheRepository(t *testing.T) {
-	// Two rows can legitimately carry the same name when one of them updates an
-	// existing product by code — only the repository knows which codes exist,
-	// so the parser must not pre-judge it.
+	// Rows that repeat a name are folded together against the product they
+	// resolve to, and only the repository knows what the catalog holds — so the
+	// parser must not pre-judge them.
 	data := buildXLSX(t, "สินค้า", [][]string{
 		headerRow(),
 		{"ตะปู 3*10", "650", "", "20", "P0001", "", "", "", "", ""},
