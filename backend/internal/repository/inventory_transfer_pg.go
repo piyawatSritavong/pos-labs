@@ -107,7 +107,8 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			iti."transfer_id", iti."part_code",
-			iti."requested_qty", iti."dispatched_qty", iti."received_qty",
+			iti."requested_qty", iti."approved_qty", COALESCE(iti."remarks", ''),
+			iti."dispatched_qty", iti."received_qty",
 			COALESCE(pm."bar_code", '') AS bar_code,
 			COALESCE(pm."name", '') AS part_name,
 			COALESCE(pm."name_th", '') AS part_name_th,
@@ -131,11 +132,13 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 	items := make([]InventoryTransferItem, 0)
 	for rows.Next() {
 		var item InventoryTransferItem
-		var dispatchedQty, receivedQty sql.NullInt64
+		var approvedQty, dispatchedQty, receivedQty sql.NullInt64
 		if err := rows.Scan(
 			&item.TransferID,
 			&item.PartCode,
 			&item.RequestedQty,
+			&approvedQty,
+			&item.Remarks,
 			&dispatchedQty,
 			&receivedQty,
 			&item.BarCode,
@@ -146,6 +149,10 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 			&item.LineTotal,
 		); err != nil {
 			return nil, nil, err
+		}
+		if approvedQty.Valid {
+			v := int(approvedQty.Int64)
+			item.ApprovedQty = &v
 		}
 		if dispatchedQty.Valid {
 			v := int(dispatchedQty.Int64)
@@ -563,8 +570,11 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 		return fmt.Errorf("target_pos_store_mismatch")
 	}
 
+	// What actually moves is what HQ approved. A line reviewed down to zero
+	// stays on the document — with its remark — but ships nothing.
 	rows, err := tx.QueryContext(ctx, `
-		SELECT i."part_code", i."requested_qty", COALESCE(i."sale_price", p."price")
+		SELECT i."part_code", COALESCE(i."approved_qty", i."requested_qty"),
+		       COALESCE(i."sale_price", p."price")
 		FROM "inventory_transfer_item" i
 		JOIN "part_master" p ON p."code" = i."part_code" AND p."is_active" = true
 		WHERE i."transfer_id" = $1
@@ -579,8 +589,9 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 		qty  int
 	}
 	type moveItem struct {
-		partCode        string
-		requestedQty    int
+		partCode string
+		// What HQ approved: the requested quantity unless review changed it.
+		moveQty         int
 		salePrice       float64
 		sourceAddresses []sourceAddress
 		availableQty    int
@@ -588,7 +599,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 	moveItems := make([]moveItem, 0)
 	for rows.Next() {
 		var item moveItem
-		if err := rows.Scan(&item.partCode, &item.requestedQty, &item.salePrice); err != nil {
+		if err := rows.Scan(&item.partCode, &item.moveQty, &item.salePrice); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -631,12 +642,12 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 		if err := addressRows.Err(); err != nil {
 			return err
 		}
-		if moveItems[i].availableQty < moveItems[i].requestedQty {
+		if moveItems[i].availableQty < moveItems[i].moveQty {
 			shortages = append(shortages, InventoryShortage{
 				PartCode:     moveItems[i].partCode,
-				RequestedQty: moveItems[i].requestedQty,
+				RequestedQty: moveItems[i].moveQty,
 				AvailableQty: moveItems[i].availableQty,
-				MissingQty:   moveItems[i].requestedQty - moveItems[i].availableQty,
+				MissingQty:   moveItems[i].moveQty - moveItems[i].availableQty,
 			})
 		}
 	}
@@ -650,12 +661,12 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 			SET "dispatched_qty" = $1, "received_qty" = $1,
 			    "sale_price" = $2, "line_total" = $1::integer * $2::numeric
 			WHERE "transfer_id" = $3 AND "part_code" = $4
-		`, item.requestedQty, item.salePrice, transferID, item.partCode)
+		`, item.moveQty, item.salePrice, transferID, item.partCode)
 		if err != nil {
 			return err
 		}
 
-		remaining := item.requestedQty
+		remaining := item.moveQty
 		for _, address := range item.sourceAddresses {
 			if remaining == 0 {
 				break
@@ -693,7 +704,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 					"code", "part_code", "store_id", "shelf",
 					"qty", "rop", "remarks"
 				) VALUES ($1, $2, $3, 'รถ', $4, 0, 'สร้างจากใบเบิกสินค้าเข้ารถ')
-			`, destAddrCode, item.partCode, transfer.ToStoreID, item.requestedQty)
+			`, destAddrCode, item.partCode, transfer.ToStoreID, item.moveQty)
 			if err != nil {
 				return err
 			}
@@ -702,7 +713,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 				UPDATE "address_master"
 				SET "qty" = "qty" + $1, "is_active" = true
 				WHERE "code" = $2
-			`, item.requestedQty, destAddrCode)
+			`, item.moveQty, destAddrCode)
 			if err != nil {
 				return err
 			}
@@ -887,4 +898,105 @@ func scanInventoryTransfer(scanner inventoryTransferScanner) (*InventoryTransfer
 	}
 
 	return &t, nil
+}
+
+// ReviewRestockItems records what HQ decided while checking a restock against
+// the paper slip. It only touches a request that is waiting for review, and it
+// never overwrites requested_qty — the gap between what was asked for and what
+// is being issued is the thing worth keeping.
+func (r *inventoryTransferRepositoryPG) ReviewRestockItems(
+	ctx context.Context, transferID, actorID string, adjustments []RestockAdjustment,
+) error {
+	if len(adjustments) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var mode, status string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE("transfer_mode", 'standard'), "status"
+		FROM "inventory_transfer"
+		WHERE "id" = $1
+		FOR UPDATE
+	`, transferID).Scan(&mode, &status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if mode != "pos_restock" {
+		return fmt.Errorf("invalid_transfer_mode")
+	}
+	if status != "review" {
+		return fmt.Errorf("invalid_status")
+	}
+
+	changes := make([]string, 0, len(adjustments))
+	for _, adjustment := range adjustments {
+		partCode := strings.TrimSpace(adjustment.PartCode)
+		if partCode == "" {
+			continue
+		}
+		if adjustment.ApprovedQty < 0 {
+			return fmt.Errorf("invalid_qty")
+		}
+		var requested int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT "requested_qty" FROM "inventory_transfer_item"
+			WHERE "transfer_id" = $1 AND "part_code" = $2
+			FOR UPDATE
+		`, transferID, partCode).Scan(&requested); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("item_not_found:%s", partCode)
+			}
+			return err
+		}
+		// Storing NULL when the reviewer agreed with the request keeps
+		// "checked and unchanged" distinguishable from "never looked at".
+		var approved interface{} = adjustment.ApprovedQty
+		if adjustment.ApprovedQty == requested {
+			approved = nil
+		} else {
+			changes = append(changes, fmt.Sprintf("%s %d→%d", partCode, requested, adjustment.ApprovedQty))
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE "inventory_transfer_item"
+			SET "approved_qty" = $1, "remarks" = $2
+			WHERE "transfer_id" = $3 AND "part_code" = $4
+		`, approved, strings.TrimSpace(adjustment.Remarks), transferID, partCode); err != nil {
+			return err
+		}
+	}
+
+	note := "ตรวจสอบรายการแล้ว ไม่มีการแก้จำนวน"
+	if len(changes) > 0 {
+		note = "แก้จำนวนตอนตรวจสอบ: " + strings.Join(changes, ", ")
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO "inventory_transfer_audit"("transfer_id", "action", "actor_id", "notes")
+		VALUES ($1, 'review_adjust', $2, $3)
+	`, transferID, actorID, note); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// UpdateNotes replaces the note on the document itself, which is where a
+// reviewer explains the slip as a whole rather than one line of it.
+func (r *inventoryTransferRepositoryPG) UpdateNotes(ctx context.Context, transferID, notes string) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE "inventory_transfer" SET "notes" = $2 WHERE "id" = $1
+	`, transferID, strings.TrimSpace(notes))
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

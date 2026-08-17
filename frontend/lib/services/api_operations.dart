@@ -319,6 +319,33 @@ class ApiOperationsService {
     return _parseObject(jsonDecode(response.body), '/transfers/:id/submit');
   }
 
+  /// PUT /transfers/:id/review-items — HQ corrects a restock it is checking
+  /// against the paper slip. Sends the quantity actually being issued and the
+  /// reason it differs; the original request is kept by the server.
+  static Future<Map<String, dynamic>> reviewRestockItems({
+    required String token,
+    required String id,
+    required List<Map<String, dynamic>> items,
+    String notes = '',
+  }) async {
+    final uri = Uri.parse('$baseUrl/transfers/$id/review-items');
+    final response = await http.put(
+      uri,
+      headers: _headers(token),
+      body: jsonEncode({'items': items, 'notes': notes}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'PUT /transfers/$id/review-items failed: '
+        '${response.statusCode} ${response.body}',
+      );
+    }
+    return _parseObject(
+      jsonDecode(response.body),
+      '/transfers/:id/review-items',
+    );
+  }
+
   static Future<Map<String, dynamic>> approveRestockTransfer({
     required String token,
     required String id,

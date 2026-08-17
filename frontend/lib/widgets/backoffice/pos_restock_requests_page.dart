@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/widgets/backoffice/restock_review_dialog.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -104,6 +105,24 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
     } finally {
       if (mounted) setState(() => _acting = false);
     }
+  }
+
+  Future<void> _reviewItems() async {
+    final request = _selected;
+    if (request == null) return;
+    final token = context.read<AuthProvider>().token ?? '';
+    final updated = await showRestockReviewDialog(
+      context,
+      token: token,
+      request: request,
+    );
+    if (!mounted || updated == null) return;
+    setState(() => _selected = updated);
+    await _load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('บันทึกการตรวจสอบแล้ว')));
   }
 
   Future<void> _cancel() async {
@@ -323,6 +342,12 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
                   icon: const Icon(Icons.summarize_outlined, size: 16),
                   label: const Text('สรุปใบเบิกทั้งวัน'),
                 ),
+              if (canApprove)
+                OutlinedButton.icon(
+                  onPressed: _acting ? null : _reviewItems,
+                  icon: const Icon(Icons.edit_note, size: 16),
+                  label: const Text('แก้ไขจำนวน / หมายเหตุ'),
+                ),
               if (canCancel)
                 OutlinedButton.icon(
                   onPressed: _acting ? null : _cancel,
@@ -409,6 +434,7 @@ class _RestockDocument extends StatelessWidget {
                 'หน่วย',
                 'ราคาขาย',
                 'รวม',
+                'หมายเหตุ',
               ], header: true),
               ...items.toList().asMap().entries.map((entry) {
                 final item = entry.value;
@@ -419,10 +445,11 @@ class _RestockDocument extends StatelessWidget {
                   item['partNameTh']?.toString().isNotEmpty == true
                       ? item['partNameTh'].toString()
                       : item['partName']?.toString() ?? '',
-                  item['requestedQty']?.toString() ?? '',
+                  _issuedQtyLabel(item),
                   item['unit']?.toString() ?? '',
                   _money(item['salePrice']),
                   _money(item['lineTotal']),
+                  item['remarks']?.toString() ?? '',
                 ]);
               }),
             ],
@@ -685,6 +712,16 @@ String _shortDate(dynamic value) {
   return text.length >= 10 ? text.substring(0, 10) : text;
 }
 
+/// The quantity that actually goes out: what HQ approved during review, or the
+/// request when nobody changed it. Both are shown when they differ — a slip
+/// that hides the correction is the problem this feature exists to fix.
+String _issuedQtyLabel(Map<String, dynamic> item) {
+  final requested = (item['requestedQty'] as num?)?.toInt() ?? 0;
+  final approved = (item['approvedQty'] as num?)?.toInt();
+  if (approved == null || approved == requested) return '$requested';
+  return '$approved (ขอ $requested)';
+}
+
 String _money(dynamic value) =>
     '฿${(double.tryParse(value?.toString() ?? '') ?? 0).toStringAsFixed(2)}';
 
@@ -733,6 +770,7 @@ Future<void> _printRestockPdf(Map<String, dynamic> request) async {
             'จำนวน',
             'ราคาขาย',
             'รวม',
+            'หมายเหตุ',
           ],
           data: [
             for (var index = 0; index < items.length; index++)
@@ -741,9 +779,10 @@ Future<void> _printRestockPdf(Map<String, dynamic> request) async {
                 items[index]['partCode'] ?? '',
                 items[index]['barCode'] ?? '',
                 items[index]['partNameTh'] ?? items[index]['partName'] ?? '',
-                items[index]['requestedQty'] ?? 0,
+                _issuedQtyLabel(items[index]),
                 _money(items[index]['salePrice']),
                 _money(items[index]['lineTotal']),
+                items[index]['remarks'] ?? '',
               ],
           ],
           headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),

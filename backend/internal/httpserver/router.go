@@ -466,6 +466,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		transfersApprove.PUT("/:id/approve", transferHandler.Approve)
 		transfersApprove.PUT("/:id/dispatch", transferHandler.Dispatch)
 		transfersApprove.PUT("/:id/acknowledge", transferHandler.Acknowledge)
+		transfersApprove.PUT("/:id/review-items", transferHandler.ReviewRestockItems)
 		transfersApprove.PUT("/:id/approve-restock", transferHandler.ApproveRestock)
 		transfersApprove.POST("/:id/print-log", transferHandler.PrintLog)
 	}

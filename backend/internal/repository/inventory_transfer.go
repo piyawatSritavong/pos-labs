@@ -32,9 +32,14 @@ type InventoryTransfer struct {
 }
 
 type InventoryTransferItem struct {
-	TransferID    string
-	PartCode      string
-	RequestedQty  int
+	TransferID   string
+	PartCode     string
+	RequestedQty int
+	// ApprovedQty is what HQ decided to issue after checking the request
+	// against the paper slip. Nil means it was not adjusted and RequestedQty
+	// stands; zero means the line was reviewed down to nothing.
+	ApprovedQty   *int
+	Remarks       string
 	DispatchedQty *int
 	ReceivedQty   *int
 	SalePrice     float64
@@ -44,6 +49,13 @@ type InventoryTransferItem struct {
 	PartNameTH string
 	BarCode    string
 	Unit       string
+}
+
+// RestockAdjustment is one line as HQ wants it to stand after review.
+type RestockAdjustment struct {
+	PartCode    string
+	ApprovedQty int
+	Remarks     string
 }
 
 type InventoryShortage struct {
@@ -67,6 +79,12 @@ type InventoryTransferRepository interface {
 	GetByID(ctx context.Context, id string) (*InventoryTransfer, []InventoryTransferItem, error)
 	List(ctx context.Context, limit, offset int, status, fromBranchID, toBranchID, transferMode, createdBy *string) ([]InventoryTransfer, error)
 	UpdateItems(ctx context.Context, transferID string, items []InventoryTransferItem) error
+	// ReviewRestockItems records HQ's corrections to a restock waiting for
+	// review: the quantity actually being issued, and the reason it differs.
+	// The original request is left intact.
+	ReviewRestockItems(ctx context.Context, transferID, actorID string, adjustments []RestockAdjustment) error
+	// UpdateNotes replaces the document-level note.
+	UpdateNotes(ctx context.Context, transferID, notes string) error
 	SubmitPosRestock(ctx context.Context, transferID, userID string, timestamp time.Time) error
 	UpdateStatus(ctx context.Context, id, status, userID string, timestamp time.Time) error
 	UpdateItemsDispatched(ctx context.Context, transferID string, items []InventoryTransferItem) error

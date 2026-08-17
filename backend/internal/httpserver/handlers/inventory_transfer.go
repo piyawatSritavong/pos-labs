@@ -54,6 +54,14 @@ func buildTransferOutput(transfer *repository.InventoryTransfer, items []reposit
 			"salePrice":    item.SalePrice,
 			"lineTotal":    item.LineTotal,
 		}
+		// approvedQty is null until a reviewer changes the line, so the client
+		// can tell "HQ issued a different amount" from "HQ agreed".
+		if item.ApprovedQty != nil {
+			row["approvedQty"] = *item.ApprovedQty
+		} else {
+			row["approvedQty"] = nil
+		}
+		row["remarks"] = item.Remarks
 		if item.DispatchedQty != nil {
 			row["dispatchedQty"] = *item.DispatchedQty
 		} else {
@@ -602,6 +610,112 @@ func (h *InventoryTransferHandler) Submit(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": buildTransferOutput(updatedTransfer, updatedItems)})
+}
+
+// ReviewRestockItems lets HQ correct a restock it is checking against the paper
+// slip: the quantity actually being issued, and a remark saying why it differs.
+// The request itself is preserved — the document has to show both sides of the
+// discrepancy, which is the whole reason the reviewer is editing it.
+func (h *InventoryTransferHandler) ReviewRestockItems(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_transfer_id"})
+		return
+	}
+	userVal, _ := c.Get("user")
+	user, _ := userVal.(*repository.User)
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	// Validated below rather than through binding tags: validator does not
+	// descend into structs inside a slice without `dive`, so the tags would
+	// look like they were checking something they are not.
+	var req struct {
+		Items []struct {
+			PartCode    string `json:"partCode"`
+			ApprovedQty *int   `json:"approvedQty"`
+			Remarks     string `json:"remarks"`
+		} `json:"items"`
+		Notes string `json:"notes"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+	if len(req.Items) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_items"})
+		return
+	}
+
+	adjustments := make([]repository.RestockAdjustment, 0, len(req.Items))
+	for index, item := range req.Items {
+		partCode := strings.TrimSpace(item.PartCode)
+		if partCode == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid_item", "line": index + 1,
+				"message": "ต้องระบุรหัสสินค้า",
+			})
+			return
+		}
+		if item.ApprovedQty == nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid_item", "line": index + 1,
+				"message": "ต้องระบุจำนวนที่อนุมัติ",
+			})
+			return
+		}
+		// Zero is a real decision — "none of this went out" — and keeps the
+		// line on the document with its remark. Negative never is.
+		if *item.ApprovedQty < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid_item", "line": index + 1,
+				"message": "จำนวนที่อนุมัติต้องไม่ติดลบ",
+			})
+			return
+		}
+		adjustments = append(adjustments, repository.RestockAdjustment{
+			PartCode:    partCode,
+			ApprovedQty: *item.ApprovedQty,
+			Remarks:     item.Remarks,
+		})
+	}
+
+	if err := h.transfers.ReviewRestockItems(c.Request.Context(), id, user.ID, adjustments); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "transfer_not_found"})
+			return
+		}
+		message := err.Error()
+		switch {
+		case message == "invalid_status":
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_status",
+				"message": "แก้จำนวนได้เฉพาะใบเบิกที่รอตรวจสอบเท่านั้น",
+			})
+		case strings.HasPrefix(message, "item_not_found:"):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "item_not_found", "message": message})
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": message})
+		}
+		return
+	}
+
+	if notes := strings.TrimSpace(req.Notes); notes != "" {
+		if err := h.transfers.UpdateNotes(c.Request.Context(), id, notes); err != nil {
+			// The quantities are already saved; a failed note is not worth
+			// reporting the whole edit as failed.
+			log.Printf("restock review notes not saved for %s: %v", id, err)
+		}
+	}
+
+	transfer, items, err := h.transfers.GetByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{"id": id}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": buildTransferOutput(transfer, items)})
 }
 
 func (h *InventoryTransferHandler) ApproveRestock(c *gin.Context) {

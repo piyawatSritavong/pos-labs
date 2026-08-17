@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,9 +16,12 @@ import (
 )
 
 type stubInventoryTransferRepository struct {
-	transfer *repository.InventoryTransfer
-	items    []repository.InventoryTransferItem
-	audits   []string
+	transfer    *repository.InventoryTransfer
+	items       []repository.InventoryTransferItem
+	audits      []string
+	adjustments []repository.RestockAdjustment
+	notes       string
+	reviewErr   error
 }
 
 func (r *stubInventoryTransferRepository) GenerateTransferID(ctx context.Context) (string, error) {
@@ -78,6 +82,16 @@ func (r *stubInventoryTransferRepository) UpdateStatus(ctx context.Context, id, 
 			r.transfer.SubmittedBy = userID
 		}
 	}
+	return nil
+}
+
+func (r *stubInventoryTransferRepository) ReviewRestockItems(ctx context.Context, transferID, actorID string, adjustments []repository.RestockAdjustment) error {
+	r.adjustments = append([]repository.RestockAdjustment(nil), adjustments...)
+	return r.reviewErr
+}
+
+func (r *stubInventoryTransferRepository) UpdateNotes(ctx context.Context, transferID, notes string) error {
+	r.notes = notes
 	return nil
 }
 
@@ -506,5 +520,78 @@ func TestBuildTransferOutputUsesItemSnapshotTotals(t *testing.T) {
 	}
 	if rows[1]["salePrice"] != float64(0) || rows[1]["lineTotal"] != float64(0) {
 		t.Fatalf("zero-price product must remain valid: %#v", rows[1])
+	}
+}
+
+func reviewRequest(t *testing.T, repo *stubInventoryTransferRepository, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	handler := NewInventoryTransferHandler(repo, nil, nil, nil)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Params = gin.Params{{Key: "id", Value: "TR20260817000001"}}
+	c.Request = httptest.NewRequest(http.MethodPut,
+		"/transfers/TR20260817000001/review-items", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &repository.User{ID: "user.hqmanager", RoleID: "role.hq_manager"})
+	handler.ReviewRestockItems(c)
+	return recorder
+}
+
+func TestReviewRestockItemsRecordsCorrectedQuantitiesAndRemarks(t *testing.T) {
+	repo := &stubInventoryTransferRepository{}
+	recorder := reviewRequest(t, repo, `{
+		"items":[
+			{"partCode":"P0001","approvedQty":8,"remarks":"ใบเบิกกระดาษเขียน 8"},
+			{"partCode":"P0002","approvedQty":5,"remarks":""}
+		],
+		"notes":"ตรวจกับใบเขียนมือแล้ว"
+	}`)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if len(repo.adjustments) != 2 {
+		t.Fatalf("expected both lines to reach the repository, got %#v", repo.adjustments)
+	}
+	if repo.adjustments[0].PartCode != "P0001" || repo.adjustments[0].ApprovedQty != 8 {
+		t.Fatalf("first adjustment wrong: %#v", repo.adjustments[0])
+	}
+	if repo.adjustments[0].Remarks != "ใบเบิกกระดาษเขียน 8" {
+		t.Fatalf("remark not carried through: %#v", repo.adjustments[0])
+	}
+	if repo.notes != "ตรวจกับใบเขียนมือแล้ว" {
+		t.Fatalf("document note not saved, got %q", repo.notes)
+	}
+}
+
+func TestReviewRestockItemsAcceptsZeroButNotNegative(t *testing.T) {
+	// Zero is a real decision — "none of this went out" — while a negative
+	// quantity is always a mistake.
+	repo := &stubInventoryTransferRepository{}
+	if code := reviewRequest(t, repo, `{"items":[{"partCode":"P0001","approvedQty":0}]}`).Code; code != http.StatusOK {
+		t.Fatalf("zero should be allowed, got %d", code)
+	}
+	if len(repo.adjustments) != 1 || repo.adjustments[0].ApprovedQty != 0 {
+		t.Fatalf("zero not passed through: %#v", repo.adjustments)
+	}
+
+	repo = &stubInventoryTransferRepository{}
+	if code := reviewRequest(t, repo, `{"items":[{"partCode":"P0001","approvedQty":-2}]}`).Code; code != http.StatusBadRequest {
+		t.Fatalf("negative should be rejected, got %d", code)
+	}
+	if len(repo.adjustments) != 0 {
+		t.Fatal("a rejected request must not reach the repository")
+	}
+}
+
+func TestReviewRestockItemsRejectsRequestNotUnderReview(t *testing.T) {
+	repo := &stubInventoryTransferRepository{reviewErr: errors.New("invalid_status")}
+	recorder := reviewRequest(t, repo, `{"items":[{"partCode":"P0001","approvedQty":3}]}`)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "invalid_status") {
+		t.Fatalf("expected invalid_status, got %s", recorder.Body.String())
 	}
 }

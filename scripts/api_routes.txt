@@ -130,5 +130,6 @@ PUT /transfers/:id/cancel
 PUT /transfers/:id/dispatch
 PUT /transfers/:id/items
 PUT /transfers/:id/receive
+PUT /transfers/:id/review-items
 PUT /transfers/:id/submit
 PUT /users/:id
