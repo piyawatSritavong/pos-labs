@@ -1963,12 +1963,8 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
 
     final subtotal = bill.subtotal;
     final discount = bill.discount;
-    final amountAfterDiscount = bill.amountAfterDiscount;
-    final taxRate = bill.taxRate;
-    final tax = bill.tax;
     final total = bill.total;
     final returnCredit = bill.returnCreditAmount;
-    final netTotal = settlementTotal;
 
     // Company info for the receipt header. CompanyProvider is loaded at app
     // startup (office_screen); if it hasn't loaded yet, fields fall back to
@@ -1980,14 +1976,31 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
         company['companyNameTh']?.toString().isNotEmpty == true
         ? company['companyNameTh'].toString()
         : (company['companyName']?.toString() ?? '');
-    final companyAddressTh =
-        company['companyAddressTh']?.toString().isNotEmpty == true
-        ? company['companyAddressTh'].toString()
-        : (company['companyAddress']?.toString() ?? '');
-    final taxId = company['taxId']?.toString() ?? '';
     final phone = company['phone']?.toString() ?? '';
-    final website = company['website']?.toString() ?? '';
     final receiptFooter = company['receiptFooter']?.toString() ?? '';
+    final businessHours = company['businessHours']?.toString() ?? '';
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final cashierName = auth.name ?? 'Admin';
+    final posId = ApiService.defaultPosId;
+    final memberName =
+        (bill.currentBill?['member'] as Map<String, dynamic>?)?['name']
+            ?.toString() ??
+        bill.currentBill?['customerName']?.toString() ??
+        '';
+    final customerName = memberName.trim().isEmpty
+        ? 'General Customer'
+        : memberName.trim();
+    final memberDiscount = _toDoubleValue(bill.currentBill?['memberDiscount']);
+    final manualDiscount = discount - memberDiscount > 0
+        ? discount - memberDiscount
+        : (memberDiscount > 0 ? 0.0 : discount);
+    final rounding = _toDoubleValue(bill.currentBill?['roundingAmount']);
+    // The cash dialog already collects what the customer handed over; it just
+    // never reached the receipt.
+    final cashMeta = paymentSelection?.paymentMeta;
+    final cashReceived = (cashMeta is Map<String, dynamic>)
+        ? (cashMeta['receivedAmount'] as num?)?.toDouble()
+        : null;
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -1999,315 +2012,107 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ── HEADER: company info (per receiptpos.png) ───────────────
-              if (companyNameTh.isNotEmpty) ...[
+              // Layout mirrors the slip the shop already hands out: name and
+              // hours, labelled document fields, a four-column item table, then
+              // the money read top to bottom.
+              if (companyNameTh.isNotEmpty)
                 Text(
                   companyNameTh,
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 17,
                     fontWeight: FontWeight.bold,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 4),
-              ],
-              if (companyAddressTh.isNotEmpty) ...[
+              if (businessHours.isNotEmpty || phone.isNotEmpty)
                 Text(
-                  companyAddressTh,
+                  [businessHours, phone].where((v) => v.isNotEmpty).join(' '),
                   style: const TextStyle(fontSize: 11),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
-              ],
-              if (taxId.isNotEmpty) ...[
-                Text(
-                  'เลขผู้เสียภาษี $taxId',
-                  style: const TextStyle(fontSize: 11),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-              if (phone.isNotEmpty) ...[
-                Text(
-                  'โทร. $phone',
-                  style: const TextStyle(fontSize: 11),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-              if (website.isNotEmpty) ...[
-                Text(
-                  'เว็บไซต์ $website',
-                  style: const TextStyle(fontSize: 11),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-              const Divider(height: 20, thickness: 1),
-              // ── BODY heading ────────────────────────────────────────────
+              const SizedBox(height: 6),
               const Text(
-                'ใบกำกับภาษีอย่างย่อ/ใบเสร็จรับเงิน',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                'ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                 textAlign: TextAlign.center,
               ),
-              if ((bill.billId ?? '').isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  bill.billId ?? '',
-                  style: const TextStyle(fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-              ],
               const SizedBox(height: 12),
-              Builder(
-                builder: (context) {
-                  final auth = Provider.of<AuthProvider>(
-                    context,
-                    listen: false,
-                  );
-                  final userName = auth.name ?? 'Admin';
-                  final now = DateTime.now();
-                  final dateTimeStr =
-                      '${now.day}/${now.month}/${now.year} ${now.hour}:${now.minute.toString().padLeft(2, '0')}';
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'พนักงานขาย: $userName',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'วันที่: $dateTimeStr',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ],
-                  );
-                },
+              _buildReceiptField('เลขที่ใบ', bill.billId ?? ''),
+              _buildReceiptField('เครื่อง:', posId),
+              _buildReceiptField('วันที่:', _thaiDateTime(DateTime.now())),
+              _buildReceiptField('พนักงาน:', cashierName),
+              _buildReceiptField('ลูกค้า:', customerName),
+              const Divider(height: 18, thickness: 1),
+              _receiptItemRow(
+                name: 'สินค้า',
+                qty: 'จำนวน',
+                price: 'ราคา',
+                total: 'รวม',
+                bold: true,
               ),
-              const SizedBox(height: 16),
-              if (paymentSelection != null) ...[
-                _buildReceiptRow('วิธีชำระเงิน', paymentSelection!.label),
-                const SizedBox(height: 4),
-              ],
-              if (paymentSelection?.kind == _PaymentKind.creditTerm &&
-                  paymentSelection?.deliveryDate != null) ...[
-                _buildReceiptRow(
-                  'วันที่รับของ',
-                  _formatDateValue(paymentSelection!.deliveryDate!),
+              const SizedBox(height: 6),
+              for (final raw in bill.items)
+                Builder(
+                  builder: (_) {
+                    final line = _receiptLine(raw);
+                    return _receiptItemRow(
+                      name: line.name,
+                      qty: line.qtyLabel,
+                      price: line.unitPrice.toStringAsFixed(2),
+                      total: line.lineTotal.toStringAsFixed(2),
+                    );
+                  },
                 ),
-                const SizedBox(height: 4),
-                for (
-                  var i = 0;
-                  i < paymentSelection!.installments.length;
-                  i++
-                ) ...[
-                  _buildReceiptRow(
-                    'งวดที่ ${i + 1}',
-                    '${_formatDateValue(paymentSelection!.installments[i].dueDate)} • ฿${paymentSelection!.installments[i].amount.toStringAsFixed(2)}',
-                  ),
-                  const SizedBox(height: 4),
-                ],
-              ],
-              if (returnSettleMode != null && returnSettleMode!.isNotEmpty) ...[
-                _buildReceiptRow('ปิดรายการคืน', switch (returnSettleMode) {
-                  'cash_refund' => 'คืนเงินสด',
-                  'customer_credit' => 'เก็บเป็นเครดิตลูกค้า',
-                  _ => 'แลกเปลี่ยนสินค้า',
-                }),
-                const SizedBox(height: 4),
-              ],
-              if (bill.items.isNotEmpty) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 6,
-                      child: Text(
-                        'สินค้า',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: Text(
-                        'จำนวน',
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        'ราคา',
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: bill.items.map<Widget>((raw) {
-                    double toDouble(dynamic v) {
-                      if (v == null) return 0.0;
-                      if (v is num) return v.toDouble();
-                      return double.tryParse(v.toString()) ?? 0.0;
-                    }
-
-                    final qtyRaw = toDouble(
-                      raw['qty'] ?? raw['quantity'] ?? raw['amount'],
-                    );
-                    final qty = qtyRaw <= 0 ? 1 : qtyRaw.toInt();
-                    final price = toDouble(
-                      raw['unitPrice'] ?? raw['price'] ?? raw['unit_price'],
-                    );
-                    final total = toDouble(
-                      raw['amount'] ?? raw['total'] ?? price * qty,
-                    );
-                    final resolvedPrice = price > 0
-                        ? price
-                        : (qty > 0 ? total / qty : total);
-                    final name =
-                        raw['nameTh']?.toString() ??
-                        raw['name']?.toString() ??
-                        raw['description']?.toString() ??
-                        'สินค้า';
-                    final code =
-                        raw['partCode']?.toString() ??
-                        raw['code']?.toString() ??
-                        '-';
-                    final lineTotal = (resolvedPrice * qty).toStringAsFixed(2);
-
-                    return Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              flex: 6,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    code,
-                                    style: TextStyle(
-                                      color: context.colorMuted,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Expanded(
-                              flex: 1,
-                              child: Text(
-                                '$qty',
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                '฿$lineTotal',
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 12),
-              ],
-              _buildReceiptRow('ก่อนลด', '฿${subtotal.toStringAsFixed(2)}'),
-              const SizedBox(height: 4),
-              _buildReceiptRow('ส่วนลด', '- ฿${discount.toStringAsFixed(2)}'),
-              const SizedBox(height: 4),
+              const Divider(height: 18, thickness: 1),
+              _buildReceiptRow('ราคารวม', subtotal.toStringAsFixed(2)),
+              const SizedBox(height: 2),
               _buildReceiptRow(
-                'หลังหักส่วนลด',
-                '฿${amountAfterDiscount.toStringAsFixed(2)}',
+                'ส่วนลดสมาชิก',
+                memberDiscount.toStringAsFixed(2),
               ),
-              const SizedBox(height: 4),
-              _buildReceiptRow(
-                'ภาษี (${(taxRate * 100).toStringAsFixed(0)}%)',
-                '฿${tax.toStringAsFixed(2)}',
-              ),
-              if (returnCredit > 0) ...[
-                const SizedBox(height: 4),
-                _buildReceiptRow(
-                  'ยอดคืนสินค้า',
-                  '- ฿${returnCredit.toStringAsFixed(2)}',
-                ),
+              const SizedBox(height: 2),
+              _buildReceiptRow('ส่วนลด', manualDiscount.toStringAsFixed(2)),
+              if (rounding != 0) ...[
+                const SizedBox(height: 2),
+                _buildReceiptRow('ปัดเศษ', rounding.toStringAsFixed(2)),
               ],
-              const Divider(height: 16, thickness: 1),
+              const Divider(height: 18, thickness: 1),
               _buildReceiptRow(
-                'รวมสุทธิ',
-                '฿${total.toStringAsFixed(2)}',
+                'รวมยอดสุทธิ',
+                total.toStringAsFixed(2),
                 isEmphasis: true,
               ),
-              if (returnCredit > 0) ...[
-                const SizedBox(height: 4),
+              if (paymentSelection != null) ...[
+                const SizedBox(height: 2),
+                _buildReceiptRow('ประเภทการชำระเงิน', paymentSelection!.label),
+              ],
+              // Cash lines only when cash actually changed hands — a transfer
+              // printing "รับเงิน 0.00" reads like a mistake.
+              if (cashReceived != null) ...[
+                const SizedBox(height: 2),
+                _buildReceiptRow('รับเงิน', cashReceived.toStringAsFixed(2)),
+                const SizedBox(height: 2),
                 _buildReceiptRow(
-                  'ยอดชำระสุทธิหลังคืน',
-                  '${netTotal < 0 ? '-฿' : '฿'}${netTotal.abs().toStringAsFixed(2)}',
-                  isEmphasis: true,
+                  'ทอนเงิน',
+                  (cashReceived - total)
+                      .clamp(0, double.infinity)
+                      .toStringAsFixed(2),
                 ),
               ],
-              const SizedBox(height: 8),
-              // VAT INCLUDED notice — matches receiptpos.png layout
-              const Text(
-                'VAT INCLUDED',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: 1,
-                  color: Colors.grey,
+              if (returnCredit > 0) ...[
+                const SizedBox(height: 2),
+                _buildReceiptRow(
+                  'ยอดคืนสินค้า',
+                  '- ${returnCredit.toStringAsFixed(2)}',
                 ),
-              ),
-              const SizedBox(height: 12),
-              // Editable receipt footer from company_setting.receipt_footer
-              // (set in Backoffice → Company → "ข้อความท้ายใบเสร็จ").
+              ],
               if (receiptFooter.isNotEmpty) ...[
-                const Divider(height: 16, thickness: 1),
+                const SizedBox(height: 14),
                 Text(
                   receiptFooter,
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                 ),
-                const SizedBox(height: 4),
               ],
               if (_finalizeError != null) ...[
                 const SizedBox(height: 8),
@@ -3085,4 +2890,116 @@ class _CashPaymentResult {
 
   final double receivedAmount;
   final double changeAmount;
+}
+
+/// One labelled field in the receipt head, e.g. "เลขที่ใบ  20260817000003".
+Widget _buildReceiptField(String label, String value) {
+  if (value.trim().isEmpty) return const SizedBox.shrink();
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 92,
+          child: Text(label, style: const TextStyle(fontSize: 12)),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// A row of the item table: name on the left, then quantity, unit price and
+/// line total right-aligned so the figures stack into columns.
+Widget _receiptItemRow({
+  required String name,
+  required String qty,
+  required String price,
+  required String total,
+  bool bold = false,
+}) {
+  final style = TextStyle(
+    fontSize: 12,
+    fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+  );
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 5, child: Text(name, style: style)),
+        Expanded(
+          flex: 2,
+          child: Text(qty, textAlign: TextAlign.right, style: style),
+        ),
+        Expanded(
+          flex: 3,
+          child: Text(price, textAlign: TextAlign.right, style: style),
+        ),
+        Expanded(
+          flex: 3,
+          child: Text(total, textAlign: TextAlign.right, style: style),
+        ),
+      ],
+    ),
+  );
+}
+
+double _toDoubleValue(dynamic v) {
+  if (v == null) return 0.0;
+  if (v is num) return v.toDouble();
+  return double.tryParse(v.toString()) ?? 0.0;
+}
+
+/// dd/MM/พ.ศ. HH:mm — the date format on the shop's existing slips.
+String _thaiDateTime(DateTime at) {
+  final local = at.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(local.day)}/${two(local.month)}/${local.year + 543} '
+      '${two(local.hour)}:${two(local.minute)}';
+}
+
+/// One item line reduced to what the receipt prints.
+class _ReceiptLine {
+  const _ReceiptLine({
+    required this.name,
+    required this.qtyLabel,
+    required this.unitPrice,
+    required this.lineTotal,
+  });
+
+  final String name;
+  final String qtyLabel;
+  final double unitPrice;
+  final double lineTotal;
+}
+
+_ReceiptLine _receiptLine(Map<String, dynamic> raw) {
+  final qtyRaw = _toDoubleValue(raw['qty'] ?? raw['quantity'] ?? raw['amount']);
+  final qty = qtyRaw <= 0 ? 1.0 : qtyRaw;
+  final price = _toDoubleValue(
+    raw['unitPrice'] ?? raw['price'] ?? raw['unit_price'],
+  );
+  final total = _toDoubleValue(raw['amount'] ?? raw['total']);
+  final unitPrice = price > 0 ? price : (qty > 0 ? total / qty : total);
+  return _ReceiptLine(
+    name:
+        raw['nameTh']?.toString() ??
+        raw['name']?.toString() ??
+        raw['description']?.toString() ??
+        'สินค้า',
+    // Whole counts print without a decimal tail, matching the reference slip
+    // where only goods sold by weight show one.
+    qtyLabel: qty == qty.roundToDouble()
+        ? qty.toStringAsFixed(0)
+        : qty.toStringAsFixed(3),
+    unitPrice: unitPrice,
+    lineTotal: unitPrice * qty,
+  );
 }

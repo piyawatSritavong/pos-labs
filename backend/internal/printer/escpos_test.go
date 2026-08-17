@@ -3,6 +3,7 @@ package printer
 import (
 	"bytes"
 	"testing"
+	"time"
 )
 
 func TestBuildReceiptASCIIModeEmitsReadableASCIIOnly(t *testing.T) {
@@ -132,5 +133,85 @@ func TestBuildReceiptUsesConfiguredDrawerKick(t *testing.T) {
 
 	if !bytes.Contains(data, command) {
 		t.Fatalf("receipt missing configured drawer command %#v", command)
+	}
+}
+
+// The receipt has to read like the slip the shop already hands out, so the
+// layout is asserted rather than eyeballed on a roll of paper.
+func TestReceiptFollowsShopSlipLayout(t *testing.T) {
+	received := 1000.0
+	params := ReceiptParams{
+		CompanyNameTh: "หจก.บุญมาฟาร์ม โพนทอง",
+		BusinessHours: "เปิดทุกวัน 05.00-20.00น.",
+		Phone:         "0926663728",
+		BillID:        "20260817000003",
+		POSID:         "POS003",
+		CashierName:   "นุ่น",
+		CustomerName:  "",
+		IssuedAt:      time.Date(2026, 8, 16, 11, 41, 0, 0, time.UTC),
+		PaymentMethod: "เงินสด",
+		Items: []ReceiptItem{
+			{Code: "P0158", Name: "สีสเปย์", Qty: 24, UnitPrice: 40, LineTotal: 960},
+		},
+		Subtotal:       1000,
+		MemberDiscount: 0,
+		Discount:       30,
+		Rounding:       -0.09,
+		Total:          969.91,
+		ReceivedAmount: received,
+		ChangeAmount:   received - 969.91,
+		HasReceived:    true,
+		HasChange:      true,
+		PrintMode:      ModeThaiCP874,
+	}
+
+	got := BuildReceipt(params)
+
+	for _, want := range []string{
+		"หจก.บุญมาฟาร์ม โพนทอง",
+		"เปิดทุกวัน 05.00-20.00น. 0926663728",
+		"ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ",
+		"เลขที่ใบ", "20260817000003",
+		"เครื่อง:", "POS003",
+		"พนักงาน:", "นุ่น",
+		// No member on the bill still prints a customer line.
+		"ลูกค้า:", "General Customer",
+		"สินค้า", "จำนวน", "ราคา", "รวม",
+		"ราคารวม", "ส่วนลดสมาชิก", "ส่วนลด", "ปัดเศษ",
+		"รวมยอดสุทธิ", "ประเภทการชำระเงิน", "รับเงิน", "ทอนเงิน",
+	} {
+		if !bytes.Contains(got, EncodeCP874(want)) {
+			t.Errorf("receipt is missing %q", want)
+		}
+	}
+
+	// Buddhist era, day first — 16/08/2569, not 16/08/2026.
+	if !bytes.Contains(got, EncodeCP874("16/08/2569")) {
+		t.Error("date should be Buddhist era and day first")
+	}
+}
+
+func TestReceiptOmitsCashLinesWhenNoCashChangedHands(t *testing.T) {
+	params := ReceiptParams{
+		CompanyNameTh: "ร้านทดสอบ",
+		BillID:        "20260817000004",
+		PaymentMethod: "โอน",
+		Items:         []ReceiptItem{{Code: "P1", Name: "ของ", Qty: 1, UnitPrice: 10, LineTotal: 10}},
+		Subtotal:      10,
+		Total:         10,
+		PrintMode:     ModeThaiCP874,
+	}
+	got := BuildReceipt(params)
+	// Printing "รับเงิน 0.00" on a transfer reads as a mistake. The title
+	// "ใบเสร็จรับเงิน…" contains the same word, so count rather than search.
+	if n := bytes.Count(got, EncodeCP874("รับเงิน")); n != 1 {
+		t.Errorf("expected 'รับเงิน' only in the title, found %d occurrences", n)
+	}
+	if bytes.Contains(got, EncodeCP874("ทอนเงิน")) {
+		t.Error("a non-cash sale must not print a change line")
+	}
+	// Rounding of zero is not a fact worth a line either.
+	if bytes.Contains(got, EncodeCP874("ปัดเศษ")) {
+		t.Error("zero rounding should not print a line")
 	}
 }

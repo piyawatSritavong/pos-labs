@@ -99,6 +99,8 @@ func (r *billRepositoryPG) GetByID(ctx context.Context, id string) (*Bill, error
 			"member_id", "customer_name",
 			"purchase_amount", "total_discount", "total_amount",
 			"vat_amount", "xvat_amount",
+			COALESCE("member_discount", 0), COALESCE("rounding_amount", 0),
+			"cash_received", "change_amount",
 			"created_at", "updated_at", "created_by", "updated_by"
 		FROM "bill_master"
 		WHERE "id" = $1
@@ -108,6 +110,7 @@ func (r *billRepositoryPG) GetByID(ctx context.Context, id string) (*Bill, error
 	var createdAt, updatedAt time.Time
 	var createdBy, updatedBy sql.NullString
 	var paymentMethod, paymentRef, memberID sql.NullString
+	var cashReceived, changeAmount sql.NullFloat64
 
 	err := row.Scan(
 		&b.ID,
@@ -123,6 +126,10 @@ func (r *billRepositoryPG) GetByID(ctx context.Context, id string) (*Bill, error
 		&b.TotalAmount,
 		&b.VATAmount,
 		&b.XVATAmount,
+		&b.MemberDiscount,
+		&b.RoundingAmount,
+		&cashReceived,
+		&changeAmount,
 		&createdAt,
 		&updatedAt,
 		&createdBy,
@@ -151,6 +158,14 @@ func (r *billRepositoryPG) GetByID(ctx context.Context, id string) (*Bill, error
 	}
 	if memberID.Valid {
 		b.MemberID = memberID.String
+	}
+	if cashReceived.Valid {
+		v := cashReceived.Float64
+		b.CashReceived = &v
+	}
+	if changeAmount.Valid {
+		v := changeAmount.Float64
+		b.ChangeAmount = &v
 	}
 
 	return &b, nil
@@ -393,6 +408,8 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom
 			"member_id", "customer_name",
 			"purchase_amount", "total_discount", "total_amount",
 			"vat_amount", "xvat_amount",
+			COALESCE("member_discount", 0), COALESCE("rounding_amount", 0),
+			"cash_received", "change_amount",
 			"created_at", "updated_at", "created_by", "updated_by"
 		FROM "bill_master"
 	`
@@ -464,6 +481,7 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom
 		var createdAt, updatedAt time.Time
 		var createdBy, updatedBy sql.NullString
 		var paymentMethod, paymentRef, memberID sql.NullString
+		var cashReceived, changeAmount sql.NullFloat64
 
 		if err := rows.Scan(
 			&b.ID,
@@ -479,6 +497,10 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom
 			&b.TotalAmount,
 			&b.VATAmount,
 			&b.XVATAmount,
+			&b.MemberDiscount,
+			&b.RoundingAmount,
+			&cashReceived,
+			&changeAmount,
 			&createdAt,
 			&updatedAt,
 			&createdBy,
@@ -504,6 +526,14 @@ func (r *billRepositoryPG) List(ctx context.Context, limit, offset int, dateFrom
 		if memberID.Valid {
 			b.MemberID = memberID.String
 		}
+		if cashReceived.Valid {
+			v := cashReceived.Float64
+			b.CashReceived = &v
+		}
+		if changeAmount.Valid {
+			v := changeAmount.Float64
+			b.ChangeAmount = &v
+		}
 
 		bills = append(bills, b)
 	}
@@ -521,6 +551,8 @@ func (r *billRepositoryPG) GetNewBillByPOS(ctx context.Context, posID string) (*
 			"member_id", "customer_name",
 			"purchase_amount", "total_discount", "total_amount",
 			"vat_amount", "xvat_amount",
+			COALESCE("member_discount", 0), COALESCE("rounding_amount", 0),
+			"cash_received", "change_amount",
 			"created_at", "updated_at", "created_by", "updated_by"
 		FROM "bill_master"
 		WHERE "pos_id" = $1 AND "status" = 'new'
@@ -532,6 +564,7 @@ func (r *billRepositoryPG) GetNewBillByPOS(ctx context.Context, posID string) (*
 	var createdAt, updatedAt time.Time
 	var createdBy, updatedBy sql.NullString
 	var paymentMethod, paymentRef, memberID sql.NullString
+	var cashReceived, changeAmount sql.NullFloat64
 
 	err := row.Scan(
 		&b.ID,
@@ -547,6 +580,10 @@ func (r *billRepositoryPG) GetNewBillByPOS(ctx context.Context, posID string) (*
 		&b.TotalAmount,
 		&b.VATAmount,
 		&b.XVATAmount,
+		&b.MemberDiscount,
+		&b.RoundingAmount,
+		&cashReceived,
+		&changeAmount,
 		&createdAt,
 		&updatedAt,
 		&createdBy,
@@ -575,6 +612,14 @@ func (r *billRepositoryPG) GetNewBillByPOS(ctx context.Context, posID string) (*
 	}
 	if memberID.Valid {
 		b.MemberID = memberID.String
+	}
+	if cashReceived.Valid {
+		v := cashReceived.Float64
+		b.CashReceived = &v
+	}
+	if changeAmount.Valid {
+		v := changeAmount.Float64
+		b.ChangeAmount = &v
 	}
 
 	return &b, nil
@@ -861,48 +906,81 @@ func (r *billRepositoryPG) RecalculateAmountsAndTimestamp(ctx context.Context, b
 			FROM "bill_item_detail"
 			WHERE "bill_id" = $1
 		),
-		discount_totals AS (
+		manual_discounts AS (
 			SELECT COALESCE(SUM(
 				CASE
 					WHEN "unit" = 'THB' THEN "amount"
 					WHEN "unit" = 'percentage' THEN (SELECT purchase_amount FROM item_totals) * ("amount" / 100.0)
 					ELSE 0
 				END
-			), 0)::double precision AS total_discount
+			), 0)::double precision AS manual_discount
 			FROM "bill_discount_detail"
 			WHERE "bill_id" = $1
 		),
 		company AS (
-			SELECT "tax_rate", "tax_type"
+			SELECT "tax_rate", "tax_type",
+			       COALESCE("member_discount_rate", 0) AS member_discount_rate,
+			       COALESCE("round_to_whole_baht", false) AS round_to_whole_baht
 			FROM "company_setting"
 			LIMIT 1
+		),
+		-- The membership rate applies to the goods, not to what is left after a
+		-- cashier's discount, so the two lines on the receipt are independent
+		-- and either can be read on its own.
+		member_discounts AS (
+			SELECT CASE
+				WHEN b."member_id" IS NULL THEN 0
+				ELSE (SELECT purchase_amount FROM item_totals) * company.member_discount_rate
+			END::double precision AS member_discount
+			FROM "bill_master" b CROSS JOIN company
+			WHERE b."id" = $1
 		),
 		calculated AS (
 			SELECT
 				item_totals.purchase_amount,
-				discount_totals.total_discount,
-				GREATEST(item_totals.purchase_amount - discount_totals.total_discount, 0)::double precision AS amount_after_discount,
+				manual_discounts.manual_discount,
+				member_discounts.member_discount,
+				manual_discounts.manual_discount + member_discounts.member_discount AS total_discount,
+				GREATEST(
+					item_totals.purchase_amount
+						- manual_discounts.manual_discount
+						- member_discounts.member_discount,
+					0
+				)::double precision AS amount_after_discount,
 				company.tax_rate,
-				company.tax_type
+				company.tax_type,
+				company.round_to_whole_baht
 			FROM item_totals
-			CROSS JOIN discount_totals
+			CROSS JOIN manual_discounts
+			CROSS JOIN member_discounts
 			CROSS JOIN company
+		),
+		rounded AS (
+			SELECT calculated.*,
+				CASE
+					WHEN calculated.round_to_whole_baht
+						THEN ROUND(calculated.amount_after_discount::numeric)::double precision
+					ELSE calculated.amount_after_discount
+				END AS final_amount
+			FROM calculated
 		)
 		UPDATE "bill_master" b
-		SET "purchase_amount" = calculated.purchase_amount,
-		    "total_discount" = calculated.total_discount,
-		    "total_amount" = calculated.amount_after_discount,
+		SET "purchase_amount" = rounded.purchase_amount,
+		    "total_discount" = rounded.total_discount,
+		    "member_discount" = rounded.member_discount,
+		    "rounding_amount" = rounded.final_amount - rounded.amount_after_discount,
+		    "total_amount" = rounded.final_amount,
 		    "vat_amount" = CASE
-		        WHEN calculated.tax_type = 'xvat' THEN 0
-		        ELSE calculated.amount_after_discount * (calculated.tax_rate / (1.0 + calculated.tax_rate))
+		        WHEN rounded.tax_type = 'xvat' THEN 0
+		        ELSE rounded.final_amount * (rounded.tax_rate / (1.0 + rounded.tax_rate))
 		    END,
 		    "xvat_amount" = CASE
-		        WHEN calculated.tax_type = 'xvat' THEN calculated.amount_after_discount
-		        ELSE calculated.amount_after_discount - (calculated.amount_after_discount * (calculated.tax_rate / (1.0 + calculated.tax_rate)))
+		        WHEN rounded.tax_type = 'xvat' THEN rounded.final_amount
+		        ELSE rounded.final_amount - (rounded.final_amount * (rounded.tax_rate / (1.0 + rounded.tax_rate)))
 		    END,
 		    "updated_at" = NOW(),
 		    "updated_by" = $2
-		FROM calculated
+		FROM rounded
 		WHERE b."id" = $1
 	`, billID, updatedBy)
 	if err != nil {
@@ -919,7 +997,7 @@ func (r *billRepositoryPG) RecalculateAmountsAndTimestamp(ctx context.Context, b
 	return nil
 }
 
-func (r *billRepositoryPG) UpdatePayment(ctx context.Context, billID, paymentMethod, paymentRef, updatedBy string) error {
+func (r *billRepositoryPG) UpdatePayment(ctx context.Context, billID, paymentMethod, paymentRef, updatedBy string, cash *CashTendered) error {
 	// Convert empty strings to NULL for nullable fields
 	var pm, pr sql.NullString
 	if paymentMethod != "" {
@@ -928,12 +1006,21 @@ func (r *billRepositoryPG) UpdatePayment(ctx context.Context, billID, paymentMet
 	if paymentRef != "" {
 		pr = sql.NullString{String: paymentRef, Valid: true}
 	}
+	// NULL rather than zero when no cash changed hands, so the receipt can
+	// leave the lines off instead of printing a misleading 0.00.
+	var received, change sql.NullFloat64
+	if cash != nil {
+		received = sql.NullFloat64{Float64: cash.Received, Valid: true}
+		change = sql.NullFloat64{Float64: cash.Change, Valid: true}
+	}
 
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE "bill_master"
-		SET "payment_method" = $1, "payment_ref" = $2, "status" = 'completed', "updated_at" = now(), "updated_by" = $3
-		WHERE "id" = $4
-	`, pm, pr, updatedBy, billID)
+		SET "payment_method" = $1, "payment_ref" = $2, "status" = 'completed',
+		    "cash_received" = $3, "change_amount" = $4,
+		    "updated_at" = now(), "updated_by" = $5
+		WHERE "id" = $6
+	`, pm, pr, received, change, updatedBy, billID)
 	return err
 }
 

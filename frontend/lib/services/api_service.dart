@@ -664,6 +664,13 @@ class ApiService {
     }
     if (paymentMeta != null) {
       body['paymentMeta'] = paymentMeta;
+      // Lift the cash tendered out of the meta blob into its own field: the
+      // server stores it on the bill and works out the change, so the receipt
+      // and the till agree on one number.
+      if (paymentMeta is Map && paymentMeta['receivedAmount'] is num) {
+        body['cashReceived'] = (paymentMeta['receivedAmount'] as num)
+            .toDouble();
+      }
     }
 
     final response = await http.put(

@@ -21,7 +21,10 @@ func (r *companyRepositoryPG) Get(ctx context.Context) (*Company, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT "tax_id", "company_name", "company_name_th", "company_address", "company_address_th",
 		       "phone", "email", "website", "logo_url", "tax_rate", "tax_type",
-		       COALESCE("receipt_footer", '')
+		       COALESCE("receipt_footer", ''),
+		       COALESCE("business_hours", ''),
+		       COALESCE("member_discount_rate", 0),
+		       COALESCE("round_to_whole_baht", false)
 		FROM "company_setting"
 		LIMIT 1
 	`)
@@ -32,6 +35,7 @@ func (r *companyRepositoryPG) Get(ctx context.Context) (*Company, error) {
 		&c.TaxID, &c.CompanyName, &c.CompanyNameTH, &c.CompanyAddress, &c.CompanyAddressTH,
 		&c.Phone, &email, &website, &logoURL, &c.TaxRate, &c.TaxType,
 		&c.ReceiptFooter,
+		&c.BusinessHours, &c.MemberDiscountRate, &c.RoundToWholeBaht,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -58,12 +62,14 @@ func (r *companyRepositoryPG) Update(ctx context.Context, company *Company) erro
 		UPDATE "company_setting"
 		SET "company_name" = $1, "company_name_th" = $2, "company_address" = $3, "company_address_th" = $4,
 		    "phone" = $5, "email" = $6, "website" = $7, "logo_url" = $8, "tax_rate" = $9, "tax_type" = $10,
-		    "receipt_footer" = $11
-		WHERE "tax_id" = $12
+		    "receipt_footer" = $11,
+		    "business_hours" = $12, "member_discount_rate" = $13, "round_to_whole_baht" = $14
+		WHERE "tax_id" = $15
 	`,
 		company.CompanyName, company.CompanyNameTH, company.CompanyAddress, company.CompanyAddressTH,
 		company.Phone, company.Email, company.Website, company.LogoURL, company.TaxRate, company.TaxType,
 		company.ReceiptFooter,
+		company.BusinessHours, company.MemberDiscountRate, company.RoundToWholeBaht,
 		company.TaxID,
 	)
 	return err

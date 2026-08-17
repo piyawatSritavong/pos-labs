@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -172,17 +173,23 @@ type ReceiptItem struct {
 type ReceiptParams struct {
 	CompanyNameTh   string
 	CompanyAddrTh   string
+	BusinessHours   string // e.g. "เปิดทุกวัน 05.00-20.00น."
 	TaxID           string
 	Phone           string
 	Website         string
 	ReceiptFooter   string
 	Title           string
 	BillID          string
+	POSID           string
+	CustomerName    string
 	CashierName     string
 	PaymentMethod   string // e.g. "เงินสด", "โอน", "เงินเชื่อ"
+	IssuedAt        time.Time
 	Items           []ReceiptItem
 	Subtotal        float64
+	MemberDiscount  float64
 	Discount        float64
+	Rounding        float64
 	AmountAfterDisc float64
 	TaxRatePercent  int // e.g. 7
 	Tax             float64
@@ -232,90 +239,93 @@ func buildReceiptThaiCP874(p ReceiptParams) []byte {
 	}
 	b.CodeTable(ct)
 
-	// Header — company info, centered.
+	// Layout follows the slip the shop already gives customers: name and hours
+	// at the top, labelled document fields, a four-column item table, then the
+	// money read top to bottom — goods, what came off, what rounding did, what
+	// is owed, and what changed hands.
 	b.Center()
 	if p.CompanyNameTh != "" {
 		b.Double().Line(p.CompanyNameTh).Normal()
 	}
-	if p.CompanyAddrTh != "" {
-		// Address can be long — let the driver wrap it.
-		b.Line(p.CompanyAddrTh)
-	}
-	if p.TaxID != "" {
-		b.Line(fmt.Sprintf("เลขผู้เสียภาษี %s", p.TaxID))
-	}
-	if p.Phone != "" {
+	if hours := strings.TrimSpace(p.BusinessHours); hours != "" {
+		if p.Phone != "" {
+			b.Line(hours + " " + p.Phone)
+		} else {
+			b.Line(hours)
+		}
+	} else if p.Phone != "" {
 		b.Line(fmt.Sprintf("โทร. %s", p.Phone))
 	}
-	if p.Website != "" {
-		b.Line(fmt.Sprintf("เว็บไซต์ %s", p.Website))
-	}
-	b.LF(1)
-
-	// Receipt heading.
 	title := strings.TrimSpace(p.Title)
 	if title == "" {
-		title = "ใบกำกับภาษีอย่างย่อ/ใบเสร็จรับเงิน"
+		title = "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ"
 	}
-	b.Bold().Line(title).NoBold()
-	if p.BillID != "" {
-		b.Line(p.BillID)
-	}
+	b.Line(title)
 	b.LF(1)
 
-	// Bill metadata — left aligned.
+	// Document fields, label then value.
 	b.Left()
+	b.LeftRight("เลขที่ใบ", p.BillID, LineCols)
+	if p.POSID != "" {
+		b.LeftRight("เครื่อง:", p.POSID, LineCols)
+	}
+	b.LeftRight("วันที่:", formatThaiDateTime(p.IssuedAt), LineCols)
 	if p.CashierName != "" {
-		b.Line(fmt.Sprintf("พนักงานขาย: %s", p.CashierName))
+		b.LeftRight("พนักงาน:", p.CashierName, LineCols)
 	}
-	b.Line(fmt.Sprintf("วันที่: %s", time.Now().Format("02/01/2006 15:04")))
+	customer := strings.TrimSpace(p.CustomerName)
+	if customer == "" {
+		customer = "General Customer"
+	}
+	b.LeftRight("ลูกค้า:", customer, LineCols)
 	b.Separator(0)
 
-	// Items table — name on one line, qty × price on the next (80mm cols=32).
+	// Item table. The name gets its own line whenever the columns would not
+	// leave room for it, which is most of the time in Thai.
+	b.LeftRight("สินค้า", itemColumns("จำนวน", "ราคา", "รวม"), LineCols)
+	b.Separator(0)
 	for _, it := range p.Items {
-		// Line 1: name truncated to LineCols (it.Name may contain Thai)
 		b.Line(truncateRunes(it.Name, LineCols))
-		// Line 2: code + qty x price = lineTotal, right-aligned amount
-		left := fmt.Sprintf("  %s  %d x %s", it.Code, it.Qty, fmtMoney(it.UnitPrice))
-		b.LeftRight(left, fmtMoney(it.LineTotal), LineCols)
+		b.Right()
+		b.Line(itemColumns(
+			fmtQty(it.Qty),
+			fmtMoney(it.UnitPrice),
+			fmtMoney(it.LineTotal),
+		))
+		b.Left()
 	}
 	b.Separator(0)
 
-	// Totals — left/right aligned summary.
-	b.LeftRight("รวมก่อนลด", fmtMoney(p.Subtotal), LineCols)
-	b.LeftRight("ส่วนลด", "-"+fmtMoney(p.Discount), LineCols)
-	b.LeftRight("หลังหักส่วนลด", fmtMoney(p.AmountAfterDisc), LineCols)
-	b.LeftRight(fmt.Sprintf("ภาษี %d%%", p.TaxRatePercent), fmtMoney(p.Tax), LineCols)
+	// Money.
+	b.LeftRight("ราคารวม", fmtMoney(p.Subtotal), LineCols)
+	b.LeftRight("ส่วนลดสมาชิก", fmtMoney(p.MemberDiscount), LineCols)
+	b.LeftRight("ส่วนลด", fmtMoney(p.Discount), LineCols)
+	if p.Rounding != 0 {
+		b.LeftRight("ปัดเศษ", fmtMoney(p.Rounding), LineCols)
+	}
 	b.Separator(0)
-
-	// Final total — double size for emphasis. Re-emit on its own line because
-	// double-width drops the cols to 16 — we render as two consecutive lines.
-	b.Double().Line("รวมทั้งสิ้น").Normal()
-	b.Double().Right().Line(fmtMoney(p.Total)).Normal()
-	b.Left()
+	b.Bold().LeftRight("รวมยอดสุทธิ", fmtMoney(p.Total), LineCols).NoBold()
 
 	if p.PaymentMethod != "" {
-		b.LeftRight("วิธีชำระ", p.PaymentMethod, LineCols)
+		b.LeftRight("ประเภทการชำระเงิน", p.PaymentMethod, LineCols)
 	}
+	// Cash lines only when cash actually changed hands; a card sale printing
+	// "รับเงิน 0.00" reads like a mistake.
 	if p.HasReceived {
 		b.LeftRight("รับเงิน", fmtMoney(p.ReceivedAmount), LineCols)
-	} else {
-		b.LeftRight("รับเงิน", "-", LineCols)
 	}
 	if p.HasChange {
-		b.LeftRight("เงินทอน", fmtMoney(p.ChangeAmount), LineCols)
-	} else {
-		b.LeftRight("เงินทอน", "-", LineCols)
+		b.LeftRight("ทอนเงิน", fmtMoney(p.ChangeAmount), LineCols)
 	}
-	b.LF(1)
-	b.Center().Line("VAT INCLUDED")
 
 	// Footer — editable in Backoffice → Company → ข้อความท้ายใบเสร็จ.
 	if strings.TrimSpace(p.ReceiptFooter) != "" {
 		b.LF(1)
+		b.Center()
 		for _, ln := range strings.Split(p.ReceiptFooter, "\n") {
 			b.Line(strings.TrimRight(ln, "\r"))
 		}
+		b.Left()
 	}
 
 	// Feed + cut. Even printers without a cutter benefit from a few extra
@@ -551,4 +561,26 @@ func truncateRunes(s string, max int) string {
 
 func fmtMoney(v float64) string {
 	return fmt.Sprintf("%.2f", v)
+}
+
+// itemColumns right-aligns the three numeric columns of the item table into a
+// fixed width so the figures line up down the slip.
+func itemColumns(qty, price, total string) string {
+	return fmt.Sprintf("%6s %8s %9s", qty, price, total)
+}
+
+// fmtQty prints whole quantities without a decimal tail; the reference slip
+// only shows decimals for goods sold by weight.
+func fmtQty(qty int) string {
+	return strconv.Itoa(qty)
+}
+
+// formatThaiDateTime renders the Buddhist-era date the shop's customers read.
+func formatThaiDateTime(at time.Time) string {
+	if at.IsZero() {
+		at = time.Now()
+	}
+	local := at.In(time.FixedZone("Asia/Bangkok", 7*60*60))
+	return fmt.Sprintf("%02d/%02d/%d %02d:%02d",
+		local.Day(), int(local.Month()), local.Year()+543, local.Hour(), local.Minute())
 }

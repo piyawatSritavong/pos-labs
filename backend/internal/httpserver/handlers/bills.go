@@ -405,8 +405,13 @@ func (h *BillsHandler) respondWithFullBill(c *gin.Context, billID string) {
 		"customerName":        bill.CustomerName,
 		"purchaseAmount":      bill.PurchaseAmount,
 		"totalDiscount":       bill.TotalDiscount,
+		"memberDiscount":      bill.MemberDiscount,
+		"manualDiscount":      maxFloat64(bill.TotalDiscount-bill.MemberDiscount, 0),
+		"roundingAmount":      bill.RoundingAmount,
 		"amountAfterDiscount": maxFloat64(bill.PurchaseAmount-bill.TotalDiscount, 0),
 		"totalAmount":         bill.TotalAmount,
+		"cashReceived":        bill.CashReceived,
+		"changeAmount":        bill.ChangeAmount,
 		"vatAmount":           bill.VATAmount,
 		"xvatAmount":          bill.XVATAmount,
 		"dateTime":            bill.CreatedAt.Format(time.RFC3339),
@@ -898,21 +903,26 @@ func (h *BillsHandler) Get(c *gin.Context) {
 			b.PurchaseAmount-b.TotalDiscount,
 			0,
 		),
-		"totalAmount":   b.TotalAmount,
-		"vatAmount":     b.VATAmount,
-		"xvatAmount":    b.XVATAmount,
-		"dateTime":      b.CreatedAt.Format(time.RFC3339),
-		"createdAt":     b.CreatedAt.Format(time.RFC3339),
-		"updatedAt":     b.UpdatedAt.Format(time.RFC3339),
-		"createdBy":     b.CreatedBy,
-		"updatedBy":     b.UpdatedBy,
-		"createdByName": userDisplayName(userNames, b.CreatedBy),
-		"updatedByName": userDisplayName(userNames, b.UpdatedBy),
-		"itemCount":     itemCount,
-		"totalQty":      totalQty,
-		"details":       detailOut,
-		"items":         detailOut,
-		"discounts":     discountOut,
+		"memberDiscount": b.MemberDiscount,
+		"manualDiscount": maxFloat64(b.TotalDiscount-b.MemberDiscount, 0),
+		"roundingAmount": b.RoundingAmount,
+		"totalAmount":    b.TotalAmount,
+		"cashReceived":   b.CashReceived,
+		"changeAmount":   b.ChangeAmount,
+		"vatAmount":      b.VATAmount,
+		"xvatAmount":     b.XVATAmount,
+		"dateTime":       b.CreatedAt.Format(time.RFC3339),
+		"createdAt":      b.CreatedAt.Format(time.RFC3339),
+		"updatedAt":      b.UpdatedAt.Format(time.RFC3339),
+		"createdBy":      b.CreatedBy,
+		"updatedBy":      b.UpdatedBy,
+		"createdByName":  userDisplayName(userNames, b.CreatedBy),
+		"updatedByName":  userDisplayName(userNames, b.UpdatedBy),
+		"itemCount":      itemCount,
+		"totalQty":       totalQty,
+		"details":        detailOut,
+		"items":          detailOut,
+		"discounts":      discountOut,
 	}
 	attachPaymentOutput(response, b.PaymentMethod, b.PaymentRef)
 	c.JSON(http.StatusOK, response)
@@ -2644,6 +2654,9 @@ func (h *BillsHandler) Payment(c *gin.Context) {
 		PaymentMethod string `json:"paymentMethod"`
 		PaymentRef    string `json:"paymentRef"`
 		PaymentMeta   any    `json:"paymentMeta"`
+		// What the customer handed over, for a cash sale. Optional: a till
+		// that does not count it out still completes the sale.
+		CashReceived *float64 `json:"cashReceived"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -2706,8 +2719,27 @@ func (h *BillsHandler) Payment(c *gin.Context) {
 	userVal, _ := c.Get("user")
 	user, _ := userVal.(*repository.User)
 
+	// Change is derived here rather than trusted from the client: it is the
+	// number the customer counts, and the till it has to reconcile against.
+	var cash *repository.CashTendered
+	if normalizedMethod == "cash" && req.CashReceived != nil {
+		received := *req.CashReceived
+		if received+0.0001 < billBeforePayment.TotalAmount {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "cash_below_total",
+				"message": fmt.Sprintf("รับเงินมา %.2f น้อยกว่ายอดที่ต้องชำระ %.2f",
+					received, billBeforePayment.TotalAmount),
+			})
+			return
+		}
+		cash = &repository.CashTendered{
+			Received: received,
+			Change:   received - billBeforePayment.TotalAmount,
+		}
+	}
+
 	// Update payment info and set status to "completed"
-	if err := h.bills.UpdatePayment(ctx, id, normalizedMethod, normalizedRef, user.ID); err != nil {
+	if err := h.bills.UpdatePayment(ctx, id, normalizedMethod, normalizedRef, user.ID, cash); err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
 			return
@@ -3059,21 +3091,41 @@ func (h *BillsHandler) buildReceiptParams(
 		companyWebsite = *company.Website
 	}
 	received, change, hasReceived, hasChange := receiptPaymentAmounts(parsePaymentMeta(bill.PaymentRef))
+	// Cash counted out at the till is the authority; the payment meta is only
+	// a fallback for bills taken before it was recorded.
+	if bill.CashReceived != nil {
+		received, hasReceived = *bill.CashReceived, true
+	}
+	if bill.ChangeAmount != nil {
+		change, hasChange = *bill.ChangeAmount, true
+	}
+	// The membership line is shown separately, so the "ส่วนลด" line must not
+	// include it or the receipt would count the same money twice.
+	manualDiscount := totalDiscount
+	if manualDiscount <= 0 {
+		manualDiscount = maxFloat64(bill.TotalDiscount-bill.MemberDiscount, 0)
+	}
 
 	return printer.ReceiptParams{
 		CompanyNameTh:   firstNonEmpty(company.CompanyNameTH, company.CompanyName),
 		CompanyAddrTh:   firstNonEmpty(company.CompanyAddressTH, company.CompanyAddress),
+		BusinessHours:   company.BusinessHours,
 		TaxID:           company.TaxID,
 		Phone:           companyPhone,
 		Website:         companyWebsite,
 		ReceiptFooter:   company.ReceiptFooter,
 		BillID:          bill.ID,
+		POSID:           bill.POSID,
+		CustomerName:    bill.CustomerName,
 		CashierName:     cashier,
+		IssuedAt:        bill.UpdatedAt,
 		PaymentMethod:   paymentLabelForMode(bill.PaymentMethod, h.PrinterMode),
 		Items:           items,
 		Subtotal:        bill.PurchaseAmount,
-		Discount:        totalDiscount,
-		AmountAfterDisc: bill.PurchaseAmount - totalDiscount,
+		MemberDiscount:  bill.MemberDiscount,
+		Discount:        manualDiscount,
+		Rounding:        bill.RoundingAmount,
+		AmountAfterDisc: bill.PurchaseAmount - bill.TotalDiscount,
 		TaxRatePercent:  taxPercent,
 		Tax:             bill.VATAmount,
 		Total:           bill.TotalAmount,

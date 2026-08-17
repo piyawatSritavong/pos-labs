@@ -16,13 +16,28 @@ type Bill struct {
 	CustomerName   string
 	PurchaseAmount float64
 	TotalDiscount  float64
+	// MemberDiscount is the part of TotalDiscount that came from membership.
+	MemberDiscount float64
+	// RoundingAmount is what rounding to a whole baht added or removed.
+	RoundingAmount float64
 	TotalAmount    float64
 	VATAmount      float64
 	XVATAmount     float64
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	CreatedBy      string
-	UpdatedBy      string
+	// CashReceived and ChangeAmount are recorded for cash sales; nil when the
+	// bill was not paid in cash or predates the receipt rewrite.
+	CashReceived *float64
+	ChangeAmount *float64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	CreatedBy    string
+	UpdatedBy    string
+}
+
+// CashTendered is what the customer handed over and what went back, recorded
+// so the receipt can show both lines. Only meaningful for cash payments.
+type CashTendered struct {
+	Received float64
+	Change   float64
 }
 
 type BillDetail struct {
@@ -76,6 +91,6 @@ type BillRepository interface {
 	GetAllDiscounts(ctx context.Context, billID string) ([]BillDiscountDetail, error)
 	UpdateAmounts(ctx context.Context, billID string, purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount float64) error
 	RecalculateAmountsAndTimestamp(ctx context.Context, billID, updatedBy string) error
-	UpdatePayment(ctx context.Context, billID, paymentMethod, paymentRef, updatedBy string) error
+	UpdatePayment(ctx context.Context, billID, paymentMethod, paymentRef, updatedBy string, cash *CashTendered) error
 	Delete(ctx context.Context, billID string) error
 }
