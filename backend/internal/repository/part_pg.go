@@ -3,8 +3,10 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"backend/internal/config"
 
@@ -958,7 +960,7 @@ func (r *partRepositoryPG) SearchParts(ctx context.Context, query string, catego
 //
 // Every check happens inside the transaction, so two people importing
 // overlapping files at the same time cannot both succeed.
-func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow) (PartImportResult, error) {
+func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow, batch PartImportBatch) (PartImportResult, error) {
 	result := PartImportResult{
 		Codes:        make([]string, 0, len(rows)),
 		UpdatedCodes: make([]string, 0),
@@ -1079,6 +1081,20 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 		creates.rows[at].Code = code
 	}
 
+	// Warehouse quantities as they stand before anything is written, so each
+	// history line can show what it moved rather than just where it landed.
+	touched := make([]string, 0, len(creates.rows)+len(updates.rows))
+	for _, row := range creates.rows {
+		touched = append(touched, row.Code)
+	}
+	for _, row := range updates.rows {
+		touched = append(touched, row.Code)
+	}
+	qtyBefore, err := r.warehouseQuantities(ctx, tx, touched)
+	if err != nil {
+		return PartImportResult{}, err
+	}
+
 	// The writes below are set-based on purpose. A row-at-a-time loop costs
 	// three round trips per product, which against a database in another region
 	// puts a thousand-row import into the minutes — long enough that the client
@@ -1106,12 +1122,123 @@ func (r *partRepositoryPG) ImportParts(ctx context.Context, rows []PartImportRow
 		result.UpdatedCodes = append(result.UpdatedCodes, row.Code)
 	}
 
+	batchID, err := r.recordImportBatch(ctx, tx, batch, creates.rows, updates.rows, qtyBefore)
+	if err != nil {
+		return PartImportResult{}, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return PartImportResult{}, err
 	}
+	result.BatchID = batchID
 	result.Created = len(result.Codes)
 	result.Updated = len(result.UpdatedCodes)
 	return result, nil
+}
+
+// warehouseQuantities reads the current warehouse quantity for the given
+// products. Anything without a row yet is simply absent, which reads as zero.
+func (r *partRepositoryPG) warehouseQuantities(ctx context.Context, tx *sql.Tx, codes []string) (map[string]int, error) {
+	quantities := map[string]int{}
+	if len(codes) == 0 {
+		return quantities, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT "part_code", "qty" FROM "address_master"
+		 WHERE "store_id" = $1 AND "part_code" = ANY($2)
+	`, ImportWarehouseStoreID, pq.Array(codes))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var code string
+		var qty int
+		if err := rows.Scan(&code, &qty); err != nil {
+			return nil, err
+		}
+		quantities[code] = qty
+	}
+	return quantities, rows.Err()
+}
+
+// recordImportBatch writes the history entry for this upload. It runs inside
+// the import transaction, so an import that fails leaves no trace and one that
+// succeeds is always accounted for.
+func (r *partRepositoryPG) recordImportBatch(
+	ctx context.Context, tx *sql.Tx, batch PartImportBatch,
+	creates, updates []PartImportRow, qtyBefore map[string]int,
+) (string, error) {
+	if len(creates) == 0 && len(updates) == 0 {
+		return "", nil
+	}
+	// Document ids follow the house convention: prefix + Thailand date + a
+	// counter taken atomically, never MAX()+1.
+	// UTC+7, the same convention as bill and transfer ids.
+	dateKey := time.Now().UTC().Add(7 * time.Hour).Format("20060102")
+	var sequence int
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO "counter"("key", "value") VALUES ($1, 1)
+		ON CONFLICT ("key") DO UPDATE SET "value" = "counter"."value" + 1
+		RETURNING "value"
+	`, "imp_"+dateKey).Scan(&sequence); err != nil {
+		return "", err
+	}
+	batchID := fmt.Sprintf("IMP%s%06d", dateKey, sequence)
+
+	total := 0
+	for _, row := range append(append([]PartImportRow{}, creates...), updates...) {
+		total += row.Qty
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO "parts_import_batch"
+			("id", "file_hash", "file_name", "file_size", "store_id", "created_by",
+			 "created_count", "updated_count", "total_qty")
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, batchID, batch.FileHash, batch.FileName, batch.FileSize, ImportWarehouseStoreID,
+		batch.UserID, len(creates), len(updates), total); err != nil {
+		return "", err
+	}
+
+	codes := make([]string, 0, len(creates)+len(updates))
+	actions := make([]string, 0, cap(codes))
+	sheetRows := make([]int64, 0, cap(codes))
+	quantities := make([]int64, 0, cap(codes))
+	befores := make([]int64, 0, cap(codes))
+	afters := make([]int64, 0, cap(codes))
+	costs := make([]float64, 0, cap(codes))
+	prices := make([]float64, 0, cap(codes))
+	add := func(row PartImportRow, action string) {
+		before := qtyBefore[row.Code]
+		if action == "created" {
+			before = 0
+		}
+		codes = append(codes, row.Code)
+		actions = append(actions, action)
+		sheetRows = append(sheetRows, int64(row.SheetRow))
+		quantities = append(quantities, int64(row.Qty))
+		befores = append(befores, int64(before))
+		afters = append(afters, int64(before+row.Qty))
+		costs = append(costs, row.Cost)
+		prices = append(prices, row.Price)
+	}
+	for _, row := range creates {
+		add(row, "created")
+	}
+	for _, row := range updates {
+		add(row, "updated")
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO "parts_import_batch_item"
+			("batch_id", "part_code", "action", "sheet_row", "qty",
+			 "qty_before", "qty_after", "cost", "price")
+		SELECT $1, v.code, v.action, v.sheet_row, v.qty, v.qty_before, v.qty_after, v.cost, v.price
+		  FROM unnest($2::text[], $3::text[], $4::int[], $5::int[],
+		              $6::int[], $7::int[], $8::numeric[], $9::numeric[])
+		       AS v(code, action, sheet_row, qty, qty_before, qty_after, cost, price)
+	`, batchID, pq.Array(codes), pq.Array(actions), pq.Array(sheetRows), pq.Array(quantities),
+		pq.Array(befores), pq.Array(afters), pq.Array(costs), pq.Array(prices))
+	return batchID, err
 }
 
 // importNameKey matches the collation the name lookups use — lower(btrim(...))
@@ -1328,3 +1455,93 @@ func (r *partRepositoryPG) lookupCodes(ctx context.Context, tx *sql.Tx, query st
 // ImportWarehouseStoreID is the only store an imported product may enter — the
 // catalog is modelled as a single warehouse that the vehicles draw from.
 const ImportWarehouseStoreID = "main"
+
+// The import history read side.
+
+const importSummarySelect = `
+	SELECT b."id", b."file_hash", b."file_name", b."file_size", b."store_id",
+	       b."created_by", COALESCE(u."name", u."username", ''), b."created_at",
+	       b."created_count", b."updated_count", b."total_qty"
+	  FROM "parts_import_batch" b
+	  LEFT JOIN "user" u ON u."id" = b."created_by"`
+
+func scanImportSummaries(rows *sql.Rows) ([]PartImportSummary, error) {
+	out := []PartImportSummary{}
+	for rows.Next() {
+		var s PartImportSummary
+		if err := rows.Scan(&s.ID, &s.FileHash, &s.FileName, &s.FileSize, &s.StoreID,
+			&s.CreatedBy, &s.CreatedByName, &s.CreatedAt,
+			&s.Created, &s.Updated, &s.TotalQty); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+func (r *partRepositoryPG) FindImportsOfFile(ctx context.Context, fileHash string) ([]PartImportSummary, error) {
+	if strings.TrimSpace(fileHash) == "" {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx,
+		importSummarySelect+` WHERE b."file_hash" = $1 ORDER BY b."created_at" DESC`, fileHash)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanImportSummaries(rows)
+}
+
+func (r *partRepositoryPG) ListImportBatches(ctx context.Context, limit, offset int) ([]PartImportSummary, int, error) {
+	rows, err := r.db.QueryContext(ctx,
+		importSummarySelect+` ORDER BY b."created_at" DESC LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	batches, err := scanImportSummaries(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+	var total int
+	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM "parts_import_batch"`).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	return batches, total, nil
+}
+
+func (r *partRepositoryPG) GetImportBatch(ctx context.Context, id string) (*PartImportSummary, []PartImportLine, error) {
+	row := r.db.QueryRowContext(ctx, importSummarySelect+` WHERE b."id" = $1`, id)
+	var s PartImportSummary
+	if err := row.Scan(&s.ID, &s.FileHash, &s.FileName, &s.FileSize, &s.StoreID,
+		&s.CreatedBy, &s.CreatedByName, &s.CreatedAt,
+		&s.Created, &s.Updated, &s.TotalQty); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, ErrNotFound
+		}
+		return nil, nil, err
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT i."part_code", COALESCE(p."name", ''), i."action", i."sheet_row",
+		       i."qty", i."qty_before", i."qty_after", i."cost", i."price"
+		  FROM "parts_import_batch_item" i
+		  LEFT JOIN "part_master" p ON p."code" = i."part_code"
+		 WHERE i."batch_id" = $1
+		 ORDER BY i."sheet_row", i."part_code"
+	`, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	lines := []PartImportLine{}
+	for rows.Next() {
+		var l PartImportLine
+		if err := rows.Scan(&l.PartCode, &l.PartName, &l.Action, &l.SheetRow,
+			&l.Qty, &l.QtyBefore, &l.QtyAfter, &l.Cost, &l.Price); err != nil {
+			return nil, nil, err
+		}
+		lines = append(lines, l)
+	}
+	return &s, lines, rows.Err()
+}

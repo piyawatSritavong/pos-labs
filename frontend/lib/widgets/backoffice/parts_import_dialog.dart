@@ -39,6 +39,12 @@ class _PartsImportDialogState extends State<_PartsImportDialog> {
   bool _isUploading = false;
   String? _error;
   PartsImportResult? _result;
+  // Set once the server has said "this file is already in", so a second attempt
+  // is a deliberate answer to that rather than a blind retry.
+  bool _confirmDuplicate = false;
+  List<PartsImportBatch> _history = const [];
+  bool _historyLoading = true;
+  bool _showHistory = false;
 
   @override
   void initState() {
@@ -53,7 +59,27 @@ class _PartsImportDialogState extends State<_PartsImportDialog> {
         .catchError((_) {
           /* keep the fallback */
         });
+    _loadHistory();
   }
+
+  Future<void> _loadHistory() async {
+    try {
+      final history = await ApiService.getPartsImportHistory(
+        token: widget.token,
+      );
+      if (!mounted) return;
+      setState(() {
+        _history = history;
+        _historyLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _historyLoading = false);
+    }
+  }
+
+  bool get _needsDuplicateConfirm =>
+      (_result?.alreadyImported ?? false) && !_confirmDuplicate;
 
   String get _sizeLabel {
     final bytes = _bytes;
@@ -116,6 +142,7 @@ class _PartsImportDialogState extends State<_PartsImportDialog> {
       _bytes = bytes;
       _error = null;
       _result = null;
+      _confirmDuplicate = false;
     });
   }
 
@@ -134,6 +161,7 @@ class _PartsImportDialogState extends State<_PartsImportDialog> {
         token: widget.token,
         filename: filename,
         bytes: bytes,
+        confirmDuplicate: _confirmDuplicate,
       );
       if (!mounted) return;
       if (result.ok) {
@@ -159,108 +187,218 @@ class _PartsImportDialogState extends State<_PartsImportDialog> {
     final result = _result;
 
     return AlertDialog(
-      title: const Text('เพิ่มสินค้าด้วยไฟล์ Excel'),
+      title: Row(
+        children: [
+          const Expanded(child: Text('เพิ่มสินค้าด้วยไฟล์ Excel')),
+          TextButton.icon(
+            onPressed: () => setState(() => _showHistory = !_showHistory),
+            icon: Icon(_showHistory ? Icons.upload_file : Icons.history),
+            label: Text(_showHistory ? 'กลับไปอัปโหลด' : 'ประวัติการนำเข้า'),
+          ),
+        ],
+      ),
       content: SizedBox(
         width: 560,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _RulesBox(limits: _limits),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _isUploading ? null : _downloadTemplate,
-                    icon: const Icon(Icons.download),
-                    label: const Text('ดาวน์โหลดเทมเพลต'),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: _isUploading ? null : _pickFile,
-                    icon: const Icon(Icons.attach_file),
-                    label: Text(
-                      _filename == null ? 'เลือกไฟล์' : 'เปลี่ยนไฟล์',
-                    ),
-                  ),
-                ],
-              ),
-              if (_filename != null) ...[
-                const SizedBox(height: 12),
-                Row(
+        child: _showHistory
+            ? _HistoryList(loading: _historyLoading, history: _history)
+            : SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.description_outlined, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '$_filename  ($_sizeLabel)',
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    _RulesBox(limits: _limits),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _isUploading ? null : _downloadTemplate,
+                          icon: const Icon(Icons.download),
+                          label: const Text('ดาวน์โหลดเทมเพลต'),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: _isUploading ? null : _pickFile,
+                          icon: const Icon(Icons.attach_file),
+                          label: Text(
+                            _filename == null ? 'เลือกไฟล์' : 'เปลี่ยนไฟล์',
+                          ),
+                        ),
+                      ],
                     ),
+                    if (_filename != null) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Icon(Icons.description_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '$_filename  ($_sizeLabel)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (_error != null) ...[
+                      const SizedBox(height: 12),
+                      _Banner(
+                        color: theme.colorScheme.errorContainer,
+                        textColor: theme.colorScheme.onErrorContainer,
+                        icon: Icons.error_outline,
+                        text: _error!,
+                      ),
+                    ],
+                    if (result != null && result.alreadyImported) ...[
+                      const SizedBox(height: 12),
+                      _Banner(
+                        color: theme.colorScheme.tertiaryContainer,
+                        textColor: theme.colorScheme.onTertiaryContainer,
+                        icon: Icons.history,
+                        text: result.message,
+                      ),
+                      for (final past in result.previousImports)
+                        ListTile(
+                          dense: true,
+                          leading: const Icon(
+                            Icons.inventory_2_outlined,
+                            size: 18,
+                          ),
+                          title: Text(
+                            '${past.createdAtLabel} · ${past.createdBy}',
+                          ),
+                          subtitle: Text('${past.id} · ${past.summary}'),
+                        ),
+                      const SizedBox(height: 4),
+                      CheckboxListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        value: _confirmDuplicate,
+                        onChanged: (v) =>
+                            setState(() => _confirmDuplicate = v ?? false),
+                        title: const Text(
+                          'ยืนยันว่าเป็นของเข้าล็อตใหม่ ให้บวกจำนวนเพิ่มอีกครั้ง',
+                        ),
+                      ),
+                    ],
+                    if (result != null &&
+                        !result.ok &&
+                        !result.alreadyImported) ...[
+                      const SizedBox(height: 12),
+                      _Banner(
+                        color: theme.colorScheme.errorContainer,
+                        textColor: theme.colorScheme.onErrorContainer,
+                        icon: Icons.report_problem_outlined,
+                        text: result.message,
+                      ),
+                      if (result.rows.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 220),
+                          child: Scrollbar(
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: result.rows.length,
+                              itemBuilder: (_, index) {
+                                final row = result.rows[index];
+                                return ListTile(
+                                  dense: true,
+                                  visualDensity: VisualDensity.compact,
+                                  leading: const Icon(Icons.close, size: 16),
+                                  title: Text(row.label),
+                                  subtitle: Text(row.message),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ],
                 ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                _Banner(
-                  color: theme.colorScheme.errorContainer,
-                  textColor: theme.colorScheme.onErrorContainer,
-                  icon: Icons.error_outline,
-                  text: _error!,
-                ),
-              ],
-              if (result != null && !result.ok) ...[
-                const SizedBox(height: 12),
-                _Banner(
-                  color: theme.colorScheme.errorContainer,
-                  textColor: theme.colorScheme.onErrorContainer,
-                  icon: Icons.report_problem_outlined,
-                  text: result.message,
-                ),
-                if (result.rows.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 220),
-                    child: Scrollbar(
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: result.rows.length,
-                        itemBuilder: (_, index) {
-                          final row = result.rows[index];
-                          return ListTile(
-                            dense: true,
-                            visualDensity: VisualDensity.compact,
-                            leading: const Icon(Icons.close, size: 16),
-                            title: Text(row.label),
-                            subtitle: Text(row.message),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ],
-          ),
-        ),
+              ),
       ),
       actions: [
         TextButton(
           onPressed: _isUploading ? null : () => Navigator.of(context).pop(),
           child: const Text('ปิด'),
         ),
-        ElevatedButton(
-          onPressed: (_bytes == null || _isUploading) ? null : _upload,
-          child: _isUploading
-              ? const SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('อัปโหลด'),
-        ),
+        if (!_showHistory)
+          ElevatedButton(
+            // After the server flags the file as already imported, the button
+            // stays disabled until the checkbox says that is understood.
+            onPressed:
+                (_bytes == null || _isUploading || _needsDuplicateConfirm)
+                ? null
+                : _upload,
+            child: _isUploading
+                ? const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('อัปโหลด'),
+          ),
       ],
+    );
+  }
+}
+
+/// Past imports, newest first. This is the answer to "did we already load this
+/// file?" — the question that, left unanswered, gets answered by importing it
+/// again.
+class _HistoryList extends StatelessWidget {
+  const _HistoryList({required this.loading, required this.history});
+
+  final bool loading;
+  final List<PartsImportBatch> history;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const SizedBox(
+        height: 200,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (history.isEmpty) {
+      return const SizedBox(
+        height: 200,
+        child: Center(child: Text('ยังไม่เคยนำเข้าสินค้าด้วยไฟล์')),
+      );
+    }
+    return SizedBox(
+      height: 380,
+      child: Scrollbar(
+        child: ListView.separated(
+          itemCount: history.length,
+          separatorBuilder: (_, _) => const Divider(height: 1),
+          itemBuilder: (_, index) {
+            final batch = history[index];
+            return ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: Text(batch.createdAtLabel),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    batch.fileName.isEmpty ? batch.id : batch.fileName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text('${batch.summary} · โดย ${batch.createdBy}'),
+                ],
+              ),
+              isThreeLine: true,
+              trailing: Text(
+                batch.id,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }

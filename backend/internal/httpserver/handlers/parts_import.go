@@ -1,11 +1,15 @@
 package handlers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"backend/internal/partsimport"
 	"backend/internal/repository"
@@ -141,7 +145,39 @@ func (h *PartsImportHandler) Import(c *gin.Context) {
 		})
 	}
 
-	result, err := h.parts.ImportParts(c.Request.Context(), input)
+	// The file's own bytes are what identify it. A user who cannot remember
+	// whether yesterday's upload went through gets told, rather than finding
+	// out from doubled stock.
+	digest := sha256.Sum256(data)
+	fileHash := hex.EncodeToString(digest[:])
+	previous, err := h.parts.FindImportsOfFile(c.Request.Context(), fileHash)
+	if err != nil {
+		previous = nil // history is not worth failing an import over
+	}
+	if len(previous) > 0 && !strings.EqualFold(c.Query("confirmDuplicate"), "true") {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "file_already_imported",
+			"message": fmt.Sprintf(
+				"ไฟล์นี้เคยนำเข้าแล้วเมื่อ %s โดย %s (เพิ่มใหม่ %d รายการ อัปเดต %d รายการ) "+
+					"ถ้านำเข้าอีกครั้ง จำนวนจะถูกบวกซ้ำ",
+				formatThaiTime(previous[0].CreatedAt), previous[0].CreatedByName,
+				previous[0].Created, previous[0].Updated),
+			"previousImports": importSummaryList(previous),
+		})
+		return
+	}
+
+	user := currentRequestUser(c)
+	userID := ""
+	if user != nil {
+		userID = user.ID
+	}
+	result, err := h.parts.ImportParts(c.Request.Context(), input, repository.PartImportBatch{
+		FileHash: fileHash,
+		FileName: header.Filename,
+		FileSize: len(data),
+		UserID:   userID,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "failed_to_import_parts",
@@ -159,6 +195,7 @@ func (h *PartsImportHandler) Import(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
+		"batchId":      result.BatchID,
 		"created":      result.Created,
 		"updated":      result.Updated,
 		"codes":        result.Codes,
@@ -188,4 +225,71 @@ func respondFileTooLarge(c *gin.Context) {
 		"message": fmt.Sprintf("ไฟล์ใหญ่เกิน %d MB (รองรับประมาณ %d รายการต่อครั้ง)",
 			partsimport.MaxFileBytes>>20, partsimport.MaxRows),
 	})
+}
+
+// History returns past imports, newest first, so "did we already load this
+// file?" is answerable without guessing.
+func (h *PartsImportHandler) History(c *gin.Context) {
+	limit, offset := 20, 0
+	if v, err := strconv.Atoi(c.Query("limit")); err == nil && v > 0 && v <= 200 {
+		limit = v
+	}
+	if v, err := strconv.Atoi(c.Query("offset")); err == nil && v >= 0 {
+		offset = v
+	}
+	batches, total, err := h.parts.ListImportBatches(c.Request.Context(), limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_list_imports"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"imports": importSummaryList(batches), "total": total})
+}
+
+// HistoryDetail returns the lines one import wrote.
+func (h *PartsImportHandler) HistoryDetail(c *gin.Context) {
+	batch, lines, err := h.parts.GetImportBatch(c.Request.Context(), strings.TrimSpace(c.Param("id")))
+	if err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "import_not_found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_load_import"})
+		return
+	}
+	items := make([]gin.H, 0, len(lines))
+	for _, line := range lines {
+		items = append(items, gin.H{
+			"partCode": line.PartCode, "partName": line.PartName,
+			"action": line.Action, "sheetRow": line.SheetRow, "qty": line.Qty,
+			"qtyBefore": line.QtyBefore, "qtyAfter": line.QtyAfter,
+			"cost": line.Cost, "price": line.Price,
+		})
+	}
+	out := importBatchJSON(*batch)
+	out["items"] = items
+	c.JSON(http.StatusOK, out)
+}
+
+func importBatchJSON(s repository.PartImportSummary) gin.H {
+	return gin.H{
+		"id": s.ID, "fileName": s.FileName, "fileSize": s.FileSize,
+		"fileHash": s.FileHash, "storeId": s.StoreID,
+		"createdBy": s.CreatedByName, "createdAt": s.CreatedAt.Format(time.RFC3339),
+		"createdAtLabel": formatThaiTime(s.CreatedAt),
+		"created":        s.Created, "updated": s.Updated, "totalQty": s.TotalQty,
+	}
+}
+
+func importSummaryList(items []repository.PartImportSummary) []gin.H {
+	out := make([]gin.H, 0, len(items))
+	for _, item := range items {
+		out = append(out, importBatchJSON(item))
+	}
+	return out
+}
+
+// formatThaiTime renders a timestamp the way the staff reading it think about
+// dates: local time, day first.
+func formatThaiTime(at time.Time) string {
+	return at.In(time.FixedZone("Asia/Bangkok", 7*60*60)).Format("02/01/2006 15:04")
 }

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 type PartDetail struct {
@@ -87,7 +88,14 @@ type PartRepository interface {
 	// creates one. Rows that cannot be applied are reported as conflicts and
 	// nothing is written — a half-applied spreadsheet is worse than a rejected
 	// one.
-	ImportParts(ctx context.Context, rows []PartImportRow) (PartImportResult, error)
+	ImportParts(ctx context.Context, rows []PartImportRow, batch PartImportBatch) (PartImportResult, error)
+	// FindImportsOfFile returns earlier imports of the same bytes, newest
+	// first, so an upload can be recognised as one that already happened.
+	FindImportsOfFile(ctx context.Context, fileHash string) ([]PartImportSummary, error)
+	// ListImportBatches pages the import history, newest first.
+	ListImportBatches(ctx context.Context, limit, offset int) ([]PartImportSummary, int, error)
+	// GetImportBatch returns one import with the lines it wrote.
+	GetImportBatch(ctx context.Context, id string) (*PartImportSummary, []PartImportLine, error)
 }
 
 // PartImportRow is one product from an uploaded spreadsheet. SheetRow travels
@@ -107,6 +115,45 @@ type PartImportRow struct {
 	Qty      int
 }
 
+// PartImportBatch is what an upload is recorded as: who applied which file,
+// when. The hash is of the uploaded bytes — the only thing that can tell
+// "this is the file I already imported" from "this is a similar file".
+type PartImportBatch struct {
+	FileHash string
+	FileName string
+	FileSize int
+	UserID   string
+}
+
+// PartImportSummary is one entry in the import history.
+type PartImportSummary struct {
+	ID            string
+	FileHash      string
+	FileName      string
+	FileSize      int
+	StoreID       string
+	CreatedBy     string
+	CreatedByName string
+	CreatedAt     time.Time
+	Created       int
+	Updated       int
+	TotalQty      int
+}
+
+// PartImportLine is one product an import touched, with the warehouse quantity
+// on either side of it so the line reads as a movement.
+type PartImportLine struct {
+	PartCode  string
+	PartName  string
+	Action    string
+	SheetRow  int
+	Qty       int
+	QtyBefore int
+	QtyAfter  int
+	Cost      float64
+	Price     float64
+}
+
 // PartImportConflict is a row that collides with the existing catalog.
 type PartImportConflict struct {
 	SheetRow int    `json:"row"`
@@ -117,6 +164,8 @@ type PartImportConflict struct {
 // PartImportResult reports what an import did. When Conflicts is non-empty
 // nothing was written and both counts are zero.
 type PartImportResult struct {
+	// BatchID is the history entry this import was recorded as.
+	BatchID string
 	Created int
 	Updated int
 	// Codes of the products created, then of those restocked/repriced.

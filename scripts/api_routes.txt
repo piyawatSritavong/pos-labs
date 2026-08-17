@@ -32,6 +32,8 @@ GET /members/search
 GET /parts
 GET /parts/:code
 GET /parts/generate-code
+GET /parts/import/history
+GET /parts/import/history/:id
 GET /parts/import/limits
 GET /parts/import/template
 GET /parts/search

@@ -87,6 +87,25 @@ python3 scripts/generate-parts-import-template.py
 ค่าจำกัดทั้งหมดอยู่ที่ `backend/internal/partsimport/import.go` และหน้าจอดึงมาแสดง
 จาก `GET /parts/import/limits` เพื่อไม่ให้ตัวเลขสองฝั่งหลุดจากกัน
 
+## ประวัติการนำเข้า (ล็อต)
+
+ทุกครั้งที่ไฟล์ถูกนำเข้าสำเร็จ ระบบบันทึกเป็น **ล็อต** หนึ่งใบ รหัส `IMPYYYYMMDDnnnnnn`
+เก็บ ชื่อไฟล์ · ขนาด · **sha256 ของไฟล์** · ใครนำเข้า · เมื่อไหร่ · เพิ่มใหม่/อัปเดตกี่รายการ
+และรายบรรทัดว่าสินค้าตัวไหนถูกทำอะไร พร้อม **จำนวนก่อนและหลัง** ในคลังหลัก
+
+ดูได้จากปุ่ม **ประวัติการนำเข้า** ในหน้าต่างอัปโหลด
+
+### กันนำเข้าซ้ำ
+
+ระบบเทียบ sha256 ของไฟล์ที่อัปโหลดกับล็อตเดิม ถ้าเป็นไฟล์เดียวกันเป๊ะจะตอบ `409`
+พร้อมบอกว่าเคยนำเข้าเมื่อไหร่และโดยใคร แทนที่จะบวกจำนวนซ้ำเงียบ ๆ
+
+ถ้าเป็นของเข้าล็อตใหม่จริงที่บังเอิญใช้ไฟล์เดิม ให้ติ๊กยืนยันในหน้าต่าง
+(ฝั่ง API คือ `POST /parts/import?confirmDuplicate=true`) แล้วจะนำเข้าได้ตามปกติ
+
+หมายเหตุ: เทียบจากไบต์ของไฟล์ ถ้าเปิดไฟล์แล้วเซฟใหม่โดยไม่แก้อะไร Excel มัก
+เขียนไบต์ไม่เหมือนเดิม ระบบจะถือว่าเป็นคนละไฟล์ — ประวัติจึงยังเป็นด่านสุดท้ายที่ควรดู
+
 ## API
 
 | Method | Path | สิทธิ์ |
@@ -94,6 +113,8 @@ python3 scripts/generate-parts-import-template.py
 | GET | `/parts/import/template` | ไม่ต้องยืนยันตัวตน (ไฟล์เปล่า ไม่มีข้อมูลธุรกิจ) |
 | GET | `/parts/import/limits` | `parts:write` |
 | POST | `/parts/import` (multipart, field `file`) | `parts:write` |
+| GET | `/parts/import/history` | `parts:read` |
+| GET | `/parts/import/history/:id` | `parts:read` |
 
 การตอบกลับของ `POST /parts/import`:
 
@@ -102,6 +123,7 @@ python3 scripts/generate-parts-import-template.py
 - `413` — ไฟล์ใหญ่เกินกำหนด
 - `422` — `{"error": "invalid_rows", "rows": [{"row": 3, "column": "ราคาขาย", "message": "..."}]}`
 - `409` — `{"error": "conflicting_rows", ...}` ชื่อสินค้าใหม่ซ้ำกับของที่มีอยู่
+- `409` — `{"error": "file_already_imported", "previousImports": [...]}` ไฟล์นี้เคยนำเข้าแล้ว
 
 ## หมายเหตุการพัฒนา
 

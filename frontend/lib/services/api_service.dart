@@ -1541,13 +1541,61 @@ class ApiService {
 
   /// POST /parts/import — upload a filled-in template. The whole file is
   /// applied or none of it, so a failed result means nothing was created.
+  /// GET /parts/import/history — past imports, newest first.
+  static Future<List<PartsImportBatch>> getPartsImportHistory({
+    required String token,
+    int limit = 20,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/parts/import/history?limit=$limit'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
+      throw Exception('โหลดประวัติไม่สำเร็จ (${response.statusCode})');
+    }
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    return (decoded['imports'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PartsImportBatch.fromJson)
+        .toList();
+  }
+
+  /// GET /parts/import/history/:id — the lines one import wrote.
+  static Future<List<PartsImportBatchLine>> getPartsImportDetail({
+    required String token,
+    required String id,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/parts/import/history/$id'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
+      throw Exception('โหลดรายละเอียดไม่สำเร็จ (${response.statusCode})');
+    }
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    return (decoded['items'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PartsImportBatchLine.fromJson)
+        .toList();
+  }
+
+  /// The server refuses a file it has already imported unless
+  /// [confirmDuplicate] is set, which is what stops a forgotten upload from
+  /// being counted a second time.
   static Future<PartsImportResult> importPartsFromExcel({
     required String token,
     required String filename,
     required Uint8List bytes,
+    bool confirmDuplicate = false,
   }) async {
     final request =
-        http.MultipartRequest('POST', Uri.parse('$baseUrl/parts/import'))
+        http.MultipartRequest(
+            'POST',
+            Uri.parse(
+              '$baseUrl/parts/import'
+              '${confirmDuplicate ? '?confirmDuplicate=true' : ''}',
+            ),
+          )
           ..headers['Authorization'] = 'Bearer $token'
           ..files.add(
             http.MultipartFile.fromBytes('file', bytes, filename: filename),
@@ -1578,6 +1626,12 @@ class ApiService {
           .whereType<Map<String, dynamic>>()
           .map(PartsImportRowError.fromJson)
           .toList(),
+      alreadyImported: decoded['error']?.toString() == 'file_already_imported',
+      previousImports:
+          (decoded['previousImports'] as List<dynamic>? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map(PartsImportBatch.fromJson)
+              .toList(),
     );
   }
 
@@ -2856,6 +2910,8 @@ class PartsImportResult {
     required this.updated,
     required this.message,
     required this.rows,
+    this.alreadyImported = false,
+    this.previousImports = const [],
   });
 
   final bool ok;
@@ -2868,6 +2924,10 @@ class PartsImportResult {
 
   final String message;
   final List<PartsImportRowError> rows;
+
+  /// The server recognised these exact bytes as a file it has imported before.
+  final bool alreadyImported;
+  final List<PartsImportBatch> previousImports;
 
   factory PartsImportResult.success({
     required int created,
@@ -2884,11 +2944,81 @@ class PartsImportResult {
   factory PartsImportResult.failure({
     required String message,
     required List<PartsImportRowError> rows,
+    bool alreadyImported = false,
+    List<PartsImportBatch> previousImports = const [],
   }) => PartsImportResult(
     ok: false,
     created: 0,
     updated: 0,
+    alreadyImported: alreadyImported,
+    previousImports: previousImports,
     message: message,
     rows: rows,
   );
+}
+
+/// One past import — when a file was applied and what it did.
+class PartsImportBatch {
+  const PartsImportBatch({
+    required this.id,
+    required this.fileName,
+    required this.createdAtLabel,
+    required this.createdBy,
+    required this.created,
+    required this.updated,
+    required this.totalQty,
+  });
+
+  final String id;
+  final String fileName;
+  final String createdAtLabel;
+  final String createdBy;
+  final int created;
+  final int updated;
+  final int totalQty;
+
+  factory PartsImportBatch.fromJson(Map<String, dynamic> json) =>
+      PartsImportBatch(
+        id: json['id']?.toString() ?? '',
+        fileName: json['fileName']?.toString() ?? '',
+        createdAtLabel: json['createdAtLabel']?.toString() ?? '',
+        createdBy: json['createdBy']?.toString() ?? '',
+        created: (json['created'] as num?)?.toInt() ?? 0,
+        updated: (json['updated'] as num?)?.toInt() ?? 0,
+        totalQty: (json['totalQty'] as num?)?.toInt() ?? 0,
+      );
+
+  String get summary =>
+      'เพิ่มใหม่ $created · อัปเดต $updated · รวม $totalQty ชิ้น';
+}
+
+/// One product an import touched, with the warehouse quantity on either side.
+class PartsImportBatchLine {
+  const PartsImportBatchLine({
+    required this.partCode,
+    required this.partName,
+    required this.action,
+    required this.qty,
+    required this.qtyBefore,
+    required this.qtyAfter,
+  });
+
+  final String partCode;
+  final String partName;
+  final String action;
+  final int qty;
+  final int qtyBefore;
+  final int qtyAfter;
+
+  bool get isCreated => action == 'created';
+
+  factory PartsImportBatchLine.fromJson(Map<String, dynamic> json) =>
+      PartsImportBatchLine(
+        partCode: json['partCode']?.toString() ?? '',
+        partName: json['partName']?.toString() ?? '',
+        action: json['action']?.toString() ?? '',
+        qty: (json['qty'] as num?)?.toInt() ?? 0,
+        qtyBefore: (json['qtyBefore'] as num?)?.toInt() ?? 0,
+        qtyAfter: (json['qtyAfter'] as num?)?.toInt() ?? 0,
+      );
 }

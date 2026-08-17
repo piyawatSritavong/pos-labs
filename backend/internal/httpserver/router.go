@@ -113,6 +113,14 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		partsImport.GET("/limits", partsImportHandler.Limits)
 		partsImport.POST("", partsImportHandler.Import)
 	}
+	// Reading the import history only needs read access — it is a stock
+	// document like any other.
+	partsImportHistory := r.Group("/parts/import/history")
+	partsImportHistory.Use(authMw.RequirePermission("parts", "read"))
+	{
+		partsImportHistory.GET("", partsImportHandler.History)
+		partsImportHistory.GET("/:id", partsImportHandler.HistoryDetail)
+	}
 	partsDelete := r.Group("/parts")
 	partsDelete.Use(authMw.RequirePermission("parts", "delete"))
 	{

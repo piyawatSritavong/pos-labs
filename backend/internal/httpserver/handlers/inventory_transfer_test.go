@@ -241,8 +241,17 @@ func (*stubRestockPartRepository) DeletePart(context.Context, string) (string, e
 func (*stubRestockPartRepository) GenerateNextPartCode(context.Context) (string, error) {
 	return "P0001", nil
 }
-func (*stubRestockPartRepository) ImportParts(context.Context, []repository.PartImportRow) (repository.PartImportResult, error) {
+func (*stubRestockPartRepository) ImportParts(context.Context, []repository.PartImportRow, repository.PartImportBatch) (repository.PartImportResult, error) {
 	return repository.PartImportResult{}, nil
+}
+func (*stubRestockPartRepository) FindImportsOfFile(context.Context, string) ([]repository.PartImportSummary, error) {
+	return nil, nil
+}
+func (*stubRestockPartRepository) ListImportBatches(context.Context, int, int) ([]repository.PartImportSummary, int, error) {
+	return nil, 0, nil
+}
+func (*stubRestockPartRepository) GetImportBatch(context.Context, string) (*repository.PartImportSummary, []repository.PartImportLine, error) {
+	return nil, nil, repository.ErrNotFound
 }
 
 func TestRestockCatalogSupportsPaginationWithoutCostFields(t *testing.T) {
