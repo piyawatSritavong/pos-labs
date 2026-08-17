@@ -12,6 +12,7 @@ import 'package:frontend/widgets/pos/requisition_dialog.dart';
 import 'package:provider/provider.dart';
 
 void main() {
+  _posErrorMessageTests();
   test('formats and aggregates warehouse quantities without shelf names', () {
     final formatted = formatPartStoreSummary([
       {
@@ -372,5 +373,38 @@ void main() {
         AppSizes.radiusLarge,
       );
     }
+  });
+}
+
+void _posErrorMessageTests() {
+  test('a bill cancelled elsewhere is explained, not dumped as raw JSON', () {
+    final message = posErrorMessage(
+      Exception(
+        'Failed to pay bill: 400 {"error":"invalid_bill_status",'
+        '"message":"Bill status must be \'new\' to process payment, '
+        'bill status must be \'new\', current status: \'cancelled\'"}',
+      ),
+    );
+    expect(message, contains('ถูกยกเลิก'));
+    expect(message, isNot(contains('invalid_bill_status')));
+    expect(message, isNot(contains('400')));
+  });
+
+  test('a bill already paid warns against taking the money twice', () {
+    final message = posErrorMessage(
+      Exception(
+        'Failed to pay bill: 400 {"error":"invalid_bill_status",'
+        '"message":"current status: \'completed\'"}',
+      ),
+    );
+    expect(message, contains('ชำระเงินไปแล้ว'));
+    expect(message, contains('ประวัติการขาย'));
+  });
+
+  test('unrelated errors are still passed through', () {
+    expect(
+      posErrorMessage(Exception('something else went wrong')),
+      'something else went wrong',
+    );
   });
 }

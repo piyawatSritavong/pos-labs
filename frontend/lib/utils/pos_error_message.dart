@@ -9,5 +9,19 @@ String posErrorMessage(Object error) {
   if (raw.contains('pos_store_not_configured')) {
     return 'POS นี้ยังไม่ได้ตั้งค่าคลังประจำเครื่อง';
   }
+  // The bill moved on somewhere else — another tab paid it, cancelled it, or
+  // an older build cancelled it on launch. The raw text says
+  // "bill status must be 'new'", which tells a cashier nothing.
+  if (raw.contains('invalid_bill_status')) {
+    if (raw.contains("'cancelled'")) {
+      return 'บิลนี้ถูกยกเลิกไปแล้ว (อาจถูกยกเลิกจากหน้าจอหรือแท็บอื่น) '
+          'กรุณากดขึ้นบิลใหม่แล้วสแกนสินค้าอีกครั้ง';
+    }
+    if (raw.contains("'completed'")) {
+      return 'บิลนี้ถูกชำระเงินไปแล้ว (อาจชำระจากหน้าจอหรือแท็บอื่น) '
+          'กรุณาตรวจในประวัติการขายก่อนเก็บเงินซ้ำ';
+    }
+    return 'บิลนี้ไม่อยู่ในสถานะที่ชำระเงินได้แล้ว กรุณาขึ้นบิลใหม่';
+  }
   return raw.replaceFirst(RegExp(r'^Exception:\s*'), '');
 }

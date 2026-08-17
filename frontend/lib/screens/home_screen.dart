@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/screens/backoffice_screen.dart';
+import 'package:frontend/utils/thai_business_date.dart';
 import 'package:frontend/services/api_bills.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/theme/app_theme.dart';
@@ -194,7 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final pendingBills = await ApiBillsService.getBills(
         token: token,
-        limit: 1,
+        limit: 20,
         offset: 0,
         statuses: const ['new'],
         includeDetails: true,
@@ -202,14 +203,38 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       if (!mounted) return;
 
+      // Bill ids start with the Thailand date they were opened on, which is
+      // also how the counter numbers them — so the prefix is the reliable way
+      // to tell yesterday's leftovers from the sale in progress.
+      final today = thaiBusinessDateKey(DateTime.now());
+      String? todaysBillId;
       for (final pendingBill in pendingBills) {
         final pendingBillId = pendingBill['id']?.toString() ?? '';
         if (pendingBillId.isEmpty) {
           throw Exception('ไม่พบเลขที่บิลที่ค้างอยู่');
         }
+        if (isFromBusinessDay(pendingBillId, today)) {
+          // Keep the newest of today's open bills; ids are monotonic.
+          if (todaysBillId == null ||
+              pendingBillId.compareTo(todaysBillId) > 0) {
+            todaysBillId = pendingBillId;
+          }
+          continue;
+        }
+        // Anything opened on an earlier day is a leftover nobody is standing
+        // at the counter for.
         await ApiBillsService.cancelBill(token: token, billId: pendingBillId);
       }
-      billProvider.resetCurrentBillState();
+
+      if (todaysBillId == null) {
+        billProvider.resetCurrentBillState();
+      } else {
+        // Pick the sale back up instead of destroying it. Reopening the POS —
+        // a refresh, a second tab, a re-login — used to cancel whatever the
+        // cashier had on screen, and they only found out when payment was
+        // refused with "bill status must be 'new'".
+        await billProvider.switchBill(token: token, targetBillId: todaysBillId);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {

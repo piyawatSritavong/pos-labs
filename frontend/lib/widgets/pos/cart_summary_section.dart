@@ -8,6 +8,7 @@ import 'package:frontend/providers/company_provider.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/utils/pos_error_message.dart';
 import 'package:provider/provider.dart';
 
 class CartSummarySection extends StatefulWidget {
@@ -1886,8 +1887,14 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
   String? get _finalizeErrorMessage {
     if (_finalizeError == null) return null;
     if (_isPrinterError) return 'เชื่อมต่อเครื่องปริ้นไม่สำเร็จ';
-    return _finalizeError;
+    return posErrorMessage(_finalizeError!);
   }
+
+  /// The bill is gone as far as payment is concerned — paid or cancelled
+  /// somewhere else. Retrying can only fail again, so the dialog offers a way
+  /// out instead of a button that repeats the same error.
+  bool get _isBillNoLongerPayable =>
+      _finalizeError?.contains('invalid_bill_status') ?? false;
 
   @override
   void initState() {
@@ -2344,6 +2351,11 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
                       ),
                     ),
                   ],
+                )
+              else if (_isBillNoLongerPayable)
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('ปิดและขึ้นบิลใหม่'),
                 )
               else
                 ElevatedButton(
