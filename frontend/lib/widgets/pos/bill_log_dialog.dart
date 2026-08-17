@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/utils/bill_line_format.dart';
 import 'package:frontend/services/api_bills.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
@@ -37,7 +38,11 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
         final details = _extractDetails(bill);
         return {
           'id': bill['id']?.toString() ?? '',
-          'total': _resolveAmount(bill, ['totalAmount', 'total_amount', 'total']),
+          'total': _resolveAmount(bill, [
+            'totalAmount',
+            'total_amount',
+            'total',
+          ]),
           'itemCount': (bill['itemCount'] as num?)?.toInt() ?? details.length,
           'totalQty': _resolveTotalQty(bill, details),
           'createdAt': bill['createdAt']?.toString() ?? '',
@@ -104,15 +109,6 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
       0,
       (sum, item) => sum + _toDouble(item['qty']).toInt(),
     );
-  }
-
-  double _resolveLineTotal(Map<String, dynamic> detail) {
-    final direct = detail['lineTotal'] ?? detail['amount'] ?? detail['total'];
-    if (direct != null) {
-      return _toDouble(direct);
-    }
-    return _toDouble(detail['price'] ?? detail['unitPrice']) *
-        _toDouble(detail['qty']);
   }
 
   Future<void> _loadBills() async {
@@ -382,10 +378,11 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
                                                 detail['partCode']
                                                     ?.toString() ??
                                                 '-';
-                                            final qty = _toDouble(
-                                              detail['qty'],
-                                            ).toInt();
-                                            final amount = _resolveLineTotal(
+                                            // Show the multiplication, not just
+                                            // its answer — the price each is
+                                            // what anyone checking the bill
+                                            // wants to see.
+                                            final amount = billLineTotal(
                                               detail,
                                             );
                                             return Padding(
@@ -396,7 +393,14 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
                                               child: Row(
                                                 children: [
                                                   Expanded(child: Text(name)),
-                                                  Text('x$qty'),
+                                                  Text(
+                                                    billLineQtyPriceLabel(
+                                                      detail,
+                                                    ),
+                                                    style: const TextStyle(
+                                                      color: AppColors.muted,
+                                                    ),
+                                                  ),
                                                   const SizedBox(width: 12),
                                                   Text(
                                                     '฿${amount.toStringAsFixed(2)}',

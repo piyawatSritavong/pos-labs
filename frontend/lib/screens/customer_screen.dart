@@ -355,12 +355,16 @@ class _CustomerScreenState extends State<CustomerScreen> {
                                                     ],
                                                   ),
                                                 ),
+                                                // The customer is looking at
+                                                // this screen to check the
+                                                // arithmetic, so show it:
+                                                // quantity times price each.
                                                 Expanded(
-                                                  flex: 2,
+                                                  flex: 3,
                                                   child: Text(
-                                                    it.isReturn
-                                                        ? '-${it.qty}'
-                                                        : '${it.qty}',
+                                                    '${it.isReturn ? '-' : ''}'
+                                                    '${it.qty} × ฿'
+                                                    '${it.price.toStringAsFixed(2)}',
                                                     textAlign: TextAlign.right,
                                                     style: TextStyle(
                                                       fontWeight:

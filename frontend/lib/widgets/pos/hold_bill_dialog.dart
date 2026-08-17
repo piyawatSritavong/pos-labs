@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/services/api_bills.dart';
+import 'package:frontend/utils/bill_line_format.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
@@ -37,9 +38,21 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
         final details = _extractDetails(bill);
         return {
           'id': bill['id']?.toString() ?? bill['billId']?.toString() ?? '',
-          'subtotal': _resolveAmount(bill, ['purchaseAmount', 'purchase_amount', 'subtotal']),
-          'discount': _resolveAmount(bill, ['totalDiscount', 'total_discount', 'discount']),
-          'total': _resolveAmount(bill, ['totalAmount', 'total_amount', 'total']),
+          'subtotal': _resolveAmount(bill, [
+            'purchaseAmount',
+            'purchase_amount',
+            'subtotal',
+          ]),
+          'discount': _resolveAmount(bill, [
+            'totalDiscount',
+            'total_discount',
+            'discount',
+          ]),
+          'total': _resolveAmount(bill, [
+            'totalAmount',
+            'total_amount',
+            'total',
+          ]),
           'itemCount': (bill['itemCount'] as num?)?.toInt() ?? details.length,
           'totalQty': _resolveTotalQty(bill, details),
           'createdAt': bill['createdAt']?.toString() ?? '',
@@ -144,15 +157,6 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
       0,
       (sum, item) => sum + _toDouble(item['qty']).toInt(),
     );
-  }
-
-  double _resolveLineTotal(Map<String, dynamic> detail) {
-    final direct = detail['lineTotal'] ?? detail['amount'] ?? detail['total'];
-    if (direct != null) {
-      return _toDouble(direct);
-    }
-    return _toDouble(detail['price'] ?? detail['unitPrice']) *
-        _toDouble(detail['qty']);
   }
 
   Future<void> _resumeBill(Map<String, dynamic> bill) async {
@@ -469,10 +473,7 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
                                                 detail['partCode']
                                                     ?.toString() ??
                                                 '-';
-                                            final qty = _toDouble(
-                                              detail['qty'],
-                                            ).toInt();
-                                            final amount = _resolveLineTotal(
+                                            final amount = billLineTotal(
                                               detail,
                                             );
                                             return Padding(
@@ -483,7 +484,14 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
                                               child: Row(
                                                 children: [
                                                   Expanded(child: Text(name)),
-                                                  Text('x$qty'),
+                                                  Text(
+                                                    billLineQtyPriceLabel(
+                                                      detail,
+                                                    ),
+                                                    style: const TextStyle(
+                                                      color: AppColors.muted,
+                                                    ),
+                                                  ),
                                                   const SizedBox(width: 12),
                                                   Text(
                                                     '฿${amount.toStringAsFixed(2)}',

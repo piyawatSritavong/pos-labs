@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/utils/bill_line_format.dart';
 import 'package:frontend/screens/backoffice_screen.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/theme/app_theme.dart';
@@ -202,18 +203,6 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
     return raw.whereType<Map<String, dynamic>>().toList();
   }
 
-  double _resolveLineTotal(Map<String, dynamic> detail) {
-    final direct = detail['lineTotal'] ?? detail['amount'] ?? detail['total'];
-    if (direct is num) {
-      return direct.toDouble();
-    }
-    final qty = double.tryParse(detail['qty']?.toString() ?? '') ?? 0;
-    final price = double.tryParse(
-      (detail['price'] ?? detail['unitPrice'])?.toString() ?? '',
-    );
-    return (price ?? 0) * qty;
-  }
-
   Widget? _buildInlineDetails(Map<String, dynamic> bill) {
     final details = _extractDetails(bill);
     if (details.isEmpty) {
@@ -230,11 +219,13 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
               detail['name']?.toString() ??
               detail['partCode']?.toString() ??
               '-';
-          final qty = detail['qty']?.toString() ?? '0';
-          final lineTotal = _resolveLineTotal(detail);
+          final lineTotal = billLineTotal(detail);
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Text('• $name x$qty = ฿${lineTotal.toStringAsFixed(2)}'),
+            child: Text(
+              '• $name  ${billLineQtyPriceLabel(detail)} '
+              '= ฿${lineTotal.toStringAsFixed(2)}',
+            ),
           );
         }).toList(),
       ),
@@ -390,12 +381,10 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
                             item['partName']?.toString() ??
                             item['partCode']?.toString() ??
                             '';
-                        final qty = item['qty']?.toString() ?? '1';
-                        final amount =
-                            item['amount']?.toString() ??
-                            item['total']?.toString() ??
-                            '';
-                        return Text('• $name x$qty  = ฿$amount');
+                        return Text(
+                          '• $name  ${billLineQtyPriceLabel(item)} '
+                          '= ฿${billLineTotal(item).toStringAsFixed(2)}',
+                        );
                       }
                       return const SizedBox.shrink();
                     }),
