@@ -96,9 +96,12 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       );
       final focusNode = itemPriceFocusNodes.putIfAbsent(key, () => FocusNode());
       itemBaseUnitPrices.putIfAbsent(key, () => item.price);
-      final lineTotal = (item.price * item.qty).toStringAsFixed(2);
-      if (!focusNode.hasFocus && controller.text != lineTotal) {
-        controller.text = lineTotal;
+      // The cashier edits the price of one piece, which is the number written
+      // on the shelf and the number the customer argues about. The line total
+      // is shown beside it and follows.
+      final unitPrice = item.price.toStringAsFixed(2);
+      if (!focusNode.hasFocus && controller.text != unitPrice) {
+        controller.text = unitPrice;
       }
     }
   }
@@ -277,7 +280,9 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     }
   }
 
-  Future<void> _updateLineTotalPrice(
+  /// Applies the unit price typed into the row. The server takes a line total,
+  /// so the multiplication happens here — the cashier never has to do it.
+  Future<void> _updateUnitPrice(
     BuildContext context,
     _BillLineItem item,
   ) async {
@@ -291,23 +296,23 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     }
 
     final raw = controller.text.trim().replaceAll(',', '');
-    final currentLineTotal = item.price * item.qty;
+    final currentUnitPrice = item.price;
     if (raw.isEmpty) {
-      controller.text = currentLineTotal.toStringAsFixed(2);
+      controller.text = currentUnitPrice.toStringAsFixed(2);
       return;
     }
 
     final parsed = double.tryParse(raw);
     if (parsed == null) {
-      controller.text = currentLineTotal.toStringAsFixed(2);
+      controller.text = currentUnitPrice.toStringAsFixed(2);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('รูปแบบราคาไม่ถูกต้อง')));
       return;
     }
 
-    if ((parsed - currentLineTotal).abs() < 0.0001) {
-      controller.text = currentLineTotal.toStringAsFixed(2);
+    if ((parsed - currentUnitPrice).abs() < 0.0001) {
+      controller.text = currentUnitPrice.toStringAsFixed(2);
       return;
     }
 
@@ -316,7 +321,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     final messenger = ScaffoldMessenger.of(context);
     final token = auth.token;
     if (token == null) {
-      controller.text = currentLineTotal.toStringAsFixed(2);
+      controller.text = currentUnitPrice.toStringAsFixed(2);
       messenger.showSnackBar(
         const SnackBar(content: Text('token หาย กรุณา login ใหม่')),
       );
@@ -328,10 +333,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         token: token,
         partCode: item.partCode!,
         addressCode: item.addressCode!,
-        lineTotal: parsed,
+        lineTotal: parsed * item.qty,
       );
     } catch (e) {
-      controller.text = currentLineTotal.toStringAsFixed(2);
+      controller.text = currentUnitPrice.toStringAsFixed(2);
       messenger.showSnackBar(
         SnackBar(content: Text(_friendlyItemPriceError(e))),
       );
@@ -971,7 +976,19 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                   Expanded(
                     flex: 3,
                     child: Text(
-                      'ราคา',
+                      'ราคา/ชิ้น',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: context.colorMuted,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      'รวม',
                       textAlign: TextAlign.right,
                       style: TextStyle(
                         color: context.colorMuted,
@@ -1173,10 +1190,9 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                                   flex: 3,
                                   child: it.isReturn
                                       ? Text(
-                                          '-฿$lineTotal',
+                                          '฿${it.price.toStringAsFixed(2)}',
                                           textAlign: TextAlign.right,
                                           style: TextStyle(
-                                            fontWeight: FontWeight.bold,
                                             color: context.colorDanger,
                                           ),
                                         )
@@ -1205,18 +1221,30 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                                                     ),
                                               ),
                                               onSubmitted: (_) =>
-                                                  _updateLineTotalPrice(
-                                                    context,
-                                                    it,
-                                                  ),
+                                                  _updateUnitPrice(context, it),
                                               onTapOutside: (_) =>
-                                                  _updateLineTotalPrice(
-                                                    context,
-                                                    it,
-                                                  ),
+                                                  _updateUnitPrice(context, it),
                                             ),
                                           ],
                                         ),
+                                ),
+                                // Line total, worked out from the two columns
+                                // beside it so the arithmetic on the screen is
+                                // the arithmetic on the receipt.
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(
+                                    it.isReturn
+                                        ? '-฿$lineTotal'
+                                        : '฿$lineTotal',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: it.isReturn
+                                          ? context.colorDanger
+                                          : null,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
