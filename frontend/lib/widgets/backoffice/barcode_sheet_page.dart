@@ -14,12 +14,20 @@ class BarcodePickItem {
     required this.name,
     required this.barcode,
     required this.qty,
+    this.price = '',
   });
 
   final String partCode;
   final String name;
   final String barcode;
+
+  /// Already formatted for the sticker; empty leaves the price off.
+  final String price;
   final int qty;
+
+  /// The line a customer reads. A product with no price gets its name alone —
+  /// better than a sticker saying "0 บาท".
+  String get labelHeading => price.isEmpty ? name : '$name  $price บาท';
 }
 
 /// Builds an exact-millimetre label PDF for the EasyPrint ES-9920UW thermal
@@ -52,13 +60,17 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
   // Horizontal gap between the 3 labels in a row. Adjust if the printed
   // barcodes drift off the die-cut on the first test print.
   static const double _gapMm = 2;
+  // Barcode height. Shorter than the leftover space on purpose: the freed
+  // millimetres go to the name/price and the digits, which is what anyone
+  // actually reads off the sticker. A Code128 scans fine at this height.
+  static const double _barcodeHmm = 9;
 
   // One PDF page == one printer row of 3 labels.
   PdfPageFormat get _rowFormat => PdfPageFormat(
-        (_labelWmm * _cols + _gapMm * (_cols - 1)) * PdfPageFormat.mm,
-        _labelHmm * PdfPageFormat.mm,
-        marginAll: 0,
-      );
+    (_labelWmm * _cols + _gapMm * (_cols - 1)) * PdfPageFormat.mm,
+    _labelHmm * PdfPageFormat.mm,
+    marginAll: 0,
+  );
 
   // Cached Thai font — the `pdf` package's default Helvetica cannot render Thai
   // glyphs, so product names need a bundled TTF. (Only the font object is
@@ -66,8 +78,9 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
   pw.Font? _thaiFont;
 
   Future<pw.Font> _loadFont() async {
-    return _thaiFont ??=
-        pw.Font.ttf(await rootBundle.load('assets/fonts/Sarabun-Regular.ttf'));
+    return _thaiFont ??= pw.Font.ttf(
+      await rootBundle.load('assets/fonts/Sarabun-Regular.ttf'),
+    );
   }
 
   /// Flatten every copy in pick order, then pack [_cols] labels per row so each
@@ -129,17 +142,24 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          // Top — product name (truncated to one line)
-          pw.Text(
-            it.name,
-            maxLines: 1,
-            overflow: pw.TextOverflow.clip,
-            style: const pw.TextStyle(fontSize: 6.5),
+          // Top — what a customer reads: the product and what it costs.
+          // FittedBox shrinks a long name rather than clipping it, because a
+          // sticker that has lost its price is worse than one set small.
+          pw.FittedBox(
+            fit: pw.BoxFit.scaleDown,
+            child: pw.Text(
+              it.labelHeading,
+              maxLines: 1,
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+            ),
           ),
-          // Middle — Code128 barcode
-          pw.Expanded(
-            child: pw.Padding(
-              padding: const pw.EdgeInsets.symmetric(vertical: 2),
+          // Middle — Code128, kept a little shorter than the space allows so
+          // the two text lines can be read at arm's length.
+          pw.Center(
+            child: pw.SizedBox(
+              height: _barcodeHmm * PdfPageFormat.mm,
+              width: double.infinity,
               child: pw.BarcodeWidget(
                 barcode: pw.Barcode.code128(escapes: false),
                 data: it.barcode,
@@ -152,7 +172,7 @@ class _BarcodeSheetPageState extends State<BarcodeSheetPage> {
           pw.Text(
             it.barcode,
             textAlign: pw.TextAlign.center,
-            style: const pw.TextStyle(fontSize: 6, letterSpacing: 0.3),
+            style: const pw.TextStyle(fontSize: 7.5, letterSpacing: 0.3),
           ),
         ],
       ),

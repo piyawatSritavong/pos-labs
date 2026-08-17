@@ -153,6 +153,16 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
           ?.toString() ??
       '';
 
+  /// Price as it should read on the sticker: whole baht lose the ".00", the
+  /// rest keep two decimals. An unpriced product simply gets no price on it.
+  String _priceOf(Map<String, dynamic> p) {
+    final value = double.tryParse(p['price']?.toString() ?? '');
+    if (value == null || value <= 0) return '';
+    return value == value.roundToDouble()
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(2);
+  }
+
   String _barcodeOf(Map<String, dynamic> p) {
     final code = (p['code'] ?? '').toString();
     final barRaw = (p['barCode'] ?? '').toString();
@@ -172,7 +182,11 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
     setState(() {
       if (checked == true) {
         _selectedQty[code] = _selectedQty[code] ?? 1;
-        _selectedMeta[code] = {'name': _nameOf(p), 'barcode': _barcodeOf(p)};
+        _selectedMeta[code] = {
+          'name': _nameOf(p),
+          'barcode': _barcodeOf(p),
+          'price': _priceOf(p),
+        };
       } else {
         _selectedQty.remove(code);
         _selectedMeta.remove(code);
@@ -200,7 +214,11 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
         if (code.isEmpty) continue;
         if (checked == true) {
           _selectedQty[code] = _selectedQty[code] ?? 1;
-          _selectedMeta[code] = {'name': _nameOf(p), 'barcode': _barcodeOf(p)};
+          _selectedMeta[code] = {
+          'name': _nameOf(p),
+          'barcode': _barcodeOf(p),
+          'price': _priceOf(p),
+        };
         } else {
           _selectedQty.remove(code);
           _selectedMeta.remove(code);
@@ -225,6 +243,7 @@ class _BarcodePrintPageState extends State<BarcodePrintPage> {
         partCode: code,
         name: meta['name'] ?? '',
         barcode: barcode,
+        price: meta['price'] ?? '',
         qty: qty,
       ));
     }
