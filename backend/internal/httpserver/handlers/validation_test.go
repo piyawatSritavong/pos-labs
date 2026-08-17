@@ -25,24 +25,6 @@ func TestPaymentMethodRejectsUnsupportedValue(t *testing.T) {
 	}
 }
 
-func TestValidateLinePriceBoundaries(t *testing.T) {
-	tests := []struct {
-		total   float64
-		wantErr string
-	}{
-		{89.99, "price_below_minimum"},
-		{90, ""},
-		{100, ""},
-		{100.01, "price_above_catalog"},
-	}
-	for _, tt := range tests {
-		_, _, got := validateLinePrice(tt.total, 1, 90, 100)
-		if got != tt.wantErr {
-			t.Errorf("total %.2f: got %q, want %q", tt.total, got, tt.wantErr)
-		}
-	}
-}
-
 func TestSalesAddressForPOSUsesOnlyConfiguredStore(t *testing.T) {
 	addresses := []repository.PartAddress{
 		{Code: "MAIN", StoreID: "main", Qty: 20},

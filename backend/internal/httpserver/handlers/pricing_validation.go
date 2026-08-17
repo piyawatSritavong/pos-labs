@@ -1,13 +1,17 @@
 package handlers
 
-func validateLinePrice(lineTotal float64, qty int, minUnitPrice, maxUnitPrice float64) (float64, float64, string) {
-	minimum := minUnitPrice * float64(qty)
-	maximum := maxUnitPrice * float64(qty)
-	if lineTotal+0.0001 < minimum {
-		return minimum, maximum, "price_below_minimum"
-	}
-	if lineTotal > maximum+0.0001 {
-		return minimum, maximum, "price_above_catalog"
-	}
-	return minimum, maximum, ""
-}
+// Line pricing is not fenced in.
+//
+// The shop asked for it: a van sells to walk-ins, regulars and other traders on
+// the same round, and haggling both directions is the job. A floor computed
+// from the catalog turned "sell it for what it's worth" into an error the
+// cashier could not clear, and the price silently snapped back to what the
+// catalog said — which reads as the system being broken, not as a rule.
+//
+// What remains enforced lives elsewhere and is about arithmetic, not policy:
+// a line total must be a positive number (bills.go), and stock still has to
+// exist before it can be sold.
+//
+// part_master keeps its min_price CHECK, so the catalog still records what the
+// shop considers the floor. It is a reference for whoever sets prices, not a
+// gate on the till.

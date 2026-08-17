@@ -182,8 +182,13 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         );
       }
     } catch (e) {
+      // The quantity on screen springs back to what the server still holds, so
+      // the reason has to be legible or it reads as the app ignoring the edit.
       messenger.showSnackBar(
-        SnackBar(content: Text('อัปเดตจำนวนสินค้าไม่สำเร็จ: $e')),
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: Text('แก้จำนวนไม่สำเร็จ: ${posErrorMessage(e)}'),
+        ),
       );
     }
   }
@@ -201,16 +206,12 @@ class _CartSummarySectionState extends State<CartSummarySection> {
 
   String _friendlyItemPriceError(Object error) {
     final message = error.toString();
-    if (message.contains('price_below_minimum')) {
-      return 'ราคาต้องไม่ต่ำกว่า “ราคาลดได้” ที่กำหนดในสินค้า';
-    }
-    if (message.contains('price_above_catalog')) {
-      return 'ราคาต้องไม่สูงกว่าราคาขายจริงที่กำหนดในสินค้า';
-    }
+    // The catalog no longer caps what a line may sell for; anything still
+    // rejected is a real problem, not a pricing policy.
     if (message.contains('invalid_line_total')) {
       return 'กรุณากรอกราคามากกว่า 0';
     }
-    return 'แก้ไขราคาไม่สำเร็จ: $error';
+    return posErrorMessage(error);
   }
 
   Future<void> _increaseItemQty(
@@ -338,7 +339,10 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     } catch (e) {
       controller.text = currentUnitPrice.toStringAsFixed(2);
       messenger.showSnackBar(
-        SnackBar(content: Text(_friendlyItemPriceError(e))),
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: Text('แก้ราคาไม่สำเร็จ: ${_friendlyItemPriceError(e)}'),
+        ),
       );
     }
   }

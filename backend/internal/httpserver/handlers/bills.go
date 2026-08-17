@@ -373,6 +373,23 @@ func (h *BillsHandler) ensureManualDiscountPromotion(ctx context.Context) error 
 	return createErr
 }
 
+// insufficientInventory reports a failed stock check with the quantity that is
+// actually on the vehicle. Telling a cashier only that the request failed
+// leaves them guessing at the number; the number is the whole answer.
+func (h *BillsHandler) insufficientInventory(c *gin.Context, addressCode string, requested int) {
+	available := 0
+	if address, err := h.addresses.GetByCode(c.Request.Context(), addressCode); err == nil {
+		available = address.Qty
+	}
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error":        "not_enough_inventory",
+		"message":      fmt.Sprintf("สต๊อกไม่พอ ขอ %d ชิ้น เหลือในคลังของ POS นี้ %d ชิ้น", requested, available),
+		"requestedQty": requested,
+		"availableQty": available,
+		"addressCode":  addressCode,
+	})
+}
+
 func (h *BillsHandler) respondWithFullBill(c *gin.Context, billID string) {
 	start := time.Now()
 	bill, details, discounts, err := h.bills.GetFullByID(c.Request.Context(), billID)
@@ -1033,10 +1050,7 @@ func (h *BillsHandler) AddItem(c *gin.Context) {
 		return
 	}
 	if !decreased {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "not_enough_inventory",
-			"message": fmt.Sprintf("Insufficient inventory at address %s. Requested: %d", req.AddressCode, req.Qty),
-		})
+		h.insufficientInventory(c, req.AddressCode, req.Qty)
 		return
 	}
 
@@ -1203,10 +1217,7 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 		return
 	}
 	if !decreased {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "not_enough_inventory",
-			"message": fmt.Sprintf("Insufficient inventory at address %s. Requested: %d", selectedAddress.Code, req.Qty),
-		})
+		h.insufficientInventory(c, selectedAddress.Code, req.Qty)
 		return
 	}
 
@@ -1446,8 +1457,9 @@ func (h *BillsHandler) UpdateItemPrice(c *gin.Context) {
 		return
 	}
 
-	partDetail, _, err := h.parts.GetPartDetail(ctx, req.PartCode, &branchID)
-	if err != nil {
+	// The part still has to exist and belong to this branch, even though its
+	// catalog prices no longer constrain what it sells for.
+	if _, _, err := h.parts.GetPartDetail(ctx, req.PartCode, &branchID); err != nil {
 		if repository.IsNotFoundError(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found"})
 			return
@@ -1456,33 +1468,8 @@ func (h *BillsHandler) UpdateItemPrice(c *gin.Context) {
 		return
 	}
 
-	minAllowedLineTotal, maxAllowedLineTotal, priceError := validateLinePrice(
-		req.LineTotal,
-		existingItem.Qty,
-		partDetail.MinPrice,
-		partDetail.Price,
-	)
-	if priceError == "price_below_minimum" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":                   "price_below_minimum",
-			"message":                 fmt.Sprintf("Line total cannot be lower than the configured minimum price (minimum %.2f)", minAllowedLineTotal),
-			"minimumAllowedLineTotal": minAllowedLineTotal,
-			"minimumUnitPrice":        partDetail.MinPrice,
-			"requestedLineTotal":      req.LineTotal,
-		})
-		return
-	}
-	if priceError == "price_above_catalog" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":                   "price_above_catalog",
-			"message":                 fmt.Sprintf("Line total cannot exceed the catalog price (maximum %.2f)", maxAllowedLineTotal),
-			"maximumAllowedLineTotal": maxAllowedLineTotal,
-			"maximumUnitPrice":        partDetail.Price,
-			"requestedLineTotal":      req.LineTotal,
-		})
-		return
-	}
-
+	// The cashier sets the price. See pricing_validation.go for why there is
+	// no floor or ceiling here.
 	newUnitPrice := req.LineTotal / float64(existingItem.Qty)
 	if err := h.bills.UpdateItemPrice(ctx, id, req.PartCode, req.AddressCode, newUnitPrice); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_update_item_price"})
@@ -1725,20 +1712,9 @@ func (h *BillsHandler) AddDiscount(c *gin.Context) {
 		}
 	}
 
-	minimum, err := h.validateDiscountFloor(ctx, id, branchID, discount)
-	if err != nil {
-		if err.Error() == "discount_below_minimum" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":                   "price_below_minimum",
-				"message":                 "Discount would make the bill lower than the configured minimum prices",
-				"minimumAllowedBillTotal": minimum,
-			})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_validate_discount"})
-		return
-	}
-
+	// A bill-level discount is not floored either — same reason as the line
+	// price. The discount is still clamped to the bill total by the client, so
+	// a bill cannot go negative.
 	if err := h.bills.AddDiscount(ctx, discount); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_add_discount"})
 		return
@@ -2686,21 +2662,6 @@ func (h *BillsHandler) Payment(c *gin.Context) {
 		})
 		return
 	}
-	minimumBillTotal, err := h.minimumAllowedBillTotal(ctx, items, branchID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_validate_minimum_price"})
-		return
-	}
-	if billBeforePayment.TotalAmount+0.0001 < minimumBillTotal {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":                   "price_below_minimum",
-			"message":                 "Bill total is lower than the configured minimum prices",
-			"minimumAllowedBillTotal": minimumBillTotal,
-			"requestedBillTotal":      billBeforePayment.TotalAmount,
-		})
-		return
-	}
-
 	normalizedMethod, normalizedRef, err := validateAndSerializePayment(
 		req.PaymentMethod,
 		req.PaymentRef,

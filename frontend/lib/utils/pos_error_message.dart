@@ -1,7 +1,17 @@
 String posErrorMessage(Object error) {
   final raw = error.toString();
-  if (raw.contains('not_enough_inventory') ||
-      raw.contains('no_vehicle_stock') ||
+  // The server says how many are actually on the vehicle; that number is the
+  // answer the cashier needs, so pass it through rather than a generic line.
+  if (raw.contains('not_enough_inventory')) {
+    final available = RegExp(r'"availableQty":\s*(\d+)').firstMatch(raw);
+    final requested = RegExp(r'"requestedQty":\s*(\d+)').firstMatch(raw);
+    if (available != null && requested != null) {
+      return 'สต๊อกไม่พอ ขอ ${requested.group(1)} ชิ้น '
+          'เหลือในคลังของ POS นี้ ${available.group(1)} ชิ้น';
+    }
+    return 'สต๊อกในคลังประจำ POS ไม่พอ';
+  }
+  if (raw.contains('no_vehicle_stock') ||
       raw.contains('part_not_found') ||
       raw.contains('invalid_address_code')) {
     return 'สินค้านี้ไม่มีสต๊อกในคลังประจำ POS';

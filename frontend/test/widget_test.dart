@@ -46,8 +46,27 @@ void main() {
   test('inventory API errors are shown in Thai', () {
     expect(
       posErrorMessage(Exception('400 {"error":"not_enough_inventory"}')),
+      'สต๊อกในคลังประจำ POS ไม่พอ',
+    );
+    expect(
+      posErrorMessage(Exception('400 {"error":"no_vehicle_stock"}')),
       'สินค้านี้ไม่มีสต๊อกในคลังประจำ POS',
     );
+  });
+
+  test('a short stock error names the quantity actually on the vehicle', () {
+    // "แก้จำนวนไม่สำเร็จ" on its own reads as the app ignoring the edit; the
+    // number is what tells the cashier what to do next.
+    final message = posErrorMessage(
+      Exception(
+        '400 {"error":"not_enough_inventory","requestedQty":50,'
+        '"availableQty":10,"addressCode":"VEH123"}',
+      ),
+    );
+    expect(message, contains('50'));
+    expect(message, contains('10'));
+    expect(message, isNot(contains('not_enough_inventory')));
+    expect(message, isNot(contains('VEH123')));
   });
 
   testWidgets('inventory filters and empty state are shown in Thai', (
