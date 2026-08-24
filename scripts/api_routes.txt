@@ -112,6 +112,7 @@ PUT /bills/:id/payment
 PUT /bills/:id/remove-discount
 PUT /bills/:id/remove-item
 PUT /bills/:id/remove-member
+PUT /bills/:id/reorder-items
 PUT /bills/:id/update-item-price
 PUT /bills/switch
 PUT /branches/:id

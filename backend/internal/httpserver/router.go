@@ -193,7 +193,8 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		billsWrite.PUT("/:id/add-item", billsHandler.AddItem)                     // add item to bill by part code
 		billsWrite.PUT("/:id/add-item-by-barcode", billsHandler.AddItemByBarcode) // add item to bill by barcode
 		billsWrite.PUT("/:id/remove-item", billsHandler.RemoveItem)               // remove item from bill
-		billsWrite.PUT("/:id/update-item-price", billsHandler.UpdateItemPrice)    // update item line price in bill
+		billsWrite.PUT("/:id/update-item-price", billsHandler.UpdateItemPrice)
+		billsWrite.PUT("/:id/reorder-items", billsHandler.ReorderItems)           // update item line price in bill
 		billsWrite.PUT("/:id/add-discount", billsHandler.AddDiscount)             // apply discount to bill
 		billsWrite.PUT("/:id/remove-discount", billsHandler.RemoveDiscount)       // remove discount from bill
 		billsWrite.PUT("/:id/add-member-by-phone", billsHandler.AddMemberByPhone) // assign member to bill by phone number

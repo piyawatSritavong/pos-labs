@@ -33,6 +33,13 @@ type Bill struct {
 	UpdatedBy    string
 }
 
+// BillItemKey identifies one cart line. A bill can hold the same product from
+// two different stock addresses, so both parts are needed.
+type BillItemKey struct {
+	PartCode    string
+	AddressCode string
+}
+
 // CashTendered is what the customer handed over and what went back, recorded
 // so the receipt can show both lines. Only meaningful for cash payments.
 type CashTendered struct {
@@ -92,5 +99,8 @@ type BillRepository interface {
 	UpdateAmounts(ctx context.Context, billID string, purchaseAmount, totalDiscount, totalAmount, vatAmount, xvatAmount float64) error
 	RecalculateAmountsAndTimestamp(ctx context.Context, billID, updatedBy string) error
 	UpdatePayment(ctx context.Context, billID, paymentMethod, paymentRef, updatedBy string, cash *CashTendered) error
+	// ReorderItems rewrites the cart's line positions to the given order. The
+	// keys must name every line on the bill exactly once.
+	ReorderItems(ctx context.Context, billID string, order []BillItemKey) error
 	Delete(ctx context.Context, billID string) error
 }

@@ -373,6 +373,84 @@ func (h *BillsHandler) ensureManualDiscountPromotion(ctx context.Context) error 
 	return createErr
 }
 
+// ReorderItems saves the order the cashier dragged the cart into. It exists
+// because sorting by product code made the list rearrange itself while they
+// worked; now the order is theirs to set and it stays set.
+func (h *BillsHandler) ReorderItems(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_bill_id"})
+		return
+	}
+	branchID, posID, err := h.getBranchAndPOSFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx := c.Request.Context()
+	if err := h.validateBillAccess(ctx, id, branchID, posID); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "bill_access_denied",
+			"message": "Bill does not belong to your current branch and POS",
+		})
+		return
+	}
+
+	var req struct {
+		Items []struct {
+			PartCode    string `json:"partCode"`
+			AddressCode string `json:"addressCode"`
+		} `json:"items"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
+		return
+	}
+	order := make([]repository.BillItemKey, 0, len(req.Items))
+	for _, item := range req.Items {
+		partCode := strings.TrimSpace(item.PartCode)
+		addressCode := strings.TrimSpace(item.AddressCode)
+		if partCode == "" || addressCode == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_item",
+				"message": "ต้องระบุ partCode และ addressCode ของทุกบรรทัด",
+			})
+			return
+		}
+		order = append(order, repository.BillItemKey{
+			PartCode: partCode, AddressCode: addressCode,
+		})
+	}
+
+	if err := h.bills.ReorderItems(ctx, id, order); err != nil {
+		if repository.IsNotFoundError(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bill_not_found"})
+			return
+		}
+		switch err.Error() {
+		case "invalid_bill_status":
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_bill_status",
+				"message": "จัดลำดับได้เฉพาะบิลที่ยังไม่ได้ชำระเงิน",
+			})
+		case "order_must_list_every_item":
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "order_must_list_every_item",
+				"message": "ลำดับที่ส่งมาไม่ครบทุกรายการในบิล",
+			})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_reorder_items"})
+		}
+		return
+	}
+
+	h.respondWithFullBill(c, id)
+}
+
 // insufficientInventory reports a failed stock check with the quantity that is
 // actually on the vehicle. Telling a cashier only that the request failed
 // leaves them guessing at the number; the number is the whole answer.

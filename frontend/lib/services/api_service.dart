@@ -462,6 +462,32 @@ class ApiService {
   }
 
   // PUT /bills/:id/update-item-price — แก้ยอดราคาของรายการสินค้าในบิล
+  /// PUT /bills/:id/reorder-items — save the cart order the cashier dragged
+  /// the lines into. [items] must list every line, in the wanted order.
+  static Future<Map<String, dynamic>> reorderBillItems({
+    required String token,
+    required String billId,
+    required List<Map<String, String>> items,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/bills/$billId/reorder-items'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'items': items}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to reorder bill items: ${response.statusCode} ${response.body}',
+      );
+    }
+    return _extractObjectFromResponse(
+      jsonDecode(response.body),
+      '/bills/:id/reorder-items',
+    );
+  }
+
   static Future<Map<String, dynamic>> updateItemPriceInBill({
     required String token,
     required String billId,

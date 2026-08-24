@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -221,7 +222,7 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 		JOIN "bill_master" b ON b."id" = bid."bill_id"
 		LEFT JOIN "part_master" pm ON pm."code" = bid."part_code"
 		WHERE bid."bill_id" = $1
-		ORDER BY bid."part_code", bid."address_code"
+		ORDER BY bid."line_no", bid."part_code", bid."address_code"
 	`, id)
 		if err != nil {
 			setErr(err)
@@ -320,7 +321,7 @@ func (r *billRepositoryPG) GetDetailsByBillIDs(ctx context.Context, ids []string
 		JOIN "bill_master" b ON b."id" = bid."bill_id"
 		LEFT JOIN "part_master" pm ON pm."code" = bid."part_code"
 		WHERE bid."bill_id" = ANY($1)
-		ORDER BY bid."bill_id", bid."part_code", bid."address_code"
+		ORDER BY bid."bill_id", bid."line_no", bid."part_code", bid."address_code"
 	`, pq.Array(ids))
 	if err != nil {
 		return nil, err
@@ -721,9 +722,12 @@ func (r *billRepositoryPG) AddItem(ctx context.Context, detail *BillDetail) erro
 		INSERT INTO "bill_item_detail"(
 			"bill_id", "part_code", "address_code",
 			"unit_id", "uni_label", "unit_label_th",
-			"name", "receipt_name", "cost", "price", "qty"
+			"name", "receipt_name", "cost", "price", "qty", "line_no"
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		-- A new line goes to the end of the cart. Scanning the same product
+		-- again only adds quantity, so it keeps the position it already had.
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+		       COALESCE((SELECT MAX("line_no") FROM "bill_item_detail" WHERE "bill_id" = $1), 0) + 1
 		ON CONFLICT ("bill_id", "part_code", "address_code")
 		DO UPDATE SET
 			"qty" = "bill_item_detail"."qty" + EXCLUDED."qty",
@@ -746,9 +750,10 @@ func (r *billRepositoryPG) AddItemReturningQty(ctx context.Context, detail *Bill
 			INSERT INTO "bill_item_detail"(
 				"bill_id", "part_code", "address_code",
 				"unit_id", "uni_label", "unit_label_th",
-				"name", "receipt_name", "cost", "price", "qty"
+				"name", "receipt_name", "cost", "price", "qty", "line_no"
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+			       COALESCE((SELECT MAX("line_no") FROM "bill_item_detail" WHERE "bill_id" = $1), 0) + 1
 			ON CONFLICT ("bill_id", "part_code", "address_code")
 			DO UPDATE SET
 				"qty" = "bill_item_detail"."qty" + EXCLUDED."qty",
@@ -831,7 +836,7 @@ func (r *billRepositoryPG) GetAllItems(ctx context.Context, billID string) ([]Bi
 		       "name", COALESCE(NULLIF("receipt_name", ''), 'ITEM ' || "part_code"), "cost", "price", "qty"
 		FROM "bill_item_detail"
 		WHERE "bill_id" = $1
-		ORDER BY "part_code", "address_code"
+		ORDER BY "line_no", "part_code", "address_code"
 	`, billID)
 	if err != nil {
 		return nil, err
@@ -1051,6 +1056,74 @@ func (r *billRepositoryPG) Delete(ctx context.Context, billID string) error {
 	}
 	if rowsAffected == 0 {
 		return ErrNotFound
+	}
+
+	return tx.Commit()
+}
+
+// ReorderItems renumbers a cart to the order the cashier dragged it into.
+//
+// The whole cart is renumbered in one transaction from a list that must name
+// every line: a partial reorder would leave two lines sharing a position, and
+// the display order would go back to being arbitrary between them.
+func (r *billRepositoryPG) ReorderItems(ctx context.Context, billID string, order []BillItemKey) error {
+	if len(order) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var status string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT "status" FROM "bill_master" WHERE "id" = $1 FOR UPDATE
+	`, billID).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if status != "new" && status != "hold" {
+		return fmt.Errorf("invalid_bill_status")
+	}
+
+	var lineCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT count(*) FROM "bill_item_detail" WHERE "bill_id" = $1
+	`, billID).Scan(&lineCount); err != nil {
+		return err
+	}
+	if lineCount != len(order) {
+		return fmt.Errorf("order_must_list_every_item")
+	}
+
+	parts := make([]string, len(order))
+	addresses := make([]string, len(order))
+	positions := make([]int64, len(order))
+	for at, key := range order {
+		parts[at] = key.PartCode
+		addresses[at] = key.AddressCode
+		positions[at] = int64(at + 1)
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE "bill_item_detail" d
+		SET "line_no" = v.position
+		  FROM unnest($2::text[], $3::text[], $4::int[])
+		       AS v(part_code, address_code, position)
+		 WHERE d."bill_id" = $1
+		   AND d."part_code" = v.part_code
+		   AND d."address_code" = v.address_code
+	`, billID, pq.Array(parts), pq.Array(addresses), pq.Array(positions))
+	if err != nil {
+		return err
+	}
+	// Every line has to have been matched; a key naming a line that is not on
+	// the bill would otherwise silently leave the rest half-renumbered.
+	if affected, _ := result.RowsAffected(); int(affected) != len(order) {
+		return fmt.Errorf("order_must_list_every_item")
 	}
 
 	return tx.Commit()

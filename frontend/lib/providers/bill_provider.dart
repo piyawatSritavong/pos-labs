@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frontend/services/api_service.dart';
 
@@ -10,6 +11,26 @@ double _toDouble(dynamic v) {
 const String kManualDiscountPromotionCode = 'SYS_MANUAL_DISCOUNT';
 
 class BillProvider extends ChangeNotifier {
+  /// Cart mutations run one at a time, in the order they were requested.
+  ///
+  /// Two scans a moment apart used to race: each call returns the whole bill,
+  /// so whichever reply arrived last overwrote the other, and the line the
+  /// server numbered first was not necessarily the one the cashier rang up
+  /// first. Queueing makes the order on screen the order they pressed.
+  Future<void> _cartQueue = Future<void>.value();
+
+  Future<T> _serialize<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _cartQueue = _cartQueue.then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (error, stack) {
+        completer.completeError(error, stack);
+      }
+    });
+    return completer.future;
+  }
+
   String? _billId;
   Map<String, dynamic>? _currentBill;
   Map<String, dynamic>? get currentBill => _currentBill;
@@ -599,7 +620,44 @@ class BillProvider extends ChangeNotifier {
     }
   }
 
+  /// Scanning is where the race showed up most: a scanner fires faster than a
+  /// round trip, so these are serialized too.
+  /// Saves the order the cashier dragged the cart into.
+  Future<void> reorderItems({
+    required String token,
+    required List<Map<String, String>> order,
+  }) {
+    return _serialize(() async {
+      if (_billId == null) {
+        throw Exception('Bill id is not initialized');
+      }
+      isLoading = true;
+      notifyListeners();
+      try {
+        final bill = await ApiService.reorderBillItems(
+          token: token,
+          billId: _billId!,
+          items: order,
+        );
+        _applyBill(bill);
+      } finally {
+        isLoading = false;
+        notifyListeners();
+      }
+    });
+  }
+
   Future<Map<String, dynamic>> addItemByBarcode({
+    required String token,
+    required String barcode,
+    int qty = 1,
+  }) {
+    return _serialize(
+      () => _addItemByBarcodeNow(token: token, barcode: barcode, qty: qty),
+    );
+  }
+
+  Future<Map<String, dynamic>> _addItemByBarcodeNow({
     required String token,
     required String barcode,
     int qty = 1,
@@ -629,7 +687,25 @@ class BillProvider extends ChangeNotifier {
     }
   }
 
+  /// Adds a line. Serialized so a burst of scans lands in the order it was
+  /// scanned rather than in whatever order the replies come back.
   Future<Map<String, dynamic>> addItem({
+    required String token,
+    required String partCode,
+    required String addressCode,
+    int qty = 1,
+  }) {
+    return _serialize(
+      () => _addItemNow(
+        token: token,
+        partCode: partCode,
+        addressCode: addressCode,
+        qty: qty,
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>> _addItemNow({
     required String token,
     required String partCode,
     required String addressCode,

@@ -131,6 +131,75 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     }
   }
 
+  /// Order the cashier just dragged the cart into, held until the server has
+  /// confirmed it. Without this the row snaps back to its old position for the
+  /// length of a round trip, which reads as the drag not having worked.
+  List<String>? _pendingOrder;
+
+  /// Applies a pending drag to the list coming from the provider. Falls back to
+  /// the server's order the moment the cart's contents change, so a line added
+  /// or removed mid-drag cannot leave a stale arrangement on screen.
+  List<_BillLineItem> _applyPendingOrder(List<_BillLineItem> items) {
+    final pending = _pendingOrder;
+    if (pending == null) return items;
+    final byKey = {for (final item in items) _itemKey(item): item};
+    if (byKey.length != pending.length || !pending.every(byKey.containsKey)) {
+      return items;
+    }
+    return [for (final key in pending) byKey[key]!];
+  }
+
+  Future<void> _reorderItems(
+    BuildContext context,
+    List<_BillLineItem> items,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+    if (oldIndex == newIndex) return;
+
+    final reordered = [...items];
+    reordered.insert(newIndex, reordered.removeAt(oldIndex));
+    // Returned lines are not rows of this bill, so they take no part in its
+    // ordering; the server expects every purchase line and nothing else.
+    final purchases = reordered.where((item) => !item.isReturn).toList();
+    if (purchases.any(
+      (item) => item.partCode == null || item.addressCode == null,
+    )) {
+      return;
+    }
+
+    setState(() => _pendingOrder = reordered.map(_itemKey).toList());
+    PosMirrorService.current?.notifyLastAction('reorder');
+
+    final auth = context.read<AuthProvider>();
+    final bill = context.read<BillProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final token = auth.token;
+    if (token == null) {
+      setState(() => _pendingOrder = null);
+      return;
+    }
+    try {
+      await bill.reorderItems(
+        token: token,
+        order: [
+          for (final item in purchases)
+            {'partCode': item.partCode!, 'addressCode': item.addressCode!},
+        ],
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: Text('จัดลำดับไม่สำเร็จ: ${posErrorMessage(e)}'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _pendingOrder = null);
+    }
+  }
+
   Future<void> _setItemQty(
     BuildContext context,
     _BillLineItem item,
@@ -910,7 +979,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
   Widget build(BuildContext context) {
     final bill = context.watch<BillProvider>();
     _syncDiscountInputFromBill(bill);
-    final items = _mapItems(bill.items, bill.returnLines);
+    final items = _applyPendingOrder(_mapItems(bill.items, bill.returnLines));
     _syncItemPriceEditors(items);
     _syncQtyEditors(items);
     final subtotal = bill.subtotal;
@@ -1017,9 +1086,14 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                           style: TextStyle(color: context.colorMuted),
                         ),
                       )
-                    : ListView.builder(
+                    : ReorderableListView.builder(
                         itemCount: items.length,
                         padding: EdgeInsets.symmetric(vertical: sectionGap),
+                        // Handles are drawn per row so a returned line, which
+                        // is not part of this bill's ordering, has none.
+                        buildDefaultDragHandles: false,
+                        onReorder: (oldIndex, newIndex) =>
+                            _reorderItems(context, items, oldIndex, newIndex),
                         itemBuilder: (context, index) {
                           final it = items[index];
                           final lineTotal = (it.price * it.qty).toStringAsFixed(
@@ -1031,11 +1105,24 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                           final priceFocusNode =
                               _safeItemPriceFocusNodes[itemKey];
                           return Padding(
+                            key: ValueKey('cart-$itemKey'),
                             padding: EdgeInsets.symmetric(
                               vertical: isMobileView ? 6 : 8,
                             ),
                             child: Row(
                               children: [
+                                if (!it.isReturn)
+                                  ReorderableDragStartListener(
+                                    index: index,
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(right: 4),
+                                      child: Icon(
+                                        Icons.drag_indicator,
+                                        size: 18,
+                                        color: context.colorMuted,
+                                      ),
+                                    ),
+                                  ),
                                 Expanded(
                                   flex: 6,
                                   child: Column(
