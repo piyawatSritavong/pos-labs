@@ -1130,7 +1130,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        '${it.name} • ${it.code}',
+                                        it.name,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
