@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/widgets/qty_stepper.dart';
+import 'package:frontend/utils/pos_error_message.dart';
 
 /// HQ checking a restock against the paper slip the van staff wrote by hand.
 ///
@@ -143,7 +144,7 @@ class _RestockReviewDialogState extends State<_RestockReviewDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = posErrorMessage(e);
         _saving = false;
       });
     }

@@ -10,6 +10,10 @@ class Product {
   final String? addressCodeForAdd;
   final String? barcode;
 
+  /// Pieces left in the stock the caller asked about — the POS's own van for a
+  /// sale search. Zero means the van carries the product but has run out.
+  final int availableQty;
+
   const Product({
     required this.id,
     required this.name,
@@ -21,5 +25,6 @@ class Product {
     this.defaultAddressCode,
     this.addressCodeForAdd,
     this.barcode,
+    this.availableQty = 0,
   });
 }

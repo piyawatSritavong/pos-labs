@@ -512,20 +512,30 @@ func (r *partRepositoryPG) GetAddressesByPartCodes(ctx context.Context, codes []
 	return result, nil
 }
 
+// barcodeResolvesTo answers a barcode with the product it now belongs to.
+//
+// Duplicated catalog rows were merged into one another, and the labels printed
+// before that are still stuck to goods on the vans. merged_into carries a
+// retired barcode through to the surviving product so the old label still
+// rings up. It always points at the final survivor, so one hop is enough.
+const barcodeResolvesTo = `
+	SELECT COALESCE(p."merged_into", p."code")
+	FROM "part_master" p
+	WHERE p."bar_code" = $1
+	ORDER BY p."merged_into" NULLS FIRST
+	LIMIT 1
+`
+
 func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string, branchID string) (*PartDetail, []PartAddress, error) {
-	if strings.TrimSpace(branchID) == "" {
-		var partCode string
-		err := r.db.QueryRowContext(ctx, `
-			SELECT "code"
-			FROM "part_master"
-			WHERE "bar_code" = $1
-		`, barcode).Scan(&partCode)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil, ErrNotFound
-			}
-			return nil, nil, err
+	var partCode string
+	if err := r.db.QueryRowContext(ctx, barcodeResolvesTo, barcode).Scan(&partCode); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil, ErrNotFound
 		}
+		return nil, nil, err
+	}
+
+	if strings.TrimSpace(branchID) == "" {
 		return r.GetPartDetail(ctx, partCode, nil)
 	}
 
@@ -555,13 +565,13 @@ func (r *partRepositoryPG) GetPartByBarcode(ctx context.Context, barcode string,
 		LEFT JOIN "address_master" a ON a.part_code = p.code AND a.is_active = true
 		LEFT JOIN "store_master" s ON s.id = a.store_id
 		LEFT JOIN "branch_store" bs ON bs.store_id = s.id AND bs.branch_id = $2
-		WHERE p.bar_code = $1
+		WHERE p.code = $1
 		GROUP BY
 			p.code, p.bar_code, p.category_id, c.label, c.label_th,
 			p.unit_id, u.label, u.label_th,
 			p.name, p.name_th, p.receipt_name, p.details, p.cost, p.price, p.min_price, p.image, p.is_active
 	`
-	row := r.db.QueryRowContext(ctx, query, barcode, branchID)
+	row := r.db.QueryRowContext(ctx, query, partCode, branchID)
 
 	var d PartDetail
 	if err := row.Scan(

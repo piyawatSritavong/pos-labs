@@ -382,9 +382,8 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
                                             // its answer — the price each is
                                             // what anyone checking the bill
                                             // wants to see.
-                                            final amount = billLineTotal(
-                                              detail,
-                                            );
+                                            final amount =
+                                                billLineTotalLabel(detail);
                                             return Padding(
                                               padding:
                                                   const EdgeInsets.symmetric(
@@ -403,7 +402,7 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
                                                   ),
                                                   const SizedBox(width: 12),
                                                   Text(
-                                                    '฿${amount.toStringAsFixed(2)}',
+                                                    amount,
                                                     style: const TextStyle(
                                                       fontWeight:
                                                           FontWeight.w600,

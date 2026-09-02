@@ -290,7 +290,7 @@ func buildReceiptThaiCP874(p ReceiptParams) []byte {
 		b.Line(itemColumns(
 			fmtQty(it.Qty),
 			fmtMoney(it.UnitPrice),
-			fmtMoney(it.LineTotal),
+			receiptLineTotal(it),
 		))
 		b.Left()
 	}
@@ -377,7 +377,11 @@ func buildReceiptASCII(p ReceiptParams) []byte {
 		name := receiptItemNameASCII(it)
 		b.Line(truncateRunes(name, LineCols))
 		left := fmt.Sprintf("  %s  %d x %s", asciiText(it.Code), it.Qty, fmtMoney(it.UnitPrice))
-		b.LeftRight(left, fmtMoney(it.LineTotal), LineCols)
+		total := fmtMoney(it.LineTotal)
+		if it.LineTotal == 0 {
+			total = "FREE"
+		}
+		b.LeftRight(left, total, LineCols)
 	}
 	b.Separator(0)
 
@@ -561,6 +565,16 @@ func truncateRunes(s string, max int) string {
 
 func fmtMoney(v float64) string {
 	return fmt.Sprintf("%.2f", v)
+}
+
+// receiptLineTotal labels a giveaway instead of printing 0.00, which on a slip
+// reads as a mistake. The van gives lines away often enough that the customer
+// and the owner both want to see it said.
+func receiptLineTotal(it ReceiptItem) string {
+	if it.LineTotal == 0 {
+		return "แถม"
+	}
+	return fmtMoney(it.LineTotal)
 }
 
 // itemColumns right-aligns the three numeric columns of the item table into a

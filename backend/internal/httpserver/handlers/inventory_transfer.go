@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -737,15 +738,27 @@ func (h *InventoryTransferHandler) ApproveRestock(c *gin.Context) {
 		var insufficient *repository.InsufficientStockError
 		if errors.As(err, &insufficient) {
 			shortages := make([]gin.H, 0, len(insufficient.Shortages))
+			lines := make([]string, 0, len(insufficient.Shortages))
 			for _, s := range insufficient.Shortages {
 				shortages = append(shortages, gin.H{
 					"partCode":     s.PartCode,
+					"partName":     s.PartName,
 					"requestedQty": s.RequestedQty,
 					"availableQty": s.AvailableQty,
 					"missingQty":   s.MissingQty,
 				})
+				lines = append(lines, fmt.Sprintf("%s ขอ %d เหลือ %d (ขาด %d)",
+					s.PartName, s.RequestedQty, s.AvailableQty, s.MissingQty))
 			}
-			c.JSON(http.StatusConflict, gin.H{"error": "insufficient_stock", "shortages": shortages})
+			// Naming the products, and what to do about them, beats a code and
+			// a number: HQ can approve what the warehouse actually has using
+			// "แก้ไขจำนวน / หมายเหตุ" without cancelling the whole slip.
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "insufficient_stock",
+				"message": "คลังหลักมีของไม่พอ " + strings.Join(lines, ", ") +
+					" — แก้จำนวนที่ปุ่ม “แก้ไขจำนวน / หมายเหตุ” ให้เท่าที่มี แล้วยืนยันอีกครั้ง",
+				"shortages": shortages,
+			})
 			return
 		}
 		if repository.IsNotFoundError(err) {

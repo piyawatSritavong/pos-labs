@@ -232,3 +232,30 @@ func TestProfitResult(t *testing.T) {
 		t.Fatal("profit/loss classification is incorrect")
 	}
 }
+
+// A giveaway is priced at 0, which a plain float64 with binding:"required"
+// rejects as a missing field — the cashier saw "Field validation for
+// 'LineTotal' failed on the 'required' tag" and could not clear it.
+func TestUpdateItemPriceAcceptsZeroForAGiveaway(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	bind := func(body string) (updateItemPriceRequest, error) {
+		var req updateItemPriceRequest
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPut, "/bills/1/update-item-price", strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		return req, c.ShouldBindJSON(&req)
+	}
+
+	req, err := bind(`{"partCode":"P0001","addressCode":"A1","lineTotal":0}`)
+	if err != nil {
+		t.Fatalf("lineTotal 0 must bind, got %v", err)
+	}
+	if req.LineTotal == nil || *req.LineTotal != 0 {
+		t.Fatalf("expected a zero line total, got %v", req.LineTotal)
+	}
+
+	if _, err := bind(`{"partCode":"P0001","addressCode":"A1"}`); err == nil {
+		t.Fatal("a body with no lineTotal at all must still be rejected")
+	}
+}

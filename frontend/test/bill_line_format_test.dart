@@ -45,4 +45,17 @@ void main() {
     expect(billLineUnitPrice(line), 15.5);
     expect(billLineTotal(line), 46.5);
   });
+
+  test('a line given away is labelled แถม instead of ฿0.00', () {
+    // A cashier prices a freebie at 0; ฿0.00 on a history screen reads as a
+    // pricing mistake and sends someone looking for a bug that is not there.
+    expect(
+      billLineTotalLabel({'qty': 2, 'price': 0.0, 'lineTotal': 0}),
+      'แถม',
+    );
+    expect(
+      billLineTotalLabel({'qty': 2, 'price': 35.0, 'lineTotal': 70}),
+      '฿70.00',
+    );
+  });
 }

@@ -316,6 +316,10 @@ class _CustomerScreenState extends State<CustomerScreen> {
                                           final lineTotal = lineAmount
                                               .abs()
                                               .toStringAsFixed(2);
+                                          // The customer should see a giveaway
+                                          // named as one rather than ฿0.00.
+                                          final isFreebie =
+                                              !it.isReturn && it.price == 0;
                                           return Padding(
                                             padding: const EdgeInsets.symmetric(
                                               vertical: 8,
@@ -379,14 +383,20 @@ class _CustomerScreenState extends State<CustomerScreen> {
                                                 Expanded(
                                                   flex: 3,
                                                   child: Text(
-                                                    '${it.isReturn ? '- ' : ''}฿$lineTotal',
+                                                    isFreebie
+                                                        ? 'แถม'
+                                                        : '${it.isReturn ? '- ' : ''}฿$lineTotal',
                                                     textAlign: TextAlign.right,
                                                     style: TextStyle(
                                                       fontWeight:
                                                           FontWeight.bold,
                                                       color: it.isReturn
                                                           ? Colors.red.shade700
-                                                          : null,
+                                                          : (isFreebie
+                                                                ? Colors
+                                                                      .green
+                                                                      .shade700
+                                                                : null),
                                                     ),
                                                   ),
                                                 ),

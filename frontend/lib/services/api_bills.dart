@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
+import '../utils/api_error.dart';
 
 class ApiBillsService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
@@ -112,8 +113,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load bills: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load bills',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -140,8 +143,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to switch bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to switch bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -173,8 +178,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to add item to bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to add item to bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -201,8 +208,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to add item by barcode: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to add item by barcode',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -239,8 +248,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to remove item from bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to remove item from bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -272,8 +283,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update item price: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update item price',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -319,8 +332,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to add discount: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to add discount',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -353,8 +368,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to remove discount: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to remove discount',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -393,8 +410,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to pay bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to pay bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -418,8 +437,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to fetch bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to fetch bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -443,8 +464,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to cancel bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to cancel bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -479,8 +502,10 @@ class ApiBillsService {
     }
 
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -506,8 +531,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to hold bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to hold bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -531,8 +558,10 @@ class ApiBillsService {
     );
 
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception(
-        'Failed to delete bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }

@@ -215,3 +215,28 @@ func TestReceiptOmitsCashLinesWhenNoCashChangedHands(t *testing.T) {
 		t.Error("zero rounding should not print a line")
 	}
 }
+
+// The van gives lines away; a 0.00 in the total column reads as a mistake on a
+// paper slip, so the giveaway is named.
+func TestReceiptNamesAGiveawayInsteadOfPrintingZero(t *testing.T) {
+	params := ReceiptParams{
+		CompanyNameTh: "ร้านทดสอบ",
+		BillID:        "20260831000009",
+		PaymentMethod: "เงินสด",
+		Items: []ReceiptItem{
+			{Code: "P1", Name: "ข้องอ 2 นิ้ว", Qty: 2, UnitPrice: 20, LineTotal: 40},
+			{Code: "P2", Name: "เสื้อฝนลายจุด", Qty: 1, UnitPrice: 0, LineTotal: 0},
+		},
+		Subtotal:  40,
+		Total:     40,
+		PrintMode: ModeThaiCP874,
+	}
+
+	got := BuildReceipt(params)
+	if !bytes.Contains(got, EncodeCP874("แถม")) {
+		t.Error("a line priced at zero should print แถม")
+	}
+	if !bytes.Contains(got, EncodeCP874("40.00")) {
+		t.Error("the paid line should still print its total")
+	}
+}

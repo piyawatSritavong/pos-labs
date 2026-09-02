@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:frontend/utils/pos_error_message.dart';
 
 /// "เพิ่มสินค้าด้วยไฟล์" — pick a filled-in template and upload it.
 ///
@@ -175,7 +176,7 @@ class _PartsImportDialogState extends State<_PartsImportDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = posErrorMessage(e);
         _isUploading = false;
       });
     }

@@ -59,7 +59,10 @@ type RestockAdjustment struct {
 }
 
 type InventoryShortage struct {
-	PartCode     string
+	PartCode string
+	// PartName so the person reading the failure knows which product it is
+	// without going to look the code up.
+	PartName     string
 	RequestedQty int
 	AvailableQty int
 	MissingQty   int

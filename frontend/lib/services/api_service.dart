@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
+import '../utils/api_error.dart';
 
 class ApiService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
@@ -134,7 +135,11 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Login failed: ${response.statusCode} ${response.body}');
+      throw ApiException(
+        action: 'Login failed',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
     }
 
     final decoded = jsonDecode(response.body);
@@ -162,8 +167,10 @@ class ApiService {
     );
     if (response.statusCode == 401) return null;
     if (response.statusCode != 200) {
-      throw Exception(
-        'Get sessions failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Get sessions failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -179,8 +186,10 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Revoke sessions failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Revoke sessions failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -209,7 +218,11 @@ class ApiService {
     );
 
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Logout failed: ${response.statusCode} ${response.body}');
+      throw ApiException(
+        action: 'Logout failed',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
     }
   }
 
@@ -226,8 +239,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to fetch current user: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to fetch current user',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -254,8 +269,10 @@ class ApiService {
 
     final response = await http.get(uri);
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to get health: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to get health',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -325,8 +342,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load bills: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load bills',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -353,8 +372,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to switch bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to switch bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -386,8 +407,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to add item to bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to add item to bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -414,8 +437,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to add item by barcode: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to add item by barcode',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -452,8 +477,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to remove item from bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to remove item from bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -478,8 +505,10 @@ class ApiService {
       body: jsonEncode({'items': items}),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to reorder bill items: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to reorder bill items',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _extractObjectFromResponse(
@@ -511,8 +540,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update item price: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update item price',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -566,8 +597,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to add discount: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to add discount',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -600,8 +633,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to remove discount: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to remove discount',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -635,8 +670,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to add member to bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to add member to bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -665,8 +702,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to remove member from bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to remove member from bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -709,8 +748,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to pay bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to pay bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -742,8 +783,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'พิมพ์ใบเสร็จไม่สำเร็จ: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'พิมพ์ใบเสร็จไม่สำเร็จ',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -768,8 +811,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'พิมพ์ใบเสร็จทดสอบไม่สำเร็จ: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'พิมพ์ใบเสร็จทดสอบไม่สำเร็จ',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -801,8 +846,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'พิมพ์ใบคืนสินค้าไม่สำเร็จ: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'พิมพ์ใบคืนสินค้าไม่สำเร็จ',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -827,8 +874,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'ส่งข้อมูลทดสอบจอลูกค้าไม่สำเร็จ: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'ส่งข้อมูลทดสอบจอลูกค้าไม่สำเร็จ',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -855,8 +904,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to fetch return reference bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to fetch return reference bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -905,8 +956,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create return note: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create return note',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -962,8 +1015,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load return notes: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load return notes',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -987,8 +1042,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to fetch bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to fetch bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1012,8 +1069,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to cancel bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to cancel bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -1048,8 +1107,10 @@ class ApiService {
     }
 
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1075,8 +1136,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to hold bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to hold bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1100,8 +1163,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception(
-        'Failed to delete bill: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete bill',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -1128,8 +1193,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load branches: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load branches',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1150,8 +1217,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1169,8 +1238,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to generate branch ID: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to generate branch ID',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1212,8 +1283,10 @@ class ApiService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1258,8 +1331,10 @@ class ApiService {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1280,8 +1355,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception(
-        'Failed to delete branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -1304,8 +1381,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load company: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load company',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1347,8 +1426,10 @@ class ApiService {
       }),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update company: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update company',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1380,8 +1461,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load parts: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load parts',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1430,8 +1513,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to search parts: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to search parts',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1475,8 +1560,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to search parts: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to search parts',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1499,7 +1586,11 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to load stores: ${response.statusCode}');
+      throw ApiException(
+        action: 'Failed to load stores',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
     }
     return _extractListFromResponse(jsonDecode(response.body), '/stores');
   }
@@ -1525,8 +1616,10 @@ class ApiService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create store: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create store',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -1540,8 +1633,10 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to generate part code: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to generate part code',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1563,8 +1658,10 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load import limits: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load import limits',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return PartsImportLimits.fromJson(
@@ -1584,7 +1681,11 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode != 200) {
-      throw Exception('โหลดประวัติไม่สำเร็จ (${response.statusCode})');
+      throw ApiException(
+        action: 'Failed to load import history',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
     }
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     return (decoded['imports'] as List<dynamic>? ?? const [])
@@ -1603,7 +1704,11 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode != 200) {
-      throw Exception('โหลดรายละเอียดไม่สำเร็จ (${response.statusCode})');
+      throw ApiException(
+        action: 'Failed to load import detail',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
     }
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     return (decoded['items'] as List<dynamic>? ?? const [])
@@ -1641,7 +1746,11 @@ class ApiService {
     try {
       decoded = jsonDecode(response.body) as Map<String, dynamic>;
     } catch (_) {
-      throw Exception('อัปโหลดไม่สำเร็จ (${response.statusCode})');
+      throw ApiException(
+        action: 'Failed to upload parts file',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
     }
 
     if (response.statusCode == 201) {
@@ -1684,8 +1793,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to fetch part: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to fetch part',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1722,8 +1833,10 @@ class ApiService {
       }),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update part: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update part',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _extractObjectFromResponse(
@@ -1765,8 +1878,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load members: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load members',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1794,8 +1909,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to search members: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to search members',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1819,8 +1936,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load member: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load member',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1853,8 +1972,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create member: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create member',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1888,8 +2009,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update member: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update member',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -1913,8 +2036,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception(
-        'Failed to delete member: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete member',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -1940,8 +2065,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load POS devices: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load POS devices',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1962,8 +2089,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load POS: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load POS',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -1991,8 +2120,10 @@ class ApiService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create POS: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create POS',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2013,8 +2144,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to toggle POS active status: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to toggle POS active status',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2035,8 +2168,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to get POS secret: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to get POS secret',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2057,8 +2192,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to refresh POS secret: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to refresh POS secret',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2079,8 +2216,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception(
-        'Failed to delete POS: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete POS',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -2109,8 +2248,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load promotions: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load promotions',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -2132,8 +2273,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load promotion: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load promotion',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2163,8 +2306,10 @@ class ApiService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create promotion: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create promotion',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2189,8 +2334,10 @@ class ApiService {
       body: jsonEncode({'details': details, 'unit': unit, 'amount': amount}),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update promotion: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update promotion',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2211,8 +2358,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception(
-        'Failed to delete promotion: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete promotion',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -2245,8 +2394,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load addresses: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load addresses',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2277,8 +2428,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load addresses: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load addresses',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2304,8 +2457,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load address: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load address',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2343,8 +2498,10 @@ class ApiService {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create address: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create address',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2381,8 +2538,10 @@ class ApiService {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update address: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update address',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2403,8 +2562,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception(
-        'Failed to delete address: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete address',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -2422,7 +2583,11 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode != 200) {
-      throw Exception('Failed to load QR image: ${response.statusCode}');
+      throw ApiException(
+        action: 'Failed to load QR image',
+        statusCode: response.statusCode,
+        body: '',
+      );
     }
     return response.bodyBytes;
   }
@@ -2440,8 +2605,10 @@ class ApiService {
       body: bytes,
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to upload QR image: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to upload QR image',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -2473,8 +2640,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to export bills report: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to export bills report',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -2491,8 +2660,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to export parts report: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to export parts report',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -2511,8 +2682,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to export inventory report: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to export inventory report',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -2532,8 +2705,10 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load income report: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load income report',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2573,8 +2748,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load user branches: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load user branches',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2607,8 +2784,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load user branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load user branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -2637,8 +2816,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create user branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create user branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -2663,8 +2844,10 @@ class ApiService {
     );
 
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception(
-        'Failed to delete user branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete user branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -2691,8 +2874,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load users: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load users',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2713,8 +2898,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load user: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load user',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2735,8 +2922,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load roles: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load roles',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _extractListFromResponse(jsonDecode(response.body), '/roles');
@@ -2764,8 +2953,10 @@ class ApiService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create role: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create role',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _extractObjectFromResponse(jsonDecode(response.body), '/roles');
@@ -2799,8 +2990,10 @@ class ApiService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create user: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create user',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2846,8 +3039,10 @@ class ApiService {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update user: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update user',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -2868,8 +3063,10 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to delete user: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete user',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }

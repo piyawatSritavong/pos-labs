@@ -1028,9 +1028,14 @@ class _CreateTransferDialogState extends State<_CreateTransferDialog> {
                                             Map<String, dynamic>>.empty();
                                       }
                                       try {
+                                        // Archived products have no live
+                                        // stock row to move, so offering them
+                                        // here only reproduces the duplicate
+                                        // names the catalog was cleaned of.
                                         return await ApiService.searchParts(
                                           token: widget.token,
                                           query: q,
+                                          isActive: true,
                                           limit: 20,
                                         );
                                       } catch (_) {

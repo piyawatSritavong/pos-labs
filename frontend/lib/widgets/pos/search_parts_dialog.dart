@@ -57,6 +57,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         token: token,
         query: '',
         saleableOnly: true,
+        includeOutOfStock: true,
         limit: 45,
         offset: 0,
       );
@@ -105,6 +106,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         token: token,
         query: query,
         saleableOnly: true,
+        includeOutOfStock: true,
         limit: 20,
         offset: 0,
       );
@@ -156,6 +158,15 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         defaultAddress?['addressCode']?.toString() ??
         defaultAddress?['code']?.toString();
 
+    // The search is scoped to this POS's own van, so the addresses that come
+    // back are its stock rows and nothing else.
+    var availableQty = 0;
+    for (final addr in rawAddresses) {
+      if (addr is Map<String, dynamic>) {
+        availableQty += _toDouble(addr['qty']).round();
+      }
+    }
+
     return Product(
       id: json['id']?.toString() ?? json['code']?.toString() ?? '',
       name: json['nameTh'] ?? json['name_th'] ?? json['name'] ?? '',
@@ -167,6 +178,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       defaultAddressCode: defaultAddressCode,
       barcode: json['barCode']?.toString() ?? json['barcode']?.toString(),
       addressCodeForAdd: json['addressCode']?.toString() ?? defaultAddressCode,
+      availableQty: availableQty,
     );
   }
 
@@ -277,7 +289,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
                                 itemCount: pageItems.length,
                                 itemBuilder: (context, index) {
                                   final product = pageItems[index];
-                                  return _DialogProductCard(
+                                  return PosProductCard(
                                     product: product,
                                     onAdd: () => _handleAddProduct(product),
                                   );
@@ -378,14 +390,26 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
   }
 }
 
-class _DialogProductCard extends StatelessWidget {
-  const _DialogProductCard({required this.product, required this.onAdd});
+/// One product tile on the sale search screen.
+///
+/// Public so a test can assert that a product the van has run out of is still
+/// listed and simply cannot be added.
+class PosProductCard extends StatelessWidget {
+  const PosProductCard({
+    super.key,
+    required this.product,
+    required this.onAdd,
+  });
 
   final Product product;
   final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
+    // The van carries it but has run out. Hiding the row made the shop read the
+    // till as missing products the admin pages clearly list, so the card stays
+    // and only the add button goes.
+    final soldOut = product.availableQty <= 0;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -423,12 +447,45 @@ class _DialogProductCard extends StatelessWidget {
                   style: const TextStyle(color: AppColors.muted, fontSize: 13),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  '฿${product.price.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      '฿${product.price.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: soldOut ? AppColors.muted : AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (soldOut)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.orange.shade300),
+                        ),
+                        child: Text(
+                          'หมด',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.orange.shade800,
+                          ),
+                        ),
+                      )
+                    else
+                      Text(
+                        'เหลือ ${product.availableQty}',
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -438,15 +495,17 @@ class _DialogProductCard extends StatelessWidget {
             height: 40,
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: const BorderSide(color: AppColors.primary),
+                foregroundColor: soldOut ? AppColors.muted : AppColors.primary,
+                side: BorderSide(
+                  color: soldOut ? AppColors.border : AppColors.primary,
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(AppSizes.radius),
                 ),
               ),
-              onPressed: onAdd,
-              child: const Text('+ เพิ่ม'),
+              onPressed: soldOut ? null : onAdd,
+              child: Text(soldOut ? 'หมด' : '+ เพิ่ม'),
             ),
           ),
         ],

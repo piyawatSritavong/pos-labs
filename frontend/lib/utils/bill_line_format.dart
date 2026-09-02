@@ -41,6 +41,14 @@ String billLineQtyPriceLabel(Map<String, dynamic> line) {
   return '$qtyText × ฿${billLineUnitPrice(line).toStringAsFixed(2)}';
 }
 
+/// "฿800.00", or "แถม" when the line was given away. A sold line of ฿0.00
+/// reads as a pricing mistake on a history screen; naming the giveaway keeps
+/// whoever is auditing the day from chasing it.
+String billLineTotalLabel(Map<String, dynamic> line) {
+  final total = billLineTotal(line);
+  return total == 0 ? 'แถม' : '฿${total.toStringAsFixed(2)}';
+}
+
 double _toDouble(dynamic value) {
   if (value == null) return 0;
   if (value is num) return value.toDouble();

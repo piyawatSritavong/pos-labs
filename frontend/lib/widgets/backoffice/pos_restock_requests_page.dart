@@ -7,6 +7,7 @@ import 'package:frontend/widgets/backoffice/restock_review_dialog.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:frontend/utils/pos_error_message.dart';
 import 'package:provider/provider.dart';
 
 class PosRestockRequestsPage extends StatefulWidget {
@@ -60,7 +61,7 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
         setState(() => _selected = null);
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = posErrorMessage(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -76,7 +77,7 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
       );
       if (mounted) setState(() => _selected = detail);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = posErrorMessage(e));
     }
   }
 
@@ -101,7 +102,7 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
         context,
       ).showSnackBar(const SnackBar(content: Text('ยืนยันโอนเข้ารถสำเร็จ')));
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = posErrorMessage(e));
     } finally {
       if (mounted) setState(() => _acting = false);
     }
@@ -139,7 +140,7 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
       setState(() => _selected = updated);
       await _load();
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = posErrorMessage(e));
     } finally {
       if (mounted) setState(() => _acting = false);
     }
@@ -185,7 +186,7 @@ class _PosRestockRequestsPageState extends State<PosRestockRequestsPage> {
         builder: (_) => _DailyRestockSummary(summary: summary),
       );
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = posErrorMessage(e));
     } finally {
       if (mounted) setState(() => _acting = false);
     }

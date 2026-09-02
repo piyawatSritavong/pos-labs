@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
+import '../utils/api_error.dart';
 
 class ApiCompanyService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
@@ -49,8 +50,10 @@ class ApiCompanyService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load company: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load company',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -98,8 +101,10 @@ class ApiCompanyService {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update company: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update company',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);

@@ -283,6 +283,19 @@ func (h *PartsHandler) Search(c *gin.Context) {
 			saleableOnly = val
 		}
 	}
+	// A till that hides everything the van has run out of does not look like a
+	// filter to the person using it — it looks like the product is missing from
+	// the system, which is what the shop reported. The sale screen asks for the
+	// whole van list and greys out what is finished, so it matches what the
+	// vehicle stock page shows an admin. The store scoping below is untouched:
+	// this only drops the "must have pieces left" clause.
+	includeOutOfStock := false
+	if raw := c.Query("includeOutOfStock"); raw != "" {
+		if val, err := strconv.ParseBool(raw); err == nil {
+			includeOutOfStock = val
+		}
+	}
+	requireStock := saleableOnly && !includeOutOfStock
 	if saleableOnly {
 		// A sale search is always scoped by the authenticated terminal. Caller
 		// supplied cross-branch/store filters must never widen the stock source.
@@ -323,7 +336,7 @@ func (h *PartsHandler) Search(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Search parts
-	parts, err := h.parts.SearchParts(ctx, query, categoryIDPtr, isActive, branchID, storeIDPtr, saleableOnly, limit, offset)
+	parts, err := h.parts.SearchParts(ctx, query, categoryIDPtr, isActive, branchID, storeIDPtr, requireStock, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_search_parts"})
 		return
@@ -352,7 +365,7 @@ func (h *PartsHandler) Search(c *gin.Context) {
 		if storeIDPtr != nil {
 			filtered := make([]repository.PartAddress, 0, len(addresses))
 			for _, address := range addresses {
-				if address.StoreID == *storeIDPtr && (!saleableOnly || address.Qty > 0) {
+				if address.StoreID == *storeIDPtr && (!requireStock || address.Qty > 0) {
 					filtered = append(filtered, address)
 				}
 			}
@@ -406,7 +419,7 @@ func (h *PartsHandler) Search(c *gin.Context) {
 	}
 
 	// Total matching count (ignores limit/offset) for page-jump pagination.
-	total, err := h.parts.CountParts(ctx, query, categoryIDPtr, isActive, branchID, storeIDPtr, saleableOnly)
+	total, err := h.parts.CountParts(ctx, query, categoryIDPtr, isActive, branchID, storeIDPtr, requireStock)
 	if err != nil {
 		total = len(out) // degrade gracefully
 	}

@@ -651,11 +651,18 @@ typedef PurchaseOrderProductLoader =
       String query,
       int limit,
       int offset,
+      bool includeArchived,
     );
 
 /// Searchable catalog picker for existing products in an inbound purchase
-/// order. Archived products remain selectable so receiving stock can reactivate
-/// them through the existing purchase-order transaction.
+/// order.
+///
+/// Archived products are hidden by default. The shop had entered the same three
+/// tyres under three naming habits, and once the duplicates were archived they
+/// still filled this list — searching ยางนอก returned nine rows for three
+/// products, and each stock location kept ordering a different one. Receiving a
+/// purchase order is also the only thing that reactivates an archived product,
+/// so the toggle keeps that route open instead of closing it.
 class PurchaseOrderProductPicker extends StatefulWidget {
   const PurchaseOrderProductPicker({
     super.key,
@@ -684,6 +691,7 @@ class _PurchaseOrderProductPickerState
   bool _loading = false;
   String? _loadError;
   int _requestGeneration = 0;
+  bool _includeArchived = false;
 
   @override
   void dispose() {
@@ -709,11 +717,12 @@ class _PurchaseOrderProductPickerState
     try {
       final offset = reset ? 0 : _items.length;
       final result = widget.loadPage != null
-          ? await widget.loadPage!(query, _pageSize, offset)
+          ? await widget.loadPage!(query, _pageSize, offset, _includeArchived)
           : await ApiService.searchPartsPaged(
               token: token,
               query: query,
               crossBranch: true,
+              isActive: _includeArchived ? null : true,
               limit: _pageSize,
               offset: offset,
             );
@@ -787,6 +796,40 @@ class _PurchaseOrderProductPickerState
     return '${[code, name, barcode].where((value) => value.isNotEmpty).join(' - ')}$inactive';
   }
 
+  /// Archived products are off the list until someone asks for them — usually
+  /// to receive stock against one, which is what brings it back into the
+  /// catalog.
+  Widget _archivedToggle() {
+    return InkWell(
+      key: const Key('purchase-order-include-archived'),
+      onTap: () {
+        setState(() => _includeArchived = !_includeArchived);
+        _load(reset: true, openMenu: true);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            Checkbox(
+              value: _includeArchived,
+              visualDensity: VisualDensity.compact,
+              onChanged: (value) {
+                setState(() => _includeArchived = value ?? false);
+                _load(reset: true, openMenu: true);
+              },
+            ),
+            const Expanded(
+              child: Text(
+                'แสดงสินค้าที่ปิดใช้งานด้วย',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _menuContent() {
     if (_loading && _items.isEmpty) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
@@ -858,7 +901,14 @@ class _PurchaseOrderProductPickerState
           SizedBox(
             width: constraints.maxWidth,
             height: 320,
-            child: _menuContent(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _archivedToggle(),
+                const Divider(height: 1),
+                Expanded(child: _menuContent()),
+              ],
+            ),
           ),
         ],
         builder: (context, controller, child) => TextField(

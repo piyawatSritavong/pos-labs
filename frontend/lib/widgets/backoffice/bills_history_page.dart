@@ -219,12 +219,11 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
               detail['name']?.toString() ??
               detail['partCode']?.toString() ??
               '-';
-          final lineTotal = billLineTotal(detail);
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Text(
               '• $name  ${billLineQtyPriceLabel(detail)} '
-              '= ฿${lineTotal.toStringAsFixed(2)}',
+              '= ${billLineTotalLabel(detail)}',
             ),
           );
         }).toList(),
@@ -383,7 +382,7 @@ class _BillsHistorySectionState extends State<BillsHistorySection> {
                             '';
                         return Text(
                           '• $name  ${billLineQtyPriceLabel(item)} '
-                          '= ฿${billLineTotal(item).toStringAsFixed(2)}',
+                          '= ${billLineTotalLabel(item)}',
                         );
                       }
                       return const SizedBox.shrink();

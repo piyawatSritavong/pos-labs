@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
+import '../utils/api_error.dart';
 
 class ApiBranchesService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
@@ -87,8 +88,10 @@ class ApiBranchesService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load branches: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load branches',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -109,8 +112,10 @@ class ApiBranchesService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -146,8 +151,10 @@ class ApiBranchesService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -182,8 +189,10 @@ class ApiBranchesService {
       }),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -204,8 +213,10 @@ class ApiBranchesService {
       },
     );
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception(
-        'Failed to delete branch: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete branch',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }

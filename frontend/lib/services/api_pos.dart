@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
+import '../utils/api_error.dart';
 
 class ApiPosService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
@@ -56,8 +57,10 @@ class ApiPosService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load POS devices: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load POS devices',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);

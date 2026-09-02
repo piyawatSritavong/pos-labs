@@ -473,9 +473,8 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
                                                 detail['partCode']
                                                     ?.toString() ??
                                                 '-';
-                                            final amount = billLineTotal(
-                                              detail,
-                                            );
+                                            final amount =
+                                                billLineTotalLabel(detail);
                                             return Padding(
                                               padding:
                                                   const EdgeInsets.symmetric(
@@ -494,7 +493,7 @@ class _HoldBillDialogState extends State<HoldBillDialog> {
                                                   ),
                                                   const SizedBox(width: 12),
                                                   Text(
-                                                    '฿${amount.toStringAsFixed(2)}',
+                                                    amount,
                                                     style: const TextStyle(
                                                       fontWeight:
                                                           FontWeight.w600,

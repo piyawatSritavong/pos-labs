@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"backend/internal/repository"
@@ -70,5 +71,43 @@ func TestAddressListExposesROPWithoutRemovedMinMax(t *testing.T) {
 	}
 	if _, exists := response.Addresses[0]["max"]; exists {
 		t.Fatal("address response must not expose max")
+	}
+}
+
+// The stock page now reads every store so an admin can see what is on the vans.
+// Writing is a different matter: van stock moves through a transfer or a stock
+// count, and this gate is what lets the read side be widened safely.
+func TestAddressUpdateStillRefusesAnyStoreButTheWarehouse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewAddressHandler(&stubAddressRepository{})
+
+	update := func(storeID string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		body := `{"partCode":"P0557","storeId":"` + storeID + `","qty":12,"rop":0}`
+		c.Request = httptest.NewRequest(http.MethodPut, "/addresses/ADDR-1", strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Params = gin.Params{{Key: "code", Value: "ADDR-1"}}
+		c.Set("user", &repository.User{RoleID: "role.admin"})
+		handler.Update(c)
+		return recorder
+	}
+
+	for _, store := range []string{"vehicle_POS001", "store_00001"} {
+		recorder := update(store)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected 400, got %d: %s", store, recorder.Code, recorder.Body.String())
+		}
+		var response struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(recorder.Body.Bytes(), &response)
+		if response.Error != "invalid_warehouse" {
+			t.Fatalf("%s: expected invalid_warehouse, got %q", store, response.Error)
+		}
+	}
+
+	if recorder := update("main"); recorder.Code != http.StatusOK {
+		t.Fatalf("the warehouse must stay editable, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 }

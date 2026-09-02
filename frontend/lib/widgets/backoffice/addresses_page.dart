@@ -8,9 +8,16 @@ import 'package:frontend/services/api_service.dart';
 import 'package:frontend/providers/auth_provider.dart';
 
 class AddressesManagementSection extends StatefulWidget {
-  const AddressesManagementSection({super.key, this.autoLoad = true});
+  const AddressesManagementSection({
+    super.key,
+    this.autoLoad = true,
+    this.initialAddresses,
+  });
 
   final bool autoLoad;
+
+  /// Rows to render instead of fetching, for tests. Pairs with [autoLoad].
+  final List<Map<String, dynamic>>? initialAddresses;
 
   @override
   State<AddressesManagementSection> createState() =>
@@ -50,6 +57,11 @@ class _AddressesManagementSectionState
   @override
   void initState() {
     super.initState();
+    final seeded = widget.initialAddresses;
+    if (seeded != null) {
+      _addresses = List<Map<String, dynamic>>.from(seeded);
+      _total = _addresses.length;
+    }
     if (widget.autoLoad) {
       _load(resetOffset: true);
       _loadStores();
@@ -532,6 +544,10 @@ class _AddressesManagementSectionState
               }
 
               final rop = (a['rop'] ?? '').toString();
+              // Van stock moves through ใบเบิก and ใบนับสต๊อก; the backend
+              // refuses a direct edit to anything but the warehouse, so the
+              // button says why instead of handing back invalid_warehouse.
+              final isWarehouse = (a['storeId'] ?? '').toString() == 'main';
 
               return DataRow(
                 cells: [
@@ -547,8 +563,11 @@ class _AddressesManagementSectionState
                   DataCell(
                     IconButton(
                       icon: const Icon(Icons.edit_outlined),
-                      tooltip: 'แก้ไขจำนวนและจุดแจ้งเตือน',
-                      onPressed: () => _editThreshold(a),
+                      tooltip: isWarehouse
+                          ? 'แก้ไขจำนวนและจุดแจ้งเตือน'
+                          : 'สต๊อกบนรถแก้ที่นี่ไม่ได้ '
+                                'ให้ใช้ใบเบิกสินค้าเข้ารถหรือใบนับสต๊อก',
+                      onPressed: isWarehouse ? () => _editThreshold(a) : null,
                     ),
                   ),
                 ],

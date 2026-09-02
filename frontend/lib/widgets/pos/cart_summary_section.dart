@@ -8,6 +8,7 @@ import 'package:frontend/providers/company_provider.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/utils/api_error.dart';
 import 'package:frontend/utils/pos_error_message.dart';
 import 'package:provider/provider.dart';
 
@@ -273,15 +274,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     return rawAmount.clamp(0.0, subtotal).toDouble();
   }
 
-  String _friendlyItemPriceError(Object error) {
-    final message = error.toString();
-    // The catalog no longer caps what a line may sell for; anything still
-    // rejected is a real problem, not a pricing policy.
-    if (message.contains('invalid_line_total')) {
-      return 'กรุณากรอกราคามากกว่า 0';
-    }
-    return posErrorMessage(error);
-  }
+  String _friendlyItemPriceError(Object error) => posErrorMessage(error);
 
   Future<void> _increaseItemQty(
     BuildContext context,
@@ -558,21 +551,14 @@ class _CartSummarySectionState extends State<CartSummarySection> {
   // why the bind failed (the backend works; failures are almost always "no such
   // member" or a non-editable bill status).
   String _memberAttachErrorMessage(Object e) {
-    final s = e.toString();
-    if (s.contains('member_not_found')) {
-      return 'ไม่พบสมาชิกที่ใช้เบอร์นี้ — กรุณาสมัครสมาชิกก่อน';
-    }
-    if (s.contains('invalid_bill_status')) {
+    if (isApiErrorCode(e, 'invalid_bill_status')) {
       return 'ผูกสมาชิกไม่ได้ เพราะบิลนี้ถูกชำระ/ปิดไปแล้ว';
     }
-    if (s.contains('bill_access_denied')) {
-      return 'บิลนี้ไม่ได้อยู่ในสาขา/เครื่อง POS ปัจจุบัน';
-    }
-    if (s.contains('Bill id is not initialized') ||
-        s.contains('missing_bill_id')) {
+    if (isApiErrorCode(e, 'missing_bill_id') ||
+        e.toString().contains('Bill id is not initialized')) {
       return 'ยังไม่มีบิล กรุณาเพิ่มสินค้าลงตะกร้าก่อนผูกสมาชิก';
     }
-    return 'ผูกสมาชิกไม่สำเร็จ: $e';
+    return 'ผูกสมาชิกไม่สำเร็จ: ${posErrorMessage(e)}';
   }
 
   void _applyQuickDiscount(
@@ -1096,6 +1082,9 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                             _reorderItems(context, items, oldIndex, newIndex),
                         itemBuilder: (context, index) {
                           final it = items[index];
+                          // A line priced at 0 is a giveaway the cashier meant;
+                          // saying so beats a ฿0.00 that reads as a mistake.
+                          final isFreebie = !it.isReturn && it.price == 0;
                           final lineTotal = (it.price * it.qty).toStringAsFixed(
                             2,
                           );
@@ -1137,6 +1126,31 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
+                                      if (isFreebie)
+                                        Container(
+                                          margin: const EdgeInsets.only(top: 2),
+                                          padding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                                vertical: 1,
+                                              ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.shade50,
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                            border: Border.all(
+                                              color: Colors.green.shade300,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'แถม',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.green.shade800,
+                                            ),
+                                          ),
+                                        ),
                                       if (!it.isReturn &&
                                           it.totalStock > 0 &&
                                           it.qty >= it.totalStock)
@@ -1325,15 +1339,19 @@ class _CartSummarySectionState extends State<CartSummarySection> {
                                 Expanded(
                                   flex: 3,
                                   child: Text(
-                                    it.isReturn
-                                        ? '-฿$lineTotal'
-                                        : '฿$lineTotal',
+                                    isFreebie
+                                        ? 'แถม'
+                                        : (it.isReturn
+                                              ? '-฿$lineTotal'
+                                              : '฿$lineTotal'),
                                     textAlign: TextAlign.right,
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: it.isReturn
                                           ? context.colorDanger
-                                          : null,
+                                          : (isFreebie
+                                                ? Colors.green.shade700
+                                                : null),
                                     ),
                                   ),
                                 ),
@@ -1986,7 +2004,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
   bool _isFinalizing = false;
   bool _finalizeAttempted = false;
   bool _finalizeSucceeded = false;
-  String? _finalizeError;
+  Object? _finalizeError;
 
   // True when the finalize failure is a receipt-printer problem. The payment is
   // saved before the print step, so on a printer error the sale is already
@@ -1995,10 +2013,16 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
   bool get _isPrinterError {
     final e = _finalizeError;
     if (e == null) return false;
-    return e.contains('printer_disabled') ||
-        e.contains('RECEIPT_PRINTER') ||
-        e.contains('พิมพ์ใบเสร็จไม่สำเร็จ') ||
-        e.contains('พิมพ์ใบคืนสินค้าไม่สำเร็จ');
+    const printerCodes = {
+      'printer_disabled',
+      'printer_not_configured',
+      'failed_to_print',
+    };
+    if (printerCodes.contains(apiErrorCode(e))) return true;
+    final raw = e.toString();
+    return raw.contains('RECEIPT_PRINTER') ||
+        raw.contains('พิมพ์ใบเสร็จไม่สำเร็จ') ||
+        raw.contains('พิมพ์ใบคืนสินค้าไม่สำเร็จ');
   }
 
   // User-facing error text: printer failures get a plain message instead of the
@@ -2013,7 +2037,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
   /// somewhere else. Retrying can only fail again, so the dialog offers a way
   /// out instead of a button that repeats the same error.
   bool get _isBillNoLongerPayable =>
-      _finalizeError?.contains('invalid_bill_status') ?? false;
+      isApiErrorCode(_finalizeError, 'invalid_bill_status');
 
   @override
   void initState() {
@@ -2053,7 +2077,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _finalizeError = e.toString();
+        _finalizeError = e;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2178,7 +2202,9 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
                       name: line.name,
                       qty: line.qtyLabel,
                       price: line.unitPrice.toStringAsFixed(2),
-                      total: line.lineTotal.toStringAsFixed(2),
+                      total: line.lineTotal == 0
+                          ? 'แถม'
+                          : line.lineTotal.toStringAsFixed(2),
                     );
                   },
                 ),

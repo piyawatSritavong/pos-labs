@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
+import '../utils/api_error.dart';
 
 class ApiUsersService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
@@ -86,8 +87,10 @@ class ApiUsersService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load users: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load users',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -107,8 +110,10 @@ class ApiUsersService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load user: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load user',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -141,8 +146,10 @@ class ApiUsersService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'Failed to create user: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to create user',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -183,8 +190,10 @@ class ApiUsersService {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to update user: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to update user',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -204,8 +213,10 @@ class ApiUsersService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to delete user: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to delete user',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }

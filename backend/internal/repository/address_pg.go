@@ -74,7 +74,12 @@ func (r *addressRepositoryPG) Search(ctx context.Context, q, storeID string, bra
 		args = append(args, strings.TrimSpace(*branchID))
 		argn++
 	}
-	conds = append(conds, `a."is_active" = true`, `p."is_active" = true`, `s."location_type" = 'warehouse'`)
+	// Every store, not only the warehouse. The page offers a store filter that
+	// lists the vans, and "ทุกคลัง" has to mean all of them — pinning the query
+	// to location_type = 'warehouse' made a van's rows unreachable, so an admin
+	// reading this page saw 0 for goods the van was busy selling. Writes are
+	// still warehouse-only; that gate lives in the Update handler.
+	conds = append(conds, `a."is_active" = true`, `p."is_active" = true`)
 
 	where := ""
 	if len(conds) > 0 {
@@ -147,7 +152,12 @@ func (r *addressRepositoryPG) Count(ctx context.Context, q, storeID string, bran
 		args = append(args, strings.TrimSpace(*branchID))
 		argn++
 	}
-	conds = append(conds, `a."is_active" = true`, `p."is_active" = true`, `s."location_type" = 'warehouse'`)
+	// Every store, not only the warehouse. The page offers a store filter that
+	// lists the vans, and "ทุกคลัง" has to mean all of them — pinning the query
+	// to location_type = 'warehouse' made a van's rows unreachable, so an admin
+	// reading this page saw 0 for goods the van was busy selling. Writes are
+	// still warehouse-only; that gate lives in the Update handler.
+	conds = append(conds, `a."is_active" = true`, `p."is_active" = true`)
 
 	where := ""
 	if len(conds) > 0 {

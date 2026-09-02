@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
+import '../utils/api_error.dart';
 
 class ApiPartsService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
@@ -89,8 +90,10 @@ class ApiPartsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load parts: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load parts',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -106,6 +109,7 @@ class ApiPartsService {
     bool? isActive,
     bool? crossBranch,
     bool saleableOnly = false,
+    bool includeOutOfStock = false,
     int limit = 20,
     int offset = 0,
   }) async {
@@ -128,6 +132,9 @@ class ApiPartsService {
     }
     if (saleableOnly) {
       queryParams['saleableOnly'] = 'true';
+      if (includeOutOfStock) {
+        queryParams['includeOutOfStock'] = 'true';
+      }
     }
 
     final uri = Uri.parse(
@@ -143,8 +150,10 @@ class ApiPartsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to search parts: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to search parts',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 
@@ -168,8 +177,10 @@ class ApiPartsService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to fetch part: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to fetch part',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
 

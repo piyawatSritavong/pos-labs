@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
+import '../utils/api_error.dart';
 
 class ApiUserBranchesService {
   static String get baseUrl => ApiConfig.apiBaseUrl;
@@ -64,8 +65,10 @@ class ApiUserBranchesService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to load user branches: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'Failed to load user branches',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);

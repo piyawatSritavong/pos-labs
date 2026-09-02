@@ -1264,6 +1264,20 @@ func (h *BillsHandler) AddItemByBarcode(c *gin.Context) {
 		return
 	}
 
+	// A merged duplicate's barcode resolves to the surviving product before it
+	// gets here, so what is left is a product an admin retired outright. Say so
+	// instead of falling through to "no stock in this branch", which sends the
+	// cashier hunting for stock that was deliberately taken off sale.
+	if !partDetail.IsActive {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "part_archived",
+			"message": fmt.Sprintf(
+				"%s (%s) ถูกปิดใช้งานแล้ว — ป้ายนี้เป็นของเก่า กรุณาค้นหาสินค้าด้วยชื่อแล้วพิมพ์ป้ายใหม่",
+				partDetail.NameTH, partDetail.Code),
+		})
+		return
+	}
+
 	// Check if part exists in the branch (addresses will be empty if not in branch stores)
 	if len(addresses) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "part_not_found", "message": "Part does not exist in this branch"})
@@ -1465,9 +1479,19 @@ func (h *BillsHandler) RemoveItem(c *gin.Context) {
 	h.respondWithFullBill(c, id)
 }
 
-// UpdateItemPrice updates the line total price of an item in a bill.
-// Validation rule: the edited line total must not be lower than 90% of
-// the catalog line total (catalog unit price * qty currently in bill).
+// updateItemPriceRequest is the body of PUT /bills/:id/update-item-price.
+type updateItemPriceRequest struct {
+	PartCode    string `json:"partCode" binding:"required"`
+	AddressCode string `json:"addressCode" binding:"required"`
+	// A pointer so an explicit 0 still counts as supplied. A plain float64
+	// with binding:"required" rejects zero as "missing", which is what
+	// stopped a cashier from giving a line away for free.
+	LineTotal *float64 `json:"lineTotal" binding:"required"`
+}
+
+// UpdateItemPrice sets the line total of an item already on the bill.
+// The cashier names the price, including 0 for a giveaway; see
+// pricing_validation.go for why the catalog does not constrain it.
 func (h *BillsHandler) UpdateItemPrice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -1502,11 +1526,7 @@ func (h *BillsHandler) UpdateItemPrice(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		PartCode    string  `json:"partCode" binding:"required"`
-		AddressCode string  `json:"addressCode" binding:"required"`
-		LineTotal   float64 `json:"lineTotal" binding:"required"`
-	}
+	var req updateItemPriceRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": err.Error()})
@@ -1527,10 +1547,14 @@ func (h *BillsHandler) UpdateItemPrice(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_item_qty"})
 		return
 	}
-	if req.LineTotal <= 0 {
+	lineTotal := *req.LineTotal
+	// Zero is a giveaway ("แถม"), which the van does constantly. Only a
+	// negative line is refused — that is a return, and returns have their own
+	// document.
+	if lineTotal < 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "invalid_line_total",
-			"message": "Line total must be greater than zero",
+			"message": "ราคาติดลบไม่ได้ ถ้าต้องการแถมสินค้าให้ใส่ราคา 0",
 		})
 		return
 	}
@@ -1548,7 +1572,7 @@ func (h *BillsHandler) UpdateItemPrice(c *gin.Context) {
 
 	// The cashier sets the price. See pricing_validation.go for why there is
 	// no floor or ceiling here.
-	newUnitPrice := req.LineTotal / float64(existingItem.Qty)
+	newUnitPrice := lineTotal / float64(existingItem.Qty)
 	if err := h.bills.UpdateItemPrice(ctx, id, req.PartCode, req.AddressCode, newUnitPrice); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed_to_update_item_price"})
 		return

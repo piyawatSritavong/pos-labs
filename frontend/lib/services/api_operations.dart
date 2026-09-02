@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
+import '../utils/api_error.dart';
 
 class RestockCatalogPage {
   const RestockCatalogPage({
@@ -93,8 +94,10 @@ class ApiOperationsService {
     ).replace(queryParameters: params);
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /transfers failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /transfers failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseList(jsonDecode(response.body), '/transfers');
@@ -112,8 +115,10 @@ class ApiOperationsService {
       body: jsonEncode({'notes': notes, 'items': items}),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'POST /transfers/pos-restock failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'POST /transfers/pos-restock failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/transfers/pos-restock');
@@ -147,8 +152,10 @@ class ApiOperationsService {
     );
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /transfers/pos-restock/catalog failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /transfers/pos-restock/catalog failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     final decoded = jsonDecode(response.body);
@@ -181,8 +188,10 @@ class ApiOperationsService {
     ).replace(queryParameters: {'posId': posId, 'date': date});
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /transfers/vehicle-daily-summary failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /transfers/vehicle-daily-summary failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(
@@ -205,8 +214,10 @@ class ApiOperationsService {
     ).replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /purchase-orders failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /purchase-orders failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseList(jsonDecode(response.body), '/purchase-orders');
@@ -221,8 +232,10 @@ class ApiOperationsService {
       headers: _headers(token),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /purchase-orders/$id failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /purchase-orders/$id failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/purchase-orders/:id');
@@ -246,8 +259,10 @@ class ApiOperationsService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'POST /purchase-orders failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'POST /purchase-orders failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/purchase-orders');
@@ -262,8 +277,10 @@ class ApiOperationsService {
       headers: _headers(token),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'DELETE /purchase-orders/$id failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'DELETE /purchase-orders/$id failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -279,8 +296,10 @@ class ApiOperationsService {
     );
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /vehicle-inventory failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /vehicle-inventory failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/vehicle-inventory');
@@ -298,8 +317,10 @@ class ApiOperationsService {
       body: jsonEncode({'items': items}),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /transfers/$id/items failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /transfers/$id/items failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/transfers/:id/items');
@@ -312,8 +333,10 @@ class ApiOperationsService {
     final uri = Uri.parse('$baseUrl/transfers/$id/submit');
     final response = await http.put(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /transfers/$id/submit failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /transfers/$id/submit failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/transfers/:id/submit');
@@ -335,9 +358,10 @@ class ApiOperationsService {
       body: jsonEncode({'items': items, 'notes': notes}),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /transfers/$id/review-items failed: '
-        '${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /transfers/$id/review-items failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(
@@ -353,8 +377,10 @@ class ApiOperationsService {
     final uri = Uri.parse('$baseUrl/transfers/$id/approve-restock');
     final response = await http.put(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /transfers/$id/approve-restock failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /transfers/$id/approve-restock failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(
@@ -370,8 +396,10 @@ class ApiOperationsService {
     final uri = Uri.parse('$baseUrl/transfers/$id/print-log');
     final response = await http.post(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'POST /transfers/$id/print-log failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'POST /transfers/$id/print-log failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
   }
@@ -396,8 +424,10 @@ class ApiOperationsService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'POST /transfers failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'POST /transfers failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/transfers');
@@ -411,8 +441,10 @@ class ApiOperationsService {
     final uri = Uri.parse('$baseUrl/transfers/$id');
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /transfers/$id failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /transfers/$id failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/transfers/:id');
@@ -426,8 +458,10 @@ class ApiOperationsService {
     final uri = Uri.parse('$baseUrl/transfers/$id/approve');
     final response = await http.put(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /transfers/$id/approve failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /transfers/$id/approve failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/transfers/:id/approve');
@@ -446,8 +480,10 @@ class ApiOperationsService {
       body: jsonEncode({'items': items}),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /transfers/$id/dispatch failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /transfers/$id/dispatch failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/transfers/:id/dispatch');
@@ -466,8 +502,10 @@ class ApiOperationsService {
       body: jsonEncode({'items': items}),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /transfers/$id/receive failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /transfers/$id/receive failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/transfers/:id/receive');
@@ -481,8 +519,10 @@ class ApiOperationsService {
     final uri = Uri.parse('$baseUrl/transfers/$id/cancel');
     final response = await http.put(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /transfers/$id/cancel failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /transfers/$id/cancel failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/transfers/:id/cancel');
@@ -496,8 +536,10 @@ class ApiOperationsService {
     final uri = Uri.parse('$baseUrl/transfers/$id/acknowledge');
     final response = await http.put(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /transfers/$id/acknowledge failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /transfers/$id/acknowledge failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(
@@ -527,8 +569,10 @@ class ApiOperationsService {
     ).replace(queryParameters: params);
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /stock-counts failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /stock-counts failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseList(jsonDecode(response.body), '/stock-counts');
@@ -551,8 +595,10 @@ class ApiOperationsService {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'POST /stock-counts failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'POST /stock-counts failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/stock-counts');
@@ -566,8 +612,10 @@ class ApiOperationsService {
     final uri = Uri.parse('$baseUrl/stock-counts/$id');
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /stock-counts/$id failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /stock-counts/$id failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/stock-counts/:id');
@@ -586,8 +634,10 @@ class ApiOperationsService {
       body: jsonEncode({'items': items}),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /stock-counts/$id/items failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /stock-counts/$id/items failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/stock-counts/:id/items');
@@ -606,8 +656,10 @@ class ApiOperationsService {
       body: jsonEncode({'items': items}),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-        'PUT /stock-counts/$id/submit failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'PUT /stock-counts/$id/submit failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/stock-counts/:id/submit');
@@ -636,8 +688,10 @@ class ApiOperationsService {
     ).replace(queryParameters: params);
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /daily-closes failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /daily-closes failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseList(jsonDecode(response.body), '/daily-closes');
@@ -655,8 +709,10 @@ class ApiOperationsService {
     ).replace(queryParameters: params);
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /daily-closes/summary failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /daily-closes/summary failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/daily-closes/summary');
@@ -722,8 +778,10 @@ class ApiOperationsService {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'POST /daily-closes failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'POST /daily-closes failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/daily-closes');
@@ -737,8 +795,10 @@ class ApiOperationsService {
     final uri = Uri.parse('$baseUrl/daily-closes/$id');
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /daily-closes/$id failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /daily-closes/$id failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/daily-closes/:id');
@@ -763,8 +823,10 @@ class ApiOperationsService {
     ).replace(queryParameters: params);
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /cash-reconciliations failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /cash-reconciliations failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseList(jsonDecode(response.body), '/cash-reconciliations');
@@ -788,8 +850,10 @@ class ApiOperationsService {
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'POST /cash-reconciliations failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'POST /cash-reconciliations failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/cash-reconciliations');
@@ -803,8 +867,10 @@ class ApiOperationsService {
     final uri = Uri.parse('$baseUrl/cash-reconciliations/$id');
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /cash-reconciliations/$id failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /cash-reconciliations/$id failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/cash-reconciliations/:id');
@@ -824,8 +890,10 @@ class ApiOperationsService {
     ).replace(queryParameters: {'countId': countId});
     final response = await http.get(uri, headers: _headers(token));
     if (response.statusCode != 200) {
-      throw Exception(
-        'GET /reports/stock-variance failed: ${response.statusCode} ${response.body}',
+      throw ApiException(
+        action: 'GET /reports/stock-variance failed',
+        statusCode: response.statusCode,
+        body: response.body,
       );
     }
     return _parseObject(jsonDecode(response.body), '/reports/stock-variance');

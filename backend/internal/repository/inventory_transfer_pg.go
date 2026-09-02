@@ -69,12 +69,14 @@ func (r *inventoryTransferRepositoryPG) Create(ctx context.Context, transfer *In
 		return err
 	}
 
-	for _, item := range items {
+	// The slice arrives in the order the POS listed it, which is the order the
+	// van staff pressed add — that is the order worth preserving.
+	for index, item := range items {
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO "inventory_transfer_item"(
-				"transfer_id", "part_code", "requested_qty"
-			) VALUES ($1, $2, $3)
-		`, item.TransferID, item.PartCode, item.RequestedQty)
+				"transfer_id", "part_code", "requested_qty", "line_no"
+			) VALUES ($1, $2, $3, $4)
+		`, item.TransferID, item.PartCode, item.RequestedQty, index+1)
 		if err != nil {
 			return err
 		}
@@ -122,7 +124,7 @@ func (r *inventoryTransferRepositoryPG) GetByID(ctx context.Context, id string) 
 		FROM "inventory_transfer_item" iti
 		LEFT JOIN "part_master" pm ON pm."code" = iti."part_code"
 		WHERE iti."transfer_id" = $1
-		ORDER BY iti."part_code"
+		ORDER BY iti."line_no", iti."part_code"
 	`, id)
 	if err != nil {
 		return nil, nil, err
@@ -284,12 +286,14 @@ func (r *inventoryTransferRepositoryPG) UpdateItems(ctx context.Context, transfe
 		return err
 	}
 
-	for _, item := range items {
+	// The slice arrives in the order the POS listed it, which is the order the
+	// van staff pressed add — that is the order worth preserving.
+	for index, item := range items {
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO "inventory_transfer_item"(
-				"transfer_id", "part_code", "requested_qty"
-			) VALUES ($1, $2, $3)
-		`, transferID, strings.TrimSpace(item.PartCode), item.RequestedQty)
+				"transfer_id", "part_code", "requested_qty", "line_no"
+			) VALUES ($1, $2, $3, $4)
+		`, transferID, strings.TrimSpace(item.PartCode), item.RequestedQty, index+1)
 		if err != nil {
 			return err
 		}
@@ -573,12 +577,14 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 	// What actually moves is what HQ approved. A line reviewed down to zero
 	// stays on the document — with its remark — but ships nothing.
 	rows, err := tx.QueryContext(ctx, `
-		SELECT i."part_code", COALESCE(i."approved_qty", i."requested_qty"),
+		SELECT i."part_code",
+		       COALESCE(NULLIF(p."name_th", ''), p."name", i."part_code"),
+		       COALESCE(i."approved_qty", i."requested_qty"),
 		       COALESCE(i."sale_price", p."price")
 		FROM "inventory_transfer_item" i
 		JOIN "part_master" p ON p."code" = i."part_code" AND p."is_active" = true
 		WHERE i."transfer_id" = $1
-		ORDER BY i."part_code"
+		ORDER BY i."line_no", i."part_code"
 	`, transferID)
 	if err != nil {
 		return err
@@ -590,6 +596,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 	}
 	type moveItem struct {
 		partCode string
+		partName string
 		// What HQ approved: the requested quantity unless review changed it.
 		moveQty         int
 		salePrice       float64
@@ -599,7 +606,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 	moveItems := make([]moveItem, 0)
 	for rows.Next() {
 		var item moveItem
-		if err := rows.Scan(&item.partCode, &item.moveQty, &item.salePrice); err != nil {
+		if err := rows.Scan(&item.partCode, &item.partName, &item.moveQty, &item.salePrice); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -645,6 +652,7 @@ func (r *inventoryTransferRepositoryPG) CompletePosRestock(ctx context.Context, 
 		if moveItems[i].availableQty < moveItems[i].moveQty {
 			shortages = append(shortages, InventoryShortage{
 				PartCode:     moveItems[i].partCode,
+				PartName:     moveItems[i].partName,
 				RequestedQty: moveItems[i].moveQty,
 				AvailableQty: moveItems[i].availableQty,
 				MissingQty:   moveItems[i].moveQty - moveItems[i].availableQty,

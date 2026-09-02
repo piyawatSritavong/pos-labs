@@ -1,18 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:frontend/models/product.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/utils/api_error.dart';
 import 'package:frontend/utils/pos_error_message.dart';
 import 'package:frontend/utils/store_summary.dart';
 import 'package:frontend/widgets/backoffice/addresses_page.dart';
 import 'package:frontend/widgets/backoffice/purchase_orders_page.dart';
 import 'package:frontend/widgets/pos/requisition_dialog.dart';
+import 'package:frontend/widgets/pos/search_parts_dialog.dart';
 import 'package:provider/provider.dart';
 
 void main() {
   _posErrorMessageTests();
+  _transferErrorTests();
+  _apiErrorTests();
   test('formats and aggregates warehouse quantities without shelf names', () {
     final formatted = formatPartStoreSummary([
       {
@@ -91,6 +96,63 @@ void main() {
     expect(find.text('เพิ่มคลังใหม่'), findsNothing);
     expect(find.textContaining('Min'), findsNothing);
     expect(find.textContaining('Max'), findsNothing);
+  });
+
+  testWidgets('the stock page lists van rows and will not let them be edited', (
+    tester,
+  ) async {
+    // The page filtered every query to the warehouse while its store dropdown
+    // offered the vans, so "ทุกคลัง" quietly meant "main only" — an admin read
+    // 0 for goods a van was busy selling. Van rows show; only the warehouse is
+    // editable, because moving van stock is a ใบเบิก, not a typed number.
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => AuthProvider(),
+        child: const MaterialApp(
+          home: Scaffold(
+            body: AddressesManagementSection(
+              autoLoad: false,
+              initialAddresses: [
+                {
+                  'partCode': 'P0557',
+                  'partName': 'ปลั๊กสามตาวีน่า',
+                  'storeId': 'main',
+                  'storeName': 'คลังหลัก',
+                  'qty': 0,
+                  'price': 60.0,
+                  'rop': 0,
+                },
+                {
+                  'partCode': 'P0557',
+                  'partName': 'ปลั๊กสามตาวีน่า',
+                  'storeId': 'vehicle_POS001',
+                  'storeName': 'คลังสาขา pos1',
+                  'qty': 12,
+                  'price': 60.0,
+                  'rop': 0,
+                },
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('คลังหลัก'), findsOneWidget);
+    expect(find.text('คลังสาขา pos1'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+
+    final buttons = tester
+        .widgetList<IconButton>(find.byType(IconButton))
+        .where((b) => b.icon is Icon && (b.icon as Icon).icon == Icons.edit_outlined)
+        .toList();
+    expect(buttons.length, 2);
+    expect(buttons[0].onPressed, isNotNull, reason: 'warehouse row is editable');
+    expect(buttons[1].onPressed, isNull, reason: 'van row is read-only here');
   });
 
   testWidgets('purchase order page exposes the bulk inbound action', (
@@ -224,7 +286,7 @@ void main() {
               child: PurchaseOrderProductPicker(
                 controller: controller,
                 onSelected: (product) => selected = product,
-                loadPage: (query, limit, offset) async {
+                loadPage: (query, limit, offset, includeArchived) async {
                   offsets.add(offset);
                   return (
                     parts: const [
@@ -254,7 +316,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(offsets, [0]);
       expect(find.textContaining('P0801 - สินค้ารับเข้า'), findsOneWidget);
-      expect(find.textContaining('ปิดใช้งาน'), findsOneWidget);
+      expect(find.textContaining('• ปิดใช้งาน'), findsOneWidget);
 
       await tester.tap(find.textContaining('P0801 - สินค้ารับเข้า'));
       await tester.pumpAndSettle();
@@ -263,6 +325,102 @@ void main() {
       expect(controller.text, isEmpty);
     },
   );
+
+  testWidgets(
+    'the inbound picker leaves archived products out until asked for them',
+    (tester) async {
+      // The shop had the same three tyres entered under three naming habits.
+      // Once the duplicates were archived they still filled this list, so
+      // searching ยางนอก offered nine rows for three products.
+      final controller = TextEditingController();
+      final archivedFlags = <bool>[];
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light().copyWith(
+            splashFactory: NoSplash.splashFactory,
+          ),
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              child: PurchaseOrderProductPicker(
+                controller: controller,
+                onSelected: (_) {},
+                loadPage: (query, limit, offset, includeArchived) async {
+                  archivedFlags.add(includeArchived);
+                  return (parts: const <Map<String, dynamic>>[], total: 0);
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(const Key('purchase-order-product-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      expect(archivedFlags, [false]);
+
+      await tester.tap(
+        find.byKey(const Key('purchase-order-include-archived')),
+      );
+      await tester.pumpAndSettle();
+      expect(archivedFlags, [false, true]);
+    },
+  );
+
+  testWidgets('a product the van has run out of is listed but not addable', (
+    tester,
+  ) async {
+    // The shop reported "สินค้ามีในระบบ แต่ข้อมูลขายไม่มี": the vehicle stock page
+    // listed the product and the till did not, because the till dropped every
+    // line with no pieces left. Now the till shows the same list and says which
+    // ones are finished.
+    var added = 0;
+
+    Widget card(Product product) => MaterialApp(
+      theme: AppTheme.light(),
+      home: Scaffold(
+        body: PosProductCard(product: product, onAdd: () => added++),
+      ),
+    );
+
+    await tester.pumpWidget(
+      card(
+        const Product(
+          id: 'P0001',
+          name: 'ตะปู 3*10',
+          price: 650,
+          code: 'P0001',
+          availableQty: 0,
+        ),
+      ),
+    );
+    expect(find.text('ตะปู 3*10'), findsOneWidget);
+    expect(find.text('หมด'), findsWidgets);
+    await tester.tap(find.byType(OutlinedButton));
+    await tester.pump();
+    expect(added, 0, reason: 'a sold-out line must not reach the bill');
+
+    await tester.pumpWidget(
+      card(
+        const Product(
+          id: 'P0002',
+          name: 'ตะปู 3*8',
+          price: 650,
+          code: 'P0002',
+          availableQty: 2,
+        ),
+      ),
+    );
+    expect(find.text('เหลือ 2'), findsOneWidget);
+    expect(find.text('+ เพิ่ม'), findsOneWidget);
+    await tester.tap(find.byType(OutlinedButton));
+    await tester.pump();
+    expect(added, 1);
+  });
 
   testWidgets('restock picker opens without typing and selects immediately', (
     tester,
@@ -425,5 +583,103 @@ void _posErrorMessageTests() {
       posErrorMessage(Exception('something else went wrong')),
       'something else went wrong',
     );
+  });
+}
+
+void _transferErrorTests() {
+  test('a stock shortage names the product, not just a part code', () {
+    final message = posErrorMessage(
+      ApiException(
+        action: 'PUT /transfers/TR1/approve-restock failed',
+        statusCode: 409,
+        body:
+            '{"error":"insufficient_stock","message":"คลังหลักมีของไม่พอ '
+            'เบ็ดฉลาดดำ ขอ 8 เหลือ 6 (ขาด 2)","shortages":[]}',
+      ),
+    );
+    expect(message, contains('เบ็ดฉลาดดำ'));
+    expect(message, contains('ขาด 2'));
+    expect(message, isNot(contains('409')));
+    expect(message, isNot(contains('insufficient_stock')));
+  });
+
+  test('an error with no server message still reads as prose', () {
+    expect(
+      posErrorMessage(Exception('network unreachable')),
+      'network unreachable',
+    );
+  });
+}
+
+void _apiErrorTests() {
+  // The bug this file guards: a red bar that read
+  // "400 {"error":"invalid_request","message":"Key: 'LineTotal' Error:Field
+  // validation for 'LineTotal' failed on the 'required' tag"}".
+  test('a rejected request never reaches the screen as raw JSON', () {
+    final message = ApiException(
+      action: 'Failed to update item price',
+      statusCode: 400,
+      body:
+          '{"error":"invalid_request","message":"Key: \'LineTotal\' '
+          'Error:Field validation for \'LineTotal\' failed on the '
+          '\'required\' tag"}',
+    ).toString();
+    expect(message, isNot(contains('{')));
+    expect(message, isNot(contains('LineTotal')));
+    expect(message, isNot(contains('400')));
+    expect(message, 'ข้อมูลที่ส่งไปไม่ครบหรือไม่ถูกต้อง');
+  });
+
+  test('a Thai explanation from the backend is passed through untouched', () {
+    expect(
+      ApiException(
+        action: 'x',
+        statusCode: 409,
+        body: '{"error":"insufficient_stock","message":"คลังหลักมีของไม่พอ"}',
+      ).toString(),
+      'คลังหลักมีของไม่พอ',
+    );
+  });
+
+  test('codes nobody spelled out are still answered in Thai', () {
+    String render(String code, int status) => ApiException(
+      action: 'x',
+      statusCode: status,
+      body: '{"error":"$code"}',
+    ).toString();
+
+    expect(render('promotion_not_found', 404), 'ไม่พบโปรโมชั่น');
+    expect(render('missing_promotion_code', 400), contains('รหัสโปรโมชั่น'));
+    expect(render('failed_to_create_member', 500), contains('ลองใหม่'));
+    expect(render('stock_count_access_denied', 403), contains('ไม่มีสิทธิ์'));
+  });
+
+  test('a body with no reason at all falls back to the status', () {
+    expect(
+      ApiException(action: 'x', statusCode: 502, body: '<html>bad gateway')
+          .toString(),
+      contains('502'),
+    );
+  });
+
+  test('the reason code stays readable for code that branches on it', () {
+    final error = ApiException(
+      action: 'x',
+      statusCode: 400,
+      body: '{"error":"invalid_bill_status"}',
+    );
+    expect(apiErrorCode(error), 'invalid_bill_status');
+    expect(isApiErrorCode(error, 'invalid_bill_status'), isTrue);
+    expect(isApiErrorCode(Exception('nope'), 'invalid_bill_status'), isFalse);
+  });
+
+  test('the raw response is still available for logs', () {
+    final error = ApiException(
+      action: 'Failed to pay bill',
+      statusCode: 400,
+      body: '{"error":"empty_bill"}',
+    );
+    expect(error.debugString, contains('Failed to pay bill'));
+    expect(error.debugString, contains('empty_bill'));
   });
 }
