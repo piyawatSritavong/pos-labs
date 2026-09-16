@@ -419,8 +419,9 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to add item to bill: ${response.statusCode} ${response.body}',
+      throw ApiException.fromResponse(
+        response,
+        fallback: 'เพิ่มสินค้าเข้าบิลไม่สำเร็จ',
       );
     }
 
@@ -447,8 +448,9 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to add item by barcode: ${response.statusCode} ${response.body}',
+      throw ApiException.fromResponse(
+        response,
+        fallback: 'เพิ่มสินค้าจากบาร์โค้ดไม่สำเร็จ',
       );
     }
 
@@ -709,8 +711,9 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Failed to pay bill: ${response.statusCode} ${response.body}',
+      throw ApiException.fromResponse(
+        response,
+        fallback: 'บันทึกการชำระเงินไม่สำเร็จ',
       );
     }
 
@@ -742,8 +745,9 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'พิมพ์ใบเสร็จไม่สำเร็จ: ${response.statusCode} ${response.body}',
+      throw ApiException.fromResponse(
+        response,
+        fallback: 'พิมพ์ใบเสร็จไม่สำเร็จ',
       );
     }
 
@@ -801,8 +805,9 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'พิมพ์ใบคืนสินค้าไม่สำเร็จ: ${response.statusCode} ${response.body}',
+      throw ApiException.fromResponse(
+        response,
+        fallback: 'พิมพ์ใบคืนสินค้าไม่สำเร็จ',
       );
     }
 

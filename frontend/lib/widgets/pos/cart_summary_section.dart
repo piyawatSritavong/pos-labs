@@ -5,6 +5,7 @@ import 'package:frontend/config/feature_flags.dart';
 import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/providers/company_provider.dart';
+import 'package:frontend/services/api_exception.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
@@ -883,20 +884,31 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       }
 
       if (!receiptPrinted && hasPurchaseItems && checkoutBillId != null) {
-        await ApiService.printReceipt(
-          token: token,
-          billId: checkoutBillId,
-          idempotencyKey: 'checkout:$checkoutBillId',
-        );
+        try {
+          await ApiService.printReceipt(
+            token: token,
+            billId: checkoutBillId,
+            idempotencyKey: 'checkout:$checkoutBillId',
+          );
+        } catch (error) {
+          // Cloud deployments intentionally have no access to the shop's
+          // physical printer. Payment is already committed, so an unavailable
+          // printer must never turn a successful sale into a failed checkout.
+          if (!isReceiptPrinterUnavailable(error)) rethrow;
+        }
         receiptPrinted = true;
       }
 
       if (!returnReceiptPrinted && hasReturnItems && returnNoteId != null) {
-        await ApiService.printReturnReceipt(
-          token: token,
-          returnNoteId: returnNoteId!,
-          idempotencyKey: 'return:${returnNoteId!}',
-        );
+        try {
+          await ApiService.printReturnReceipt(
+            token: token,
+            returnNoteId: returnNoteId!,
+            idempotencyKey: 'return:${returnNoteId!}',
+          );
+        } catch (error) {
+          if (!isReceiptPrinterUnavailable(error)) rethrow;
+        }
         returnReceiptPrinted = true;
       }
     }
@@ -1895,7 +1907,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
   bool _isFinalizing = false;
   bool _finalizeAttempted = false;
   bool _finalizeSucceeded = false;
-  String? _finalizeError;
+  Object? _finalizeError;
 
   // True when the finalize failure is a receipt-printer problem. The payment is
   // saved before the print step, so on a printer error the sale is already
@@ -1904,10 +1916,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
   bool get _isPrinterError {
     final e = _finalizeError;
     if (e == null) return false;
-    return e.contains('printer_disabled') ||
-        e.contains('RECEIPT_PRINTER') ||
-        e.contains('พิมพ์ใบเสร็จไม่สำเร็จ') ||
-        e.contains('พิมพ์ใบคืนสินค้าไม่สำเร็จ');
+    return isReceiptPrinterError(e);
   }
 
   // User-facing error text: printer failures get a plain message instead of the
@@ -1915,7 +1924,9 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
   String? get _finalizeErrorMessage {
     if (_finalizeError == null) return null;
     if (_isPrinterError) return 'เชื่อมต่อเครื่องปริ้นไม่สำเร็จ';
-    return _finalizeError;
+    final error = _finalizeError!;
+    if (error is ApiException) return error.message;
+    return 'ปิดการขายไม่สำเร็จ';
   }
 
   @override
@@ -1956,13 +1967,15 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _finalizeError = 'ปิดการขายไม่สำเร็จ';
+        _finalizeError = e;
       });
-      await AppDialogService.showError(
-        context,
-        error: e,
-        fallback: 'ปิดการขายไม่สำเร็จ',
-      );
+      if (!_isPrinterError) {
+        await AppDialogService.showError(
+          context,
+          error: e,
+          fallback: 'ปิดการขายไม่สำเร็จ',
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isFinalizing = false);

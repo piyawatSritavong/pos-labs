@@ -7,6 +7,7 @@ class Product {
   final String? defaultAddressCode;
   final String? addressCodeForAdd;
   final String? barcode;
+  final int availableQty;
 
   const Product({
     required this.id,
@@ -17,5 +18,6 @@ class Product {
     this.defaultAddressCode,
     this.addressCodeForAdd,
     this.barcode,
+    this.availableQty = 0,
   });
 }

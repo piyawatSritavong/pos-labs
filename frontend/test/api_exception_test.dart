@@ -54,5 +54,31 @@ void main() {
 
       expect(exception.message, 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง');
     });
+
+    test('classifies an intentionally disabled printer as unavailable', () {
+      final exception = ApiException.fromResponse(
+        http.Response('{"error":"printer_disabled"}', 503),
+      );
+
+      expect(isReceiptPrinterUnavailable(exception), isTrue);
+      expect(isReceiptPrinterError(exception), isTrue);
+    });
+
+    test('keeps a real print failure retryable', () {
+      final exception = ApiException.fromResponse(
+        http.Response('{"error":"failed_to_print"}', 500),
+      );
+
+      expect(isReceiptPrinterUnavailable(exception), isFalse);
+      expect(isReceiptPrinterError(exception), isTrue);
+    });
+
+    test('translates POS vehicle stock errors', () {
+      final exception = ApiException.fromResponse(
+        http.Response('{"error":"invalid_address_code"}', 400),
+      );
+
+      expect(exception.message, 'สินค้านี้ไม่มีสต็อกในรถของจุดขายนี้');
+    });
   });
 }

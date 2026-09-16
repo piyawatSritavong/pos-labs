@@ -148,60 +148,9 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
     }
   }
 
-  double _toDouble(dynamic v) {
-    if (v == null) return 0.0;
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString()) ?? 0.0;
-  }
-
   Product _mapProduct(Map<String, dynamic> json) {
-    final rawAddresses = (json['addresses'] as List?) ?? [];
-    Map<String, dynamic>? defaultAddress;
-
-    // Prefer stock on this POS vehicle. Selecting the first branch address can
-    // make a successfully searched product fail when it is added to the bill.
     final posId = context.read<AuthProvider>().posId?.trim() ?? '';
-    final vehicleStoreId = posId.isEmpty ? null : 'vehicle_$posId';
-    if (vehicleStoreId != null) {
-      for (final addr in rawAddresses) {
-        if (addr is! Map<String, dynamic>) continue;
-        final store = addr['store'];
-        final storeId = store is Map
-            ? store['id']?.toString()
-            : addr['storeId']?.toString();
-        if (storeId == vehicleStoreId && _toDouble(addr['qty']) > 0) {
-          defaultAddress = addr;
-          break;
-        }
-      }
-    }
-    for (final addr in rawAddresses) {
-      if (defaultAddress == null &&
-          addr is Map<String, dynamic> &&
-          (addr['isDefault'] == true || addr['is_default'] == true)) {
-        defaultAddress = addr;
-        break;
-      }
-    }
-    defaultAddress ??=
-        rawAddresses.isNotEmpty && rawAddresses.first is Map<String, dynamic>
-        ? rawAddresses.first as Map<String, dynamic>
-        : null;
-
-    final defaultAddressCode =
-        defaultAddress?['addressCode']?.toString() ??
-        defaultAddress?['code']?.toString();
-
-    return Product(
-      id: json['id']?.toString() ?? json['code']?.toString() ?? '',
-      name: json['nameTh'] ?? json['name_th'] ?? json['name'] ?? '',
-      price: _toDouble(json['price'] ?? json['unitPrice']),
-      code: json['code']?.toString() ?? '',
-      receiptName: json['receiptName']?.toString(),
-      defaultAddressCode: defaultAddressCode,
-      barcode: json['barCode']?.toString() ?? json['barcode']?.toString(),
-      addressCodeForAdd: json['addressCode']?.toString() ?? defaultAddressCode,
-    );
+    return mapPosProductForSale(json, posId: posId);
   }
 
   void _onSearchChanged(String value) {
@@ -311,7 +260,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
                                 itemCount: pageItems.length,
                                 itemBuilder: (context, index) {
                                   final product = pageItems[index];
-                                  return _DialogProductCard(
+                                  return PosProductCard(
                                     product: product,
                                     onAdd: () => _handleAddProduct(product),
                                   );
@@ -366,6 +315,14 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
 
   Future<void> _handleAddProduct(Product product) async {
     final messenger = ScaffoldMessenger.of(context);
+    if (product.availableQty <= 0 ||
+        product.addressCodeForAdd == null ||
+        product.addressCodeForAdd!.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('สินค้านี้ไม่มีสต็อกในรถของจุดขายนี้')),
+      );
+      return;
+    }
     final auth = context.read<AuthProvider>();
     final bill = context.read<BillProvider>();
     final token = auth.token;
@@ -377,24 +334,12 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
     }
 
     try {
-      if (product.addressCodeForAdd != null &&
-          product.addressCodeForAdd!.isNotEmpty) {
-        await bill.addItem(
-          token: token,
-          partCode: product.code,
-          addressCode: product.addressCodeForAdd!,
-          qty: 1,
-        );
-      } else if (product.barcode != null && product.barcode!.isNotEmpty) {
-        await bill.addItemByBarcode(token: token, barcode: product.barcode!);
-      } else {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('สินค้านี้ไม่มี address หรือ barcode สำหรับเพิ่มบิล'),
-          ),
-        );
-        return;
-      }
+      await bill.addItem(
+        token: token,
+        partCode: product.code,
+        addressCode: product.addressCodeForAdd!,
+        qty: 1,
+      );
     } catch (e) {
       await AppDialogService.showError(
         context,
@@ -414,14 +359,72 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
   }
 }
 
-class _DialogProductCard extends StatelessWidget {
-  const _DialogProductCard({required this.product, required this.onAdd});
+Product mapPosProductForSale(
+  Map<String, dynamic> json, {
+  required String posId,
+}) {
+  final rawAddresses = (json['addresses'] as List?) ?? [];
+  Map<String, dynamic>? vehicleAddress;
+  var availableQty = 0;
+
+  // A sale can only reduce stock from the current POS vehicle. Never fall
+  // back to the warehouse/default address: the backend correctly rejects it,
+  // but the old UI still presented an enabled Add button to the cashier.
+  final normalizedPosId = posId.trim();
+  final vehicleStoreId = normalizedPosId.isEmpty
+      ? null
+      : 'vehicle_$normalizedPosId';
+  if (vehicleStoreId != null) {
+    for (final address in rawAddresses) {
+      if (address is! Map<String, dynamic>) continue;
+      final store = address['store'];
+      final storeId = store is Map
+          ? store['id']?.toString()
+          : (address['storeId'] ?? address['store_id'])?.toString();
+      if (storeId != vehicleStoreId) continue;
+      final qty = _productQty(address['qty']);
+      if (qty <= 0) continue;
+      availableQty += qty;
+      vehicleAddress ??= address;
+    }
+  }
+
+  final addressCode =
+      vehicleAddress?['addressCode']?.toString() ??
+      vehicleAddress?['address_code']?.toString() ??
+      vehicleAddress?['code']?.toString();
+
+  return Product(
+    id: json['id']?.toString() ?? json['code']?.toString() ?? '',
+    name: json['nameTh'] ?? json['name_th'] ?? json['name'] ?? '',
+    price: _productDouble(json['price'] ?? json['unitPrice']),
+    code: json['code']?.toString() ?? '',
+    receiptName: json['receiptName']?.toString(),
+    defaultAddressCode: addressCode,
+    barcode: json['barCode']?.toString() ?? json['barcode']?.toString(),
+    addressCodeForAdd: addressCode,
+    availableQty: availableQty,
+  );
+}
+
+double _productDouble(dynamic value) {
+  if (value == null) return 0;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString()) ?? 0;
+}
+
+int _productQty(dynamic value) => _productDouble(value).floor();
+
+class PosProductCard extends StatelessWidget {
+  const PosProductCard({super.key, required this.product, required this.onAdd});
 
   final Product product;
   final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
+    final soldOut =
+        product.availableQty <= 0 || product.addressCodeForAdd == null;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -459,12 +462,29 @@ class _DialogProductCard extends StatelessWidget {
                   style: const TextStyle(color: AppColors.muted, fontSize: 13),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  '฿${product.price.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      '฿${product.price.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: soldOut ? AppColors.muted : AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      soldOut ? 'หมดจากรถ' : 'เหลือ ${product.availableQty}',
+                      style: TextStyle(
+                        color: soldOut
+                            ? Colors.orange.shade800
+                            : AppColors.muted,
+                        fontSize: 12,
+                        fontWeight: soldOut
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -474,15 +494,17 @@ class _DialogProductCard extends StatelessWidget {
             height: 40,
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: const BorderSide(color: AppColors.primary),
+                foregroundColor: soldOut ? AppColors.muted : AppColors.primary,
+                side: BorderSide(
+                  color: soldOut ? AppColors.border : AppColors.primary,
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
-              onPressed: onAdd,
-              child: const Text('+ เพิ่ม'),
+              onPressed: soldOut ? null : onAdd,
+              child: Text(soldOut ? 'หมด' : '+ เพิ่ม'),
             ),
           ),
         ],

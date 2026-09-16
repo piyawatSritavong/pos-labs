@@ -39,6 +39,19 @@ class ApiException implements Exception {
         return 'Barcode นี้ถูกใช้งานกับสินค้าอื่นแล้ว';
       case 'stock_store_not_configured':
         return 'ยังไม่ได้กำหนดคลังสินค้าสำหรับสาขา';
+      case 'invalid_address_code':
+      case 'no_vehicle_stock':
+      case 'not_enough_inventory':
+        return 'สินค้านี้ไม่มีสต็อกในรถของจุดขายนี้';
+      case 'invalid_bill_status':
+        return 'บิลเดิมถูกปิดแล้ว กรุณาเริ่มบิลใหม่';
+      case 'part_not_found':
+        return 'ไม่พบสินค้านี้ในสาขา';
+      case 'printer_disabled':
+      case 'printer_not_configured':
+        return 'ระบบนี้ไม่ได้เปิดใช้งานเครื่องพิมพ์';
+      case 'failed_to_print':
+        return 'พิมพ์ใบเสร็จไม่สำเร็จ';
       case 'forbidden':
       case 'access_denied':
         return 'คุณไม่มีสิทธิ์ดำเนินการนี้';
@@ -51,4 +64,27 @@ class ApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+String? apiErrorCode(Object error) {
+  if (error is ApiException) return error.code;
+  return null;
+}
+
+bool isReceiptPrinterUnavailable(Object error) {
+  final code = apiErrorCode(error);
+  return code == 'printer_disabled' || code == 'printer_not_configured';
+}
+
+bool isReceiptPrinterError(Object error) {
+  final code = apiErrorCode(error);
+  if (code == 'printer_disabled' ||
+      code == 'printer_not_configured' ||
+      code == 'failed_to_print') {
+    return true;
+  }
+  final raw = error.toString();
+  return raw.contains('RECEIPT_PRINTER') ||
+      raw.contains('พิมพ์ใบเสร็จไม่สำเร็จ') ||
+      raw.contains('พิมพ์ใบคืนสินค้าไม่สำเร็จ');
 }
