@@ -203,7 +203,9 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 
 	go func() {
 		defer wg.Done()
-		// Load bill details (with total stock per part across all addresses in the bill's branch)
+		// Load bill details with the stock left on the exact address used by the
+		// line. A branch id is not a store id; comparing those two used to return
+		// zero (or stock from the wrong location) after every add.
 		detailRows, err := r.db.QueryContext(ctx, `
 		SELECT
 			bid."bill_id", bid."part_code", bid."address_code",
@@ -212,14 +214,13 @@ func (r *billRepositoryPG) GetFullByID(ctx context.Context, id string) (*Bill, [
 			COALESCE(NULLIF(bid."receipt_name", ''), NULLIF(pm."receipt_name", ''), 'ITEM ' || bid."part_code") AS "receipt_name",
 			bid."cost", bid."price", bid."qty",
 			COALESCE((
-				SELECT SUM(am."qty")
+				SELECT am."qty"
 				FROM "address_master" am
-				WHERE am."part_code" = bid."part_code"
+				WHERE am."code" = bid."address_code"
+				  AND am."part_code" = bid."part_code"
 				  AND am."is_active" = true
-				  AND am."store_id" = b."branch_id"
 			), 0) AS "total_stock"
 		FROM "bill_item_detail" bid
-		JOIN "bill_master" b ON b."id" = bid."bill_id"
 		LEFT JOIN "part_master" pm ON pm."code" = bid."part_code"
 		WHERE bid."bill_id" = $1
 		ORDER BY bid."line_no", bid."part_code", bid."address_code"
@@ -311,14 +312,13 @@ func (r *billRepositoryPG) GetDetailsByBillIDs(ctx context.Context, ids []string
 			COALESCE(NULLIF(bid."receipt_name", ''), NULLIF(pm."receipt_name", ''), 'ITEM ' || bid."part_code") AS "receipt_name",
 			bid."cost", bid."price", bid."qty",
 			COALESCE((
-				SELECT SUM(am."qty")
+				SELECT am."qty"
 				FROM "address_master" am
-				WHERE am."part_code" = bid."part_code"
+				WHERE am."code" = bid."address_code"
+				  AND am."part_code" = bid."part_code"
 				  AND am."is_active" = true
-				  AND am."store_id" = b."branch_id"
 			), 0) AS "total_stock"
 		FROM "bill_item_detail" bid
-		JOIN "bill_master" b ON b."id" = bid."bill_id"
 		LEFT JOIN "part_master" pm ON pm."code" = bid."part_code"
 		WHERE bid."bill_id" = ANY($1)
 		ORDER BY bid."bill_id", bid."line_no", bid."part_code", bid."address_code"

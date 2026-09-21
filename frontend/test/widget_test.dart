@@ -7,6 +7,7 @@ import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/utils/api_error.dart';
 import 'package:frontend/utils/pos_error_message.dart';
+import 'package:frontend/utils/pos_sale_stock.dart';
 import 'package:frontend/utils/store_summary.dart';
 import 'package:frontend/widgets/backoffice/addresses_page.dart';
 import 'package:frontend/widgets/backoffice/purchase_orders_page.dart';
@@ -46,6 +47,54 @@ void main() {
     final bill = BillProvider();
     expect(bill.billId, isNull);
     expect(bill.items, isEmpty);
+  });
+
+  test('POS search trusts the exact sale address selected by the server', () {
+    final product = mapPosSearchProduct({
+      'code': 'P0167',
+      'nameTh': 'กาวร้อน 102',
+      'price': 20,
+      'addressCode': 'VEH-POS1',
+      'availableQty': 24,
+      'totalStock': 24,
+      'addresses': [
+        {'code': 'MAIN', 'qty': 999},
+        {'code': 'VEH-POS1', 'qty': 24},
+      ],
+    });
+
+    expect(product.addressCodeForAdd, 'VEH-POS1');
+    expect(product.availableQty, 24);
+  });
+
+  test('POS search never adds warehouse-only stock from a legacy response', () {
+    final product = mapPosSearchProduct({
+      'code': 'P0167',
+      'nameTh': 'กาวร้อน 102',
+      'price': 20,
+      'addressCode': '',
+      'availableQty': 0,
+      'addresses': [
+        {'code': 'MAIN', 'qty': 24},
+      ],
+    });
+
+    expect(product.addressCodeForAdd, isNull);
+    expect(product.availableQty, 0);
+  });
+
+  test('successful add refreshes search stock from the returned bill', () {
+    final remaining = remainingQtyFromBill(
+      {
+        'items': [
+          {'partCode': 'P0167', 'addressCode': 'VEH-POS1', 'remainingQty': 23},
+        ],
+      },
+      partCode: 'P0167',
+      addressCode: 'VEH-POS1',
+    );
+
+    expect(remaining, 23);
   });
 
   test('inventory API errors are shown in Thai', () {
@@ -148,10 +197,16 @@ void main() {
 
     final buttons = tester
         .widgetList<IconButton>(find.byType(IconButton))
-        .where((b) => b.icon is Icon && (b.icon as Icon).icon == Icons.edit_outlined)
+        .where(
+          (b) => b.icon is Icon && (b.icon as Icon).icon == Icons.edit_outlined,
+        )
         .toList();
     expect(buttons.length, 2);
-    expect(buttons[0].onPressed, isNotNull, reason: 'warehouse row is editable');
+    expect(
+      buttons[0].onPressed,
+      isNotNull,
+      reason: 'warehouse row is editable',
+    );
     expect(buttons[1].onPressed, isNull, reason: 'van row is read-only here');
   });
 
@@ -411,6 +466,7 @@ void main() {
           name: 'ตะปู 3*8',
           price: 650,
           code: 'P0002',
+          addressCodeForAdd: 'VEH-P0002',
           availableQty: 2,
         ),
       ),
@@ -656,8 +712,11 @@ void _apiErrorTests() {
 
   test('a body with no reason at all falls back to the status', () {
     expect(
-      ApiException(action: 'x', statusCode: 502, body: '<html>bad gateway')
-          .toString(),
+      ApiException(
+        action: 'x',
+        statusCode: 502,
+        body: '<html>bad gateway',
+      ).toString(),
       contains('502'),
     );
   });

@@ -61,10 +61,16 @@ func (h *BillsHandler) getVehicleStoreID(ctx context.Context, posID string) (str
 
 func salesAddressForPOS(addresses []repository.PartAddress, vehicleStoreID string) (repository.PartAddress, bool) {
 	if strings.TrimSpace(vehicleStoreID) != "" {
+		var selected repository.PartAddress
+		found := false
 		for _, addr := range addresses {
-			if addr.StoreID == vehicleStoreID && addr.Qty > 0 {
-				return addr, true
+			if addr.StoreID == vehicleStoreID && addr.Qty > 0 && (!found || addr.Qty > selected.Qty) {
+				selected = addr
+				found = true
 			}
+		}
+		if found {
+			return selected, true
 		}
 		for _, addr := range addresses {
 			if addr.StoreID == vehicleStoreID {
@@ -164,23 +170,24 @@ func buildBillDetailOutput(details []repository.BillDetail) []gin.H {
 	for _, d := range details {
 		lineTotal := d.Price * float64(d.Qty)
 		detailOut = append(detailOut, gin.H{
-			"billId":      d.BillID,
-			"partCode":    d.PartCode,
-			"addressCode": d.AddressCode,
-			"unitId":      d.UnitID,
-			"unitLabel":   d.UnitLabel,
-			"unitLabelTh": d.UnitLabelTH,
-			"name":        d.Name,
-			"partName":    d.Name,
-			"receiptName": d.ReceiptName,
-			"cost":        d.Cost,
-			"price":       d.Price,
-			"unitPrice":   d.Price,
-			"qty":         d.Qty,
-			"amount":      lineTotal,
-			"total":       lineTotal,
-			"lineTotal":   lineTotal,
-			"totalStock":  d.TotalStock,
+			"billId":       d.BillID,
+			"partCode":     d.PartCode,
+			"addressCode":  d.AddressCode,
+			"unitId":       d.UnitID,
+			"unitLabel":    d.UnitLabel,
+			"unitLabelTh":  d.UnitLabelTH,
+			"name":         d.Name,
+			"partName":     d.Name,
+			"receiptName":  d.ReceiptName,
+			"cost":         d.Cost,
+			"price":        d.Price,
+			"unitPrice":    d.Price,
+			"qty":          d.Qty,
+			"amount":       lineTotal,
+			"total":        lineTotal,
+			"lineTotal":    lineTotal,
+			"remainingQty": d.TotalStock,
+			"totalStock":   d.TotalStock,
 		})
 	}
 	return detailOut

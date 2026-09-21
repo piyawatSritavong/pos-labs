@@ -27,4 +27,20 @@ class Product {
     this.barcode,
     this.availableQty = 0,
   });
+
+  Product copyWith({int? availableQty}) {
+    return Product(
+      id: id,
+      name: name,
+      price: price,
+      cost: cost,
+      minPrice: minPrice,
+      code: code,
+      receiptName: receiptName,
+      defaultAddressCode: defaultAddressCode,
+      addressCodeForAdd: addressCodeForAdd,
+      barcode: barcode,
+      availableQty: availableQty ?? this.availableQty,
+    );
+  }
 }

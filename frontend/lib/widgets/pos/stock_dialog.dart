@@ -97,17 +97,31 @@ class _StockDialogState extends State<StockDialog> {
     });
 
     try {
-      final parts = await ApiPartsService.getParts(
-        token: token,
-        limit: 200,
-        offset: 0,
-      );
+      // Low-stock on a till means the stock this POS can actually sell, not
+      // the warehouse plus every vehicle in the branch.
+      const pageSize = 500;
+      final parts = <Map<String, dynamic>>[];
+      var offset = 0;
+      while (true) {
+        final page = await ApiPartsService.searchParts(
+          token: token,
+          saleableOnly: true,
+          includeOutOfStock: true,
+          limit: pageSize,
+          offset: offset,
+        );
+        parts.addAll(page);
+        if (page.length < pageSize) break;
+        offset += page.length;
+      }
+      if (!mounted) return;
       final filtered = _buildLowStock(parts);
       setState(() {
         _lowStock = filtered;
       });
       _broadcastState();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
       });
@@ -186,7 +200,7 @@ class _StockDialogState extends State<StockDialog> {
                       ? const _EmptyStock()
                       : ListView.separated(
                           itemCount: _lowStock.length,
-                          separatorBuilder: (_, __) =>
+                          separatorBuilder: (_, _) =>
                               const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final part = _lowStock[index];

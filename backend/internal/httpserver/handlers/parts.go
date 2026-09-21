@@ -18,6 +18,14 @@ type PartsHandler struct {
 	pos       repository.POSRepository
 }
 
+func saleStockForPOS(addresses []repository.PartAddress, vehicleStoreID string) (addressCode string, qty, rop int) {
+	selected, ok := salesAddressForPOS(addresses, vehicleStoreID)
+	if !ok {
+		return "", 0, 0
+	}
+	return selected.Code, selected.Qty, selected.Rop
+}
+
 func NewPartsHandler(parts repository.PartRepository, addresses repository.AddressRepository, pos repository.POSRepository) *PartsHandler {
 	return &PartsHandler{parts: parts, addresses: addresses, pos: pos}
 }
@@ -224,7 +232,8 @@ func (h *PartsHandler) Get(c *gin.Context) {
 //   - categoryId: filter by category ID (optional)
 //   - isActive: filter by active status (true/false) (optional)
 //   - crossBranch: if true, search across all branches; if false, only session branch (default: false)
-//   - saleableOnly: if true, force the session POS store and qty > 0
+//   - saleableOnly: if true, force the session POS store; qty > 0 is required
+//     unless includeOutOfStock=true
 //   - limit: pagination limit (default: 20, max: 500)
 //   - offset: pagination offset (default: 0)
 func (h *PartsHandler) Search(c *gin.Context) {
@@ -372,6 +381,19 @@ func (h *PartsHandler) Search(c *gin.Context) {
 			addresses = filtered
 		}
 
+		// A sale search must report the quantity on the exact address that an
+		// add-to-bill request will decrement. part.TotalStock is branch-wide and
+		// can include the warehouse or another vehicle, which is how the POS used
+		// to show stock that it could not actually sell.
+		totalStock := part.TotalStock
+		availableQty := part.TotalStock
+		reorderPoint := 0
+		addressCode := ""
+		if saleableOnly && storeIDPtr != nil {
+			addressCode, availableQty, reorderPoint = saleStockForPOS(addresses, *storeIDPtr)
+			totalStock = availableQty
+		}
+
 		// Build addresses array
 		addrs := make([]gin.H, 0, len(addresses))
 		for _, a := range addresses {
@@ -391,7 +413,7 @@ func (h *PartsHandler) Search(c *gin.Context) {
 			})
 		}
 
-		out = append(out, gin.H{
+		entry := gin.H{
 			"code":        part.Code,
 			"barCode":     part.BarCode,
 			"name":        part.Name,
@@ -413,9 +435,15 @@ func (h *PartsHandler) Search(c *gin.Context) {
 				"label":   part.UnitLabel,
 				"labelTh": part.UnitLabelTH,
 			},
-			"totalStock": part.TotalStock,
+			"totalStock": totalStock,
 			"addresses":  addrs,
-		})
+		}
+		if saleableOnly {
+			entry["addressCode"] = addressCode
+			entry["availableQty"] = availableQty
+			entry["reorderPoint"] = reorderPoint
+		}
+		out = append(out, entry)
 	}
 
 	// Total matching count (ignores limit/offset) for page-jump pagination.

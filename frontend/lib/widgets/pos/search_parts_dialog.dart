@@ -5,6 +5,7 @@ import 'package:frontend/providers/auth_provider.dart';
 import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_parts.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/utils/pos_sale_stock.dart';
 import 'package:frontend/utils/pos_error_message.dart';
 import 'package:provider/provider.dart';
 
@@ -110,6 +111,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         limit: 20,
         offset: 0,
       );
+      if (!mounted) return;
       setState(() {
         _products = raw.map(_mapProduct).toList();
         _currentPage = 0;
@@ -118,6 +120,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         _pageController.jumpToPage(0);
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('ค้นหาไม่สำเร็จ: $e')));
@@ -128,58 +131,23 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
     }
   }
 
-  double _toDouble(dynamic v) {
-    if (v == null) return 0.0;
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString()) ?? 0.0;
+  Product _mapProduct(Map<String, dynamic> json) {
+    return mapPosSearchProduct(json);
   }
 
-  Product _mapProduct(Map<String, dynamic> json) {
-    final rawAddresses = (json['addresses'] as List?) ?? [];
-    Map<String, dynamic>? defaultAddress;
-    for (final addr in rawAddresses) {
-      if (addr is Map<String, dynamic> &&
-          _toDouble(addr['qty']) > 0 &&
-          (addr['isDefault'] == true || addr['is_default'] == true)) {
-        defaultAddress = addr;
-        break;
-      }
-    }
-    if (defaultAddress == null) {
-      for (final addr in rawAddresses) {
-        if (addr is Map<String, dynamic> && _toDouble(addr['qty']) > 0) {
-          defaultAddress = addr;
-          break;
-        }
-      }
-    }
-
-    final defaultAddressCode =
-        defaultAddress?['addressCode']?.toString() ??
-        defaultAddress?['code']?.toString();
-
-    // The search is scoped to this POS's own van, so the addresses that come
-    // back are its stock rows and nothing else.
-    var availableQty = 0;
-    for (final addr in rawAddresses) {
-      if (addr is Map<String, dynamic>) {
-        availableQty += _toDouble(addr['qty']).round();
-      }
-    }
-
-    return Product(
-      id: json['id']?.toString() ?? json['code']?.toString() ?? '',
-      name: json['nameTh'] ?? json['name_th'] ?? json['name'] ?? '',
-      price: _toDouble(json['price'] ?? json['unitPrice']),
-      cost: _toDouble(json['cost']),
-      minPrice: _toDouble(json['minPrice'] ?? json['min_price']),
-      code: json['code']?.toString() ?? '',
-      receiptName: json['receiptName']?.toString(),
-      defaultAddressCode: defaultAddressCode,
-      barcode: json['barCode']?.toString() ?? json['barcode']?.toString(),
-      addressCodeForAdd: json['addressCode']?.toString() ?? defaultAddressCode,
-      availableQty: availableQty,
-    );
+  void _updateAvailableQty(Product product, int qty) {
+    if (!mounted) return;
+    setState(() {
+      _products = _products
+          .map(
+            (candidate) =>
+                candidate.code == product.code &&
+                    candidate.addressCodeForAdd == product.addressCodeForAdd
+                ? candidate.copyWith(availableQty: qty < 0 ? 0 : qty)
+                : candidate,
+          )
+          .toList();
+    });
   }
 
   void _onSearchChanged(String value) {
@@ -344,6 +312,14 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
 
   Future<void> _handleAddProduct(Product product) async {
     final messenger = ScaffoldMessenger.of(context);
+    if (product.availableQty <= 0 ||
+        product.addressCodeForAdd == null ||
+        product.addressCodeForAdd!.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('สินค้านี้หมดจากคลังประจำ POS')),
+      );
+      return;
+    }
     final auth = context.read<AuthProvider>();
     final bill = context.read<BillProvider>();
     final token = auth.token;
@@ -355,24 +331,18 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
     }
 
     try {
-      if (product.addressCodeForAdd != null &&
-          product.addressCodeForAdd!.isNotEmpty) {
-        await bill.addItem(
-          token: token,
-          partCode: product.code,
-          addressCode: product.addressCodeForAdd!,
-          qty: 1,
-        );
-      } else if (product.barcode != null && product.barcode!.isNotEmpty) {
-        await bill.addItemByBarcode(token: token, barcode: product.barcode!);
-      } else {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('สินค้านี้ไม่มี address หรือ barcode สำหรับเพิ่มบิล'),
-          ),
-        );
-        return;
-      }
+      final updatedBill = await bill.addItem(
+        token: token,
+        partCode: product.code,
+        addressCode: product.addressCodeForAdd!,
+        qty: 1,
+      );
+      final serverQty = remainingQtyFromBill(
+        updatedBill,
+        partCode: product.code,
+        addressCode: product.addressCodeForAdd!,
+      );
+      _updateAvailableQty(product, serverQty ?? product.availableQty - 1);
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('เพิ่มสินค้าไม่สำเร็จ: ${posErrorMessage(e)}')),
@@ -395,11 +365,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
 /// Public so a test can assert that a product the van has run out of is still
 /// listed and simply cannot be added.
 class PosProductCard extends StatelessWidget {
-  const PosProductCard({
-    super.key,
-    required this.product,
-    required this.onAdd,
-  });
+  const PosProductCard({super.key, required this.product, required this.onAdd});
 
   final Product product;
   final VoidCallback onAdd;
@@ -409,7 +375,10 @@ class PosProductCard extends StatelessWidget {
     // The van carries it but has run out. Hiding the row made the shop read the
     // till as missing products the admin pages clearly list, so the card stays
     // and only the add button goes.
-    final soldOut = product.availableQty <= 0;
+    final soldOut =
+        product.availableQty <= 0 ||
+        product.addressCodeForAdd == null ||
+        product.addressCodeForAdd!.isEmpty;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

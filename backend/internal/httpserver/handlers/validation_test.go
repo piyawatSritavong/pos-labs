@@ -30,13 +30,36 @@ func TestSalesAddressForPOSUsesOnlyConfiguredStore(t *testing.T) {
 		{Code: "MAIN", StoreID: "main", Qty: 20},
 		{Code: "POS1-ZERO", StoreID: "vehicle_POS001", Qty: 0},
 		{Code: "POS1-STOCK", StoreID: "vehicle_POS001", Qty: 5},
+		{Code: "POS1-MOST-STOCK", StoreID: "vehicle_POS001", Qty: 24},
 	}
 	selected, ok := salesAddressForPOS(addresses, "vehicle_POS001")
-	if !ok || selected.Code != "POS1-STOCK" {
+	if !ok || selected.Code != "POS1-MOST-STOCK" || selected.Qty != 24 {
 		t.Fatalf("expected POS1 store address, got %#v ok=%v", selected, ok)
 	}
 	if _, ok := salesAddressForPOS(addresses, "store_00001"); ok {
 		t.Fatal("must not fall back to another store when POS store has no address")
+	}
+}
+
+func TestSaleStockForPOSNeverReportsWarehouseQuantity(t *testing.T) {
+	addressCode, qty, rop := saleStockForPOS([]repository.PartAddress{
+		{Code: "MAIN", StoreID: "main", Qty: 999, Rop: 100},
+		{Code: "VEH-POS1", StoreID: "vehicle_POS001", Qty: 24, Rop: 5},
+	}, "vehicle_POS001")
+	if addressCode != "VEH-POS1" || qty != 24 || rop != 5 {
+		t.Fatalf("expected exact POS stock, got code=%q qty=%d rop=%d", addressCode, qty, rop)
+	}
+}
+
+func TestBillDetailOutputIncludesExactRemainingQuantity(t *testing.T) {
+	out := buildBillDetailOutput([]repository.BillDetail{{
+		PartCode:    "P0167",
+		AddressCode: "VEH-POS1",
+		Qty:         1,
+		TotalStock:  23,
+	}})
+	if len(out) != 1 || out[0]["remainingQty"] != 23 || out[0]["totalStock"] != 23 {
+		t.Fatalf("expected exact remaining stock in response, got %#v", out)
 	}
 }
 
