@@ -32,3 +32,18 @@ if [[ -n "${WS_BASE_URL:-}" ]]; then
 fi
 
 flutter build web --release "${DART_DEFINES[@]}"
+
+# Flutter normally emits a fixed `main.dart.js` filename. Vercel can retain the
+# previous file at that path across otherwise-successful deployments, leaving
+# index.html on the new release while cashiers still execute old POS logic.
+# Give every Git deployment an immutable bundle URL and point the generated
+# bootstrap at it. Query-string cache busting is insufficient because the CDN
+# may key this static asset by path only.
+if [[ -n "${VERCEL_GIT_COMMIT_SHA:-}" ]]; then
+  BUILD_REVISION="${VERCEL_GIT_COMMIT_SHA:0:12}"
+  MAIN_BUNDLE="main.${BUILD_REVISION}.dart.js"
+  mv build/web/main.dart.js "build/web/$MAIN_BUNDLE"
+  sed "s/main\\.dart\\.js/$MAIN_BUNDLE/g" \
+    build/web/flutter_bootstrap.js > build/web/flutter_bootstrap.js.tmp
+  mv build/web/flutter_bootstrap.js.tmp build/web/flutter_bootstrap.js
+fi
