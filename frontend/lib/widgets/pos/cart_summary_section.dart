@@ -9,6 +9,7 @@ import 'package:frontend/services/api_exception.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
+import 'package:frontend/services/receipt_print_policy.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
@@ -884,31 +885,24 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       }
 
       if (!receiptPrinted && hasPurchaseItems && checkoutBillId != null) {
-        try {
+        await runReceiptPrintIfAvailable(() async {
           await ApiService.printReceipt(
             token: token,
             billId: checkoutBillId,
             idempotencyKey: 'checkout:$checkoutBillId',
           );
-        } catch (error) {
-          // Cloud deployments intentionally have no access to the shop's
-          // physical printer. Payment is already committed, so an unavailable
-          // printer must never turn a successful sale into a failed checkout.
-          if (!isReceiptPrinterUnavailable(error)) rethrow;
-        }
+        });
         receiptPrinted = true;
       }
 
       if (!returnReceiptPrinted && hasReturnItems && returnNoteId != null) {
-        try {
+        await runReceiptPrintIfAvailable(() async {
           await ApiService.printReturnReceipt(
             token: token,
             returnNoteId: returnNoteId!,
             idempotencyKey: 'return:${returnNoteId!}',
           );
-        } catch (error) {
-          if (!isReceiptPrinterUnavailable(error)) rethrow;
-        }
+        });
         returnReceiptPrinted = true;
       }
     }

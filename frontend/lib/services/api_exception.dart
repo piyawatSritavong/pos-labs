@@ -42,7 +42,7 @@ class ApiException implements Exception {
       case 'invalid_address_code':
       case 'no_vehicle_stock':
       case 'not_enough_inventory':
-        return 'สินค้านี้ไม่มีสต็อกในรถของจุดขายนี้';
+        return 'สินค้านี้ไม่มีสต็อกที่พร้อมขาย';
       case 'invalid_bill_status':
         return 'บิลเดิมถูกปิดแล้ว กรุณาเริ่มบิลใหม่';
       case 'part_not_found':

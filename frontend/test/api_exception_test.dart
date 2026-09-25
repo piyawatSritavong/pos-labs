@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:frontend/services/api_exception.dart';
+import 'package:frontend/services/receipt_print_policy.dart';
 
 void main() {
   group('ApiException.fromResponse', () {
@@ -73,12 +74,40 @@ void main() {
       expect(isReceiptPrinterError(exception), isTrue);
     });
 
-    test('translates POS vehicle stock errors', () {
+    test('translates POS stock errors', () {
       final exception = ApiException.fromResponse(
         http.Response('{"error":"invalid_address_code"}', 400),
       );
 
-      expect(exception.message, 'สินค้านี้ไม่มีสต็อกในรถของจุดขายนี้');
+      expect(exception.message, 'สินค้านี้ไม่มีสต็อกที่พร้อมขาย');
+    });
+  });
+
+  group('cloud receipt print policy', () {
+    test('continues checkout when receipt printing is disabled', () async {
+      await expectLater(
+        runReceiptPrintIfAvailable(() async {
+          throw const ApiException(
+            message: 'ระบบนี้ไม่ได้เปิดใช้งานเครื่องพิมพ์',
+            code: 'printer_disabled',
+            statusCode: 503,
+          );
+        }),
+        completes,
+      );
+    });
+
+    test('keeps real printer failures retryable', () async {
+      const failure = ApiException(
+        message: 'พิมพ์ใบเสร็จไม่สำเร็จ',
+        code: 'failed_to_print',
+        statusCode: 500,
+      );
+
+      await expectLater(
+        runReceiptPrintIfAvailable(() async => throw failure),
+        throwsA(same(failure)),
+      );
     });
   });
 }

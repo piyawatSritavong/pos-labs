@@ -6,6 +6,7 @@ import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_parts.dart';
 import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/widgets/pos/pos_product_card.dart';
 import 'package:provider/provider.dart';
 
 class SearchPartsDialog extends StatefulWidget {
@@ -149,8 +150,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
   }
 
   Product _mapProduct(Map<String, dynamic> json) {
-    final posId = context.read<AuthProvider>().posId?.trim() ?? '';
-    return mapPosProductForSale(json, posId: posId);
+    return mapPosProductForSale(json);
   }
 
   void _onSearchChanged(String value) {
@@ -319,7 +319,7 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
         product.addressCodeForAdd == null ||
         product.addressCodeForAdd!.isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('สินค้านี้ไม่มีสต็อกในรถของจุดขายนี้')),
+        const SnackBar(content: Text('สินค้านี้ไม่มีสต็อกที่พร้อมขาย')),
       );
       return;
     }
@@ -356,160 +356,6 @@ class _SearchPartsDialogState extends State<SearchPartsDialog> {
       chunks.add(_products.sublist(i, end));
     }
     return chunks;
-  }
-}
-
-Product mapPosProductForSale(
-  Map<String, dynamic> json, {
-  required String posId,
-}) {
-  final rawAddresses = (json['addresses'] as List?) ?? [];
-  Map<String, dynamic>? vehicleAddress;
-  var availableQty = 0;
-
-  // A sale can only reduce stock from the current POS vehicle. Never fall
-  // back to the warehouse/default address: the backend correctly rejects it,
-  // but the old UI still presented an enabled Add button to the cashier.
-  final normalizedPosId = posId.trim();
-  final vehicleStoreId = normalizedPosId.isEmpty
-      ? null
-      : 'vehicle_$normalizedPosId';
-  if (vehicleStoreId != null) {
-    for (final address in rawAddresses) {
-      if (address is! Map<String, dynamic>) continue;
-      final store = address['store'];
-      final storeId = store is Map
-          ? store['id']?.toString()
-          : (address['storeId'] ?? address['store_id'])?.toString();
-      if (storeId != vehicleStoreId) continue;
-      final qty = _productQty(address['qty']);
-      if (qty <= 0) continue;
-      availableQty += qty;
-      vehicleAddress ??= address;
-    }
-  }
-
-  final addressCode =
-      vehicleAddress?['addressCode']?.toString() ??
-      vehicleAddress?['address_code']?.toString() ??
-      vehicleAddress?['code']?.toString();
-
-  return Product(
-    id: json['id']?.toString() ?? json['code']?.toString() ?? '',
-    name: json['nameTh'] ?? json['name_th'] ?? json['name'] ?? '',
-    price: _productDouble(json['price'] ?? json['unitPrice']),
-    code: json['code']?.toString() ?? '',
-    receiptName: json['receiptName']?.toString(),
-    defaultAddressCode: addressCode,
-    barcode: json['barCode']?.toString() ?? json['barcode']?.toString(),
-    addressCodeForAdd: addressCode,
-    availableQty: availableQty,
-  );
-}
-
-double _productDouble(dynamic value) {
-  if (value == null) return 0;
-  if (value is num) return value.toDouble();
-  return double.tryParse(value.toString()) ?? 0;
-}
-
-int _productQty(dynamic value) => _productDouble(value).floor();
-
-class PosProductCard extends StatelessWidget {
-  const PosProductCard({super.key, required this.product, required this.onAdd});
-
-  final Product product;
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    final soldOut =
-        product.availableQty <= 0 || product.addressCodeForAdd == null;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSizes.radius),
-        border: Border.all(color: AppColors.border),
-        boxShadow: AppShadows.soft,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.build, color: AppColors.primary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  product.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'รหัส ${product.code}',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 13),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Text(
-                      '฿${product.price.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: soldOut ? AppColors.muted : AppColors.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      soldOut ? 'หมดจากรถ' : 'เหลือ ${product.availableQty}',
-                      style: TextStyle(
-                        color: soldOut
-                            ? Colors.orange.shade800
-                            : AppColors.muted,
-                        fontSize: 12,
-                        fontWeight: soldOut
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            height: 40,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: soldOut ? AppColors.muted : AppColors.primary,
-                side: BorderSide(
-                  color: soldOut ? AppColors.border : AppColors.primary,
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-              onPressed: soldOut ? null : onAdd,
-              child: Text(soldOut ? 'หมด' : '+ เพิ่ม'),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
