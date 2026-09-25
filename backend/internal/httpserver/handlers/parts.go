@@ -17,6 +17,20 @@ type PartsHandler struct {
 	parts repository.PartRepository
 }
 
+// posSearchSaleStock returns the concrete branch address that a searched
+// product can be sold from. Search results are ordered by branch preference,
+// but the preferred/default address can have zero stock while a later address
+// is sellable. Returning this explicitly keeps old and new frontends from
+// guessing a zero-stock address.
+func posSearchSaleStock(addresses []repository.PartAddress) (string, int) {
+	for _, address := range addresses {
+		if address.Qty > 0 {
+			return address.Code, address.Qty
+		}
+	}
+	return "", 0
+}
+
 func (h *PartsHandler) NextCode(c *gin.Context) {
 	code, err := h.parts.GetNextPartCode(c.Request.Context())
 	if err != nil {
@@ -259,6 +273,7 @@ func (h *PartsHandler) Search(c *gin.Context) {
 	out := make([]gin.H, 0, len(parts))
 	for _, part := range parts {
 		addresses := addressesByCode[part.Code]
+		saleAddressCode, availableQty := posSearchSaleStock(addresses)
 
 		// Build addresses array
 		addrs := make([]gin.H, 0, len(addresses))
@@ -301,7 +316,12 @@ func (h *PartsHandler) Search(c *gin.Context) {
 				"labelTh": part.UnitLabelTH,
 			},
 			"totalStock": part.TotalStock,
-			"addresses":  addrs,
+			// POS-safe sale metadata. `addressCode` is also understood by older
+			// Flutter builds, so a backend rollout fixes their zero-stock default
+			// address bug even before the frontend service worker refreshes.
+			"addressCode":  saleAddressCode,
+			"availableQty": availableQty,
+			"addresses":    addrs,
 		})
 	}
 

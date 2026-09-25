@@ -5,6 +5,7 @@ import 'package:frontend/providers/bill_provider.dart';
 import 'package:frontend/services/api_parts.dart';
 import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/widgets/pos/pos_product_card.dart';
 import 'package:provider/provider.dart';
 
 class SearchBarcodeSection extends StatefulWidget {
@@ -42,72 +43,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
-  Product _mapProduct(Map<String, dynamic> json, {String? posId}) {
-    final rawAddresses = (json['addresses'] as List?) ?? [];
-
-    final barcode = json['barCode']?.toString() ?? json['barcode']?.toString();
-
-    Map<String, dynamic>? defaultAddress;
-    final vehicleStoreId = posId == null || posId.trim().isEmpty
-        ? null
-        : 'vehicle_${posId.trim()}';
-
-    if (vehicleStoreId != null) {
-      for (final addr in rawAddresses) {
-        if (addr is! Map<String, dynamic>) continue;
-        final store = addr['store'];
-        final storeId = store is Map
-            ? store['id']?.toString()
-            : addr['storeId']?.toString();
-        final qty = _toDouble(addr['qty']);
-        if (storeId == vehicleStoreId && qty > 0) {
-          defaultAddress = addr;
-          break;
-        }
-      }
-    }
-
-    for (final addr in rawAddresses) {
-      if (defaultAddress != null) break;
-      if (addr is Map<String, dynamic> &&
-          (addr['isDefault'] == true || addr['is_default'] == true)) {
-        defaultAddress = addr;
-        break;
-      }
-    }
-
-    if (defaultAddress == null) {
-      for (final addr in rawAddresses) {
-        if (addr is! Map<String, dynamic>) continue;
-        final qty = _toDouble(addr['qty']);
-        if (qty > 0) {
-          defaultAddress = addr;
-          break;
-        }
-      }
-    }
-
-    if (defaultAddress == null && rawAddresses.isNotEmpty) {
-      final first = rawAddresses.first;
-      if (first is Map<String, dynamic>) {
-        defaultAddress = first;
-      }
-    }
-
-    final defaultAddressCode =
-        defaultAddress?['addressCode']?.toString() ??
-        defaultAddress?['code']?.toString();
-
-    return Product(
-      id: json['id']?.toString() ?? json['code']?.toString() ?? '',
-      name: json['nameTh'] ?? json['name_th'] ?? json['name'] ?? '',
-      price: _toDouble(json['price'] ?? json['unitPrice']),
-      code: json['code']?.toString() ?? '',
-      receiptName: json['receiptName']?.toString(),
-      defaultAddressCode: defaultAddressCode,
-      barcode: barcode,
-    );
-  }
+  Product _mapProduct(Map<String, dynamic> json) => mapPosProductForSale(json);
 
   Future<void> searchByBarcode(String barcode) async {
     final auth = context.read<AuthProvider>();
@@ -144,7 +80,7 @@ class SearchBarcodeSectionState extends State<SearchBarcodeSection> {
         token: token,
         code: trimmed,
       );
-      final product = _mapProduct(raw, posId: auth.posId);
+      final product = _mapProduct(raw);
       _products = [product];
       if (_lastAutoAddedBarcode != trimmed) {
         final added = await _autoAddProduct(product, scannedBarcode: trimmed);
