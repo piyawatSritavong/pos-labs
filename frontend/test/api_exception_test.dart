@@ -85,16 +85,21 @@ void main() {
 
   group('cloud receipt print policy', () {
     test('continues checkout when receipt printing is disabled', () async {
-      await expectLater(
-        runReceiptPrintIfAvailable(() async {
-          throw const ApiException(
-            message: 'ระบบนี้ไม่ได้เปิดใช้งานเครื่องพิมพ์',
-            code: 'printer_disabled',
-            statusCode: 503,
-          );
-        }),
-        completes,
-      );
+      final outcome = await runReceiptPrintIfAvailable(() async {
+        throw const ApiException(
+          message: 'ระบบนี้ไม่ได้เปิดใช้งานเครื่องพิมพ์',
+          code: 'printer_disabled',
+          statusCode: 503,
+        );
+      });
+
+      expect(outcome, ReceiptPrintOutcome.unavailable);
+    });
+
+    test('reports when the receipt was printed', () async {
+      final outcome = await runReceiptPrintIfAvailable(() async {});
+
+      expect(outcome, ReceiptPrintOutcome.printed);
     });
 
     test('keeps real printer failures retryable', () async {
