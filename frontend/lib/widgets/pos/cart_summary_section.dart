@@ -11,6 +11,7 @@ import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/services/receipt_print_policy.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/widgets/pos/checkout_completion_dialog.dart';
 import 'package:provider/provider.dart';
 
 class CartSummarySection extends StatefulWidget {
@@ -850,6 +851,8 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     var returnSaved = false;
     var receiptPrinted = false;
     var returnReceiptPrinted = false;
+    ReceiptPrintOutcome? receiptPrintOutcome;
+    ReceiptPrintOutcome? returnReceiptPrintOutcome;
     String? returnNoteId;
 
     Future<void> finalizeCheckout() async {
@@ -885,7 +888,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       }
 
       if (!receiptPrinted && hasPurchaseItems && checkoutBillId != null) {
-        await runReceiptPrintIfAvailable(() async {
+        receiptPrintOutcome = await runReceiptPrintIfAvailable(() async {
           await ApiService.printReceipt(
             token: token,
             billId: checkoutBillId,
@@ -896,7 +899,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
       }
 
       if (!returnReceiptPrinted && hasReturnItems && returnNoteId != null) {
-        await runReceiptPrintIfAvailable(() async {
+        returnReceiptPrintOutcome = await runReceiptPrintIfAvailable(() async {
           await ApiService.printReturnReceipt(
             token: token,
             returnNoteId: returnNoteId!,
@@ -921,9 +924,21 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     );
 
     if (paid == true && mounted) {
+      final allReceiptsPrinted =
+          (!hasPurchaseItems ||
+              receiptPrintOutcome == ReceiptPrintOutcome.printed) &&
+          (!hasReturnItems ||
+              returnReceiptPrintOutcome == ReceiptPrintOutcome.printed);
       bill.clearReturnSession();
       _resetPaymentState();
       bill.resetCurrentBillState();
+      await showCheckoutCompletionDialog(
+        this.context,
+        hasPurchaseItems: hasPurchaseItems,
+        hasReturnItems: hasReturnItems,
+        allReceiptsPrinted: allReceiptsPrinted,
+        billId: checkoutBillId,
+      );
     }
 
     if (mounted && paid != true) {
