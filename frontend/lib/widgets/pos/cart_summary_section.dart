@@ -10,8 +10,10 @@ import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/services/receipt_print_policy.dart';
+import 'package:frontend/services/browser_receipt.dart';
 import 'package:frontend/theme/app_theme.dart';
 import 'package:frontend/widgets/pos/checkout_completion_dialog.dart';
+import 'package:frontend/widgets/pos/browser_receipt_page.dart';
 import 'package:provider/provider.dart';
 
 class CartSummarySection extends StatefulWidget {
@@ -854,6 +856,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
     ReceiptPrintOutcome? receiptPrintOutcome;
     ReceiptPrintOutcome? returnReceiptPrintOutcome;
     String? returnNoteId;
+    Map<String, dynamic>? savedReturnNote;
 
     Future<void> finalizeCheckout() async {
       if (!paymentSaved &&
@@ -885,6 +888,7 @@ class _CartSummarySectionState extends State<CartSummarySection> {
           throw Exception('สร้างใบคืนสินค้าแล้วแต่ไม่พบเลขที่ใบคืนสินค้า');
         }
         returnSaved = true;
+        savedReturnNote = returnNote;
       }
 
       if (!receiptPrinted && hasPurchaseItems && checkoutBillId != null) {
@@ -938,6 +942,30 @@ class _CartSummarySectionState extends State<CartSummarySection> {
         hasReturnItems: hasReturnItems,
         allReceiptsPrinted: allReceiptsPrinted,
         billId: checkoutBillId,
+        onPrintReceipt: () async {
+          final receipts = <BrowserReceipt>[];
+          if (hasPurchaseItems && checkoutBillId != null) {
+            receipts.add(
+              BrowserReceipt(
+                await ApiService.getBill(token: token, billId: checkoutBillId),
+              ),
+            );
+          }
+          if (savedReturnNote != null) {
+            receipts.add(BrowserReceipt(savedReturnNote!, isReturn: true));
+          }
+          if (!mounted) return;
+          final companyProvider = this.context.read<CompanyProvider>();
+          await companyProvider.loadCompany(token: token);
+          if (!mounted) return;
+          final company = companyProvider.company;
+          if (company == null) throw StateError('โหลดข้อมูลร้านค้าไม่สำเร็จ');
+          await showBrowserReceipts(
+            this.context,
+            receipts: receipts,
+            company: company,
+          );
+        },
       );
     }
 

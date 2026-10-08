@@ -8,6 +8,33 @@ This guide deploys POS Labs as separate services:
 
 Local and Windows POS deployment still work. In cloud mode, hardware features such as LPT1 receipt printing and cash drawer commands must be disabled.
 
+### Receipt printing from a cloud POS
+
+Render runs the API on Linux, not on the shop's Windows terminal. `LPT1` on
+Render is not the shop printer, and enabling `RECEIPT_PRINTER_ENABLED` cannot
+connect them. Non-Windows raw printing now fails with
+`printer_host_unsupported` instead of writing a development file and claiming
+that a receipt was printed.
+
+After checkout, **พิมพ์ใบเสร็จ** opens a Thai-font 80mm PDF preview. Click its
+print icon and select the receipt printer installed on the Windows POS. Use the
+printer manufacturer's Windows driver, 80mm paper and actual size (100%).
+**พิมพ์ซ้ำ** in the POS bill history uses this preview automatically when cloud
+hardware printing is unavailable. The completed bill is fetched from the API;
+this path never charges the customer or closes a bill again. Closing/cancelling
+the print dialog does not mean that paper was printed and does not undo a sale.
+
+Test a previously completed bill before the next live sale. If Windows itself
+cannot print a test page, correct the driver/port at the terminal first. An
+all-in-one enclosure does not tell us whether the internal printer uses USB,
+serial, LPT or LAN. Browser printing works through the Windows driver regardless
+of that connection type. It does not send the ESC/POS cash-drawer command.
+
+Silent automatic printing requires a separately configured local print service
+on the POS (or an approved kiosk deployment); it is not implemented by setting
+an environment variable on Render. Do not expose the printer or raw print port
+to the public internet to make Render reach it.
+
 ## 1. Supabase Database
 
 Create a Supabase project and copy the PostgreSQL connection string. Direct connection is fine for a Render Web Service. If direct connection has network/IP issues, use the Supabase pooler URL instead.
@@ -105,6 +132,12 @@ curl https://your-render-service.onrender.com/ready
 ## 3. Vercel Frontend
 
 Set Vercel project root to `frontend`.
+
+Set the Production environment's Branch Tracking to the release branch. For
+the Jaiheng workflow (`deploy/jaiheng` -> merge `dev` -> push), both Render and
+Vercel production must track `dev`. A successful Vercel Preview build from
+`dev` does not update production when Branch Tracking still points to `main`.
+Verify the production domain's deployed commit after each release.
 
 Required Vercel env vars:
 

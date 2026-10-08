@@ -50,6 +50,8 @@ class ApiException implements Exception {
       case 'printer_disabled':
       case 'printer_not_configured':
         return 'ระบบนี้ไม่ได้เปิดใช้งานเครื่องพิมพ์';
+      case 'printer_host_unsupported':
+        return 'เซิร์ฟเวอร์ cloud ไม่สามารถพิมพ์ที่เครื่อง POS โดยตรง กรุณาพิมพ์ผ่าน browser';
       case 'failed_to_print':
         return 'พิมพ์ใบเสร็จไม่สำเร็จ';
       case 'forbidden':
@@ -73,14 +75,14 @@ String? apiErrorCode(Object error) {
 
 bool isReceiptPrinterUnavailable(Object error) {
   final code = apiErrorCode(error);
-  return code == 'printer_disabled' || code == 'printer_not_configured';
+  return code == 'printer_disabled' ||
+      code == 'printer_not_configured' ||
+      code == 'printer_host_unsupported';
 }
 
 bool isReceiptPrinterError(Object error) {
   final code = apiErrorCode(error);
-  if (code == 'printer_disabled' ||
-      code == 'printer_not_configured' ||
-      code == 'failed_to_print') {
+  if (isReceiptPrinterUnavailable(error) || code == 'failed_to_print') {
     return true;
   }
   final raw = error.toString();

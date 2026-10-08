@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend/widgets/pos/checkout_completion_dialog.dart';
@@ -48,4 +50,41 @@ void main() {
     expect(find.textContaining('ใบเสร็จไม่ได้พิมพ์'), findsOneWidget);
     expect(find.textContaining('พิมพ์ซ้ำจากประวัติบิล'), findsOneWidget);
   });
+
+  testWidgets(
+    'print action cannot duplicate payment or claim physical success',
+    (tester) async {
+      var printCalls = 0;
+      final printDialogClosed = Completer<void>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CheckoutCompletionDialog(
+              hasPurchaseItems: true,
+              hasReturnItems: false,
+              allReceiptsPrinted: false,
+              billId: 'BILL-1',
+              onPrintReceipt: () {
+                printCalls++;
+                return printDialogClosed.future;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('พิมพ์ใบเสร็จ'));
+      await tester.pump();
+      expect(printCalls, 1);
+      expect(
+        tester.widget<OutlinedButton>(find.byType(OutlinedButton)).onPressed,
+        isNull,
+      );
+      printDialogClosed.complete(); // Includes cancelling the OS print dialog.
+      await tester.pump();
+      expect(find.text('ดำเนินการเสร็จสิ้น'), findsOneWidget);
+      expect(find.textContaining('ใบเสร็จไม่ได้พิมพ์'), findsOneWidget);
+      expect(find.text('พิมพ์ใบเสร็จ'), findsOneWidget);
+      expect(printCalls, 1);
+    },
+  );
 }
