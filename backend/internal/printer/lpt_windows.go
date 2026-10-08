@@ -11,6 +11,9 @@ import (
 	"strings"
 )
 
+// HardwareSupported reports whether this host has a real printer transport.
+func HardwareSupported() bool { return true }
+
 // PrintRaw sends `data` (raw bytes, typically ESC-POS) to a Windows printer.
 //
 // `target` may be one of:

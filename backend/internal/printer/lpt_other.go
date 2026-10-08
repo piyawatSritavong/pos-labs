@@ -2,23 +2,13 @@
 
 package printer
 
-import (
-	"fmt"
-	"log"
-	"os"
-	"path/filepath"
-)
+import "errors"
 
-// PrintRaw on non-Windows hosts is a development stub: it writes the bytes to
-// /tmp/pos-last-receipt.bin so a Mac/Linux dev can verify the ESC-POS output
-// without owning a printer. Real printing only happens on the Windows POS.
+// HardwareSupported reports whether this host has a real printer transport.
+// A cloud server cannot reach the Windows POS's local LPT/USB printer.
+func HardwareSupported() bool { return false }
+
+// PrintRaw must never report a development file write as successful printing.
 func PrintRaw(target string, data []byte) error {
-	dir := os.TempDir()
-	path := filepath.Join(dir, "pos-last-receipt.bin")
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("printer (dev stub): write %s: %w", path, err)
-	}
-	log.Printf("printer (dev stub): wrote %d bytes to %s (target=%q ignored)",
-		len(data), path, target)
-	return nil
+	return errors.New("printer_host_unsupported: use browser printing or a local Windows print service")
 }

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/providers/company_provider.dart';
+import 'package:frontend/services/api_exception.dart';
+import 'package:frontend/services/browser_receipt.dart';
 import 'package:frontend/services/api_bills.dart';
 import 'package:frontend/services/api_operations.dart';
 import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/app_dialog_service.dart';
 import 'package:frontend/services/pos_mirror_service.dart';
 import 'package:frontend/theme/app_theme.dart';
+import 'package:frontend/widgets/pos/browser_receipt_page.dart';
 import 'package:provider/provider.dart';
 
 class BillsLogDialog extends StatefulWidget {
@@ -38,11 +42,33 @@ class _BillsLogDialogState extends State<BillsLogDialog> {
     setState(() => _printingBillIds.add(billId));
     try {
       final nonce = DateTime.now().microsecondsSinceEpoch;
-      final result = await ApiService.printReceipt(
-        token: token,
-        billId: billId,
-        idempotencyKey: 'reprint:$billId:$nonce',
-      );
+      Map<String, dynamic> result;
+      try {
+        result = await ApiService.printReceipt(
+          token: token,
+          billId: billId,
+          idempotencyKey: 'reprint:$billId:$nonce',
+        );
+      } catch (error) {
+        if (!isReceiptPrinterUnavailable(error)) rethrow;
+        // The authoritative bill is fetched again; cancelled/draft bills must
+        // not be turned into receipts by a client-side preview.
+        final receipt = BrowserReceipt(
+          await ApiService.getBill(token: token, billId: billId),
+        );
+        if (!mounted) return;
+        final companyProvider = context.read<CompanyProvider>();
+        await companyProvider.loadCompany(token: token);
+        if (!mounted) return;
+        final company = companyProvider.company;
+        if (company == null) throw StateError('โหลดข้อมูลร้านค้าไม่สำเร็จ');
+        await showBrowserReceipts(
+          context,
+          receipts: [receipt],
+          company: company,
+        );
+        return;
+      }
       if (!mounted) return;
       final duplicate = result['duplicate'] == true;
       ScaffoldMessenger.of(context).showSnackBar(

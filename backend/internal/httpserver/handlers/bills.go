@@ -2646,6 +2646,15 @@ func (h *BillsHandler) PrintReceipt(c *gin.Context) {
 		return
 	}
 
+	if !printer.HardwareSupported() {
+		h.completePrint(req.IdempotencyKey, false)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_host_unsupported",
+			"message": "use browser printing or a local Windows print service",
+		})
+		return
+	}
+
 	if strings.TrimSpace(h.PrinterTarget) == "" {
 		h.completePrint(req.IdempotencyKey, false)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -2792,6 +2801,13 @@ func (h *BillsHandler) PrintTestReceipt(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "printer_disabled",
 			"message": "set RECEIPT_PRINTER_ENABLED=true in .env",
+		})
+		return
+	}
+	if !printer.HardwareSupported() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "printer_host_unsupported",
+			"message": "use browser printing or a local Windows print service",
 		})
 		return
 	}

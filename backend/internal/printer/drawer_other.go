@@ -12,8 +12,5 @@ type DrawerKickResult struct {
 
 func KickCashDrawer(target string, command []byte) (DrawerKickResult, error) {
 	data := BuildDrawerKick(command)
-	if err := PrintRaw(target, data); err != nil {
-		return DrawerKickResult{Target: target, Method: "dev_stub", Bytes: len(data)}, err
-	}
-	return DrawerKickResult{Target: target, Method: "dev_stub", Bytes: len(data)}, nil
+	return DrawerKickResult{Target: target, Method: "unsupported", Bytes: len(data)}, PrintRaw(target, data)
 }

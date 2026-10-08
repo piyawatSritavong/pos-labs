@@ -74,6 +74,34 @@ void main() {
       expect(isReceiptPrinterError(exception), isTrue);
     });
 
+    test('uses browser fallback only for unsupported cloud hardware', () async {
+      final error = ApiException.fromResponse(
+        http.Response('{"error":"printer_host_unsupported"}', 503),
+      );
+      expect(isReceiptPrinterUnavailable(error), isTrue);
+      expect(isReceiptPrinterError(error), isTrue);
+      expect(
+        await runReceiptPrintIfAvailable(() async => throw error),
+        ReceiptPrintOutcome.unavailable,
+      );
+      expect(
+        isReceiptPrinterUnavailable(
+          ApiException.fromResponse(
+            http.Response('{"error":"bill_access_denied"}', 403),
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        isReceiptPrinterUnavailable(
+          ApiException.fromResponse(
+            http.Response('{"error":"failed_to_get_bill"}', 500),
+          ),
+        ),
+        isFalse,
+      );
+    });
+
     test('translates POS stock errors', () {
       final exception = ApiException.fromResponse(
         http.Response('{"error":"invalid_address_code"}', 400),
